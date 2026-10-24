@@ -112,12 +112,28 @@ public sealed class SessionStorage
     public Task ExportPlyAsync(string path, IEnumerable<ScanPoint> points) => Task.Run(() =>
     {
         var snapshot = points.ToArray();
-        using var writer = new StreamWriter(path, false, new UTF8Encoding(false));
-        writer.WriteLine("ply\nformat ascii 1.0\ncomment Subterra simulated LiDAR scan; units meters");
-        writer.WriteLine($"element vertex {snapshot.Length}");
-        writer.WriteLine("property float x\nproperty float y\nproperty float z\nproperty float intensity\nend_header");
         foreach (var p in snapshot)
-            writer.WriteLine(FormattableString.Invariant($"{p.X:R} {p.Y:R} {p.Z:R} {p.Intensity:R}"));
+            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z) ||
+                !float.IsFinite(p.Intensity) || p.Intensity is < 0 or > 1)
+                throw new InvalidDataException("Облако содержит некорректные координаты или интенсивность.");
+
+        var destination = Path.GetFullPath(path);
+        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            // Finish and close the new file before replacing a previous export.
+            using (var writer = new StreamWriter(temporary, false, new UTF8Encoding(false)))
+            {
+                writer.WriteLine("ply\nformat ascii 1.0\ncomment Subterra simulated LiDAR scan; units meters");
+                writer.WriteLine($"element vertex {snapshot.Length}");
+                writer.WriteLine("property float x\nproperty float y\nproperty float z\nproperty float intensity\nend_header");
+                foreach (var p in snapshot)
+                    writer.WriteLine(FormattableString.Invariant($"{p.X:R} {p.Y:R} {p.Z:R} {p.Intensity:R}"));
+            }
+            if (File.Exists(destination)) File.Replace(temporary, destination, null);
+            else File.Move(temporary, destination);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     });
 
     private static void WriteVector(BinaryWriter writer, Vector3 p)
