@@ -51,9 +51,10 @@ public sealed class SceneGeometry
         }).ToArray();
         _positions = new(scene.Vertices);
         _normals = new(scene.Normals);
-        _textureCoordinates = new(scene.TextureCoordinates);
+        // A 2.4 m tile preserves close-up detail without changing scan geometry.
+        _textureCoordinates = new(scene.TextureCoordinates.Select(uv => uv * (3.2f / 2.4f)));
         HelixToolkit.Geometry.MeshBuilder.ComputeTangents(scene.Vertices, scene.Normals,
-            scene.TextureCoordinates, scene.Indices, out var tangents, out var bitangents);
+            _textureCoordinates, scene.Indices, out var tangents, out var bitangents);
         _tangents = new(tangents);
         _bitangents = new(bitangents);
     }

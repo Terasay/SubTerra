@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -125,11 +125,14 @@ public partial class MainWindow : Window
             catch (Exception ex) { _viewModel.Home(); _viewModel.ReportError("Не удалось начать прогулку", ex); }
             return;
         }
-        if (e.PropertyName != nameof(MainViewModel.IsPresentationMode)) return;
+        if (e.PropertyName is not (nameof(MainViewModel.IsPresentationMode) or nameof(MainViewModel.IsInspectorOpen))) return;
         var presentation = _viewModel.IsPresentationMode;
-        LeftPanel.Visibility = RightPanel.Visibility = presentation ? Visibility.Collapsed : Visibility.Visible;
-        LeftColumn.Width = new GridLength(presentation ? 0 : 242);
-        RightColumn.Width = new GridLength(presentation ? 0 : 264);
+        var inspector = !presentation && _viewModel.IsInspectorOpen;
+        LeftPanel.Visibility = presentation ? Visibility.Collapsed : Visibility.Visible;
+        RightPanel.Visibility = inspector ? Visibility.Visible : Visibility.Collapsed;
+        LeftColumn.Width = new GridLength(presentation ? 0 : 248);
+        RightColumn.Width = new GridLength(inspector ? 264 : 0);
+        if (e.PropertyName != nameof(MainViewModel.IsPresentationMode)) return;
         if (presentation) { _previousWindowState = WindowState; WindowState = WindowState.Maximized; }
         else WindowState = _previousWindowState;
     }

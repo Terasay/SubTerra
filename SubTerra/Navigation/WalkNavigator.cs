@@ -44,7 +44,7 @@ public sealed class WalkNavigator
         Position = grounded;
         var basis = CaveFactory.Basis(_scene.Scenario.Id, t);
         Yaw = MathF.Atan2(basis.Forward.Y, basis.Forward.X);
-        Pitch = -.045f;
+        Pitch = 0;
     }
 
     public void Look(float yawDelta, float pitchDelta)

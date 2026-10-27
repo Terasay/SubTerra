@@ -47,6 +47,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _cutRoof = true;
     private bool _followScanner;
     private bool _isPresentationMode;
+    private bool _isInspectorOpen;
     private double _range = 20;
     private double _speed = 1;
     private int _densityIndex = 1;
@@ -204,6 +205,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool CutRoof { get => _cutRoof; set { if (Set(ref _cutRoof, value)) RefreshGeometry(); } }
     public bool FollowScanner { get => _followScanner; set => Set(ref _followScanner, value); }
     public bool IsPresentationMode { get => _isPresentationMode; set => Set(ref _isPresentationMode, value); }
+    public bool IsInspectorOpen { get => _isInspectorOpen; set => Set(ref _isInspectorOpen, value); }
     public double Range
     {
         get => _range;
