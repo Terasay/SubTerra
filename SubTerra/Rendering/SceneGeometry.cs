@@ -16,13 +16,16 @@ public sealed class SceneGeometry
     private readonly StreamingPointCloudSampler? _streamSampler;
     private PointGeometry3D? _cachedCloud;
     private (int Count, bool CutRoof, int Limit) _cloudKey;
-    private readonly Color4[] _surfaceColors;
-    private readonly Color4[] _rockColors;
+    private readonly Color4Collection _surfaceColors;
+    private readonly Color4Collection _rockColors;
     private readonly Vector3Collection _positions;
     private readonly Vector3Collection _normals;
     private readonly Vector2Collection _textureCoordinates;
     private readonly Vector3Collection _tangents;
     private readonly Vector3Collection _bitangents;
+    private readonly Vector2Collection _floorCoordinates;
+    private readonly Vector3Collection _floorTangents;
+    private readonly Vector3Collection _floorBitangents;
     private readonly float _minimum;
     private readonly float _span;
     private static readonly Vector3[] Palette =
@@ -43,12 +46,12 @@ public sealed class SceneGeometry
             _sampler = new(_points);
         }
         else _streamSampler = new();
-        _surfaceColors = scene.Vertices.Select(p => HeightColor(p.Z, 1)).ToArray();
-        _rockColors = scene.Vertices.Select(p =>
+        _surfaceColors = new(scene.Vertices.Select(p => HeightColor(p.Z, 1)));
+        _rockColors = new(scene.Vertices.Select(p =>
         {
             var shade = .72f + .18f * Simulation.RockNoise.Fractal(p * .35f);
             return new Color4(shade, shade * .95f, shade * .86f, 1);
-        }).ToArray();
+        }));
         _positions = new(scene.Vertices);
         _normals = new(scene.Normals);
         // A 2.4 m tile preserves close-up detail without changing scan geometry.
@@ -57,6 +60,13 @@ public sealed class SceneGeometry
             _textureCoordinates, scene.Indices, out var tangents, out var bitangents);
         _tangents = new(tangents);
         _bitangents = new(bitangents);
+        _floorCoordinates = new(scene.Vertices.Select(p => new Vector2(p.X, p.Y) / 2.4f));
+        _floorTangents = new(scene.Normals.Select(n =>
+        {
+            var axis = Math.Abs(n.X) < .9f ? Vector3.UnitX : Vector3.UnitY;
+            return Vector3.Normalize(axis - n * Vector3.Dot(n, axis));
+        }));
+        _floorBitangents = new(scene.Normals.Select((n, i) => Vector3.Cross(n, _floorTangents[i])));
     }
 
     public void AppendFrame(ScanFrame frame)
@@ -100,6 +110,30 @@ public sealed class SceneGeometry
     public MeshGeometry3D Surface(IReadOnlyList<ScanCoverage> coverage, bool cutRoof, bool heightColors = false)
     {
         var indices = new IntCollection();
+        foreach (var triangle in VisibleTriangles(coverage, cutRoof))
+        {
+            var i = triangle * 3;
+            indices.Add(_scene.Indices[i]); indices.Add(_scene.Indices[i + 1]); indices.Add(_scene.Indices[i + 2]);
+        }
+        return CreateSurface(indices, heightColors);
+    }
+
+    public (MeshGeometry3D Rock, MeshGeometry3D Floor, MeshGeometry3D Damp) SurfaceLayers(
+        IReadOnlyList<ScanCoverage> coverage, bool cutRoof)
+    {
+        var rock = new IntCollection(); var floor = new IntCollection(); var damp = new IntCollection();
+        foreach (var triangle in VisibleTriangles(coverage, cutRoof))
+        {
+            var kind = _scene.SurfaceKinds.Length == 0 ? CaveSurfaceKind.Rock : _scene.SurfaceKinds[triangle];
+            var target = kind == CaveSurfaceKind.Sediment ? floor : kind == CaveSurfaceKind.DampRock ? damp : rock;
+            var i = triangle * 3;
+            target.Add(_scene.Indices[i]); target.Add(_scene.Indices[i + 1]); target.Add(_scene.Indices[i + 2]);
+        }
+        return (CreateSurface(rock, false), CreateSurface(floor, false, true), CreateSurface(damp, false));
+    }
+
+    private IEnumerable<int> VisibleTriangles(IReadOnlyList<ScanCoverage> coverage, bool cutRoof)
+    {
         for (var i = 0; i < _scene.Indices.Length; i += 3)
         {
             var a = _scene.Indices[i];
@@ -112,19 +146,21 @@ public sealed class SceneGeometry
             if (cutRoof && (MathF.Sin(_scene.VertexAngles[a]) > .30f ||
                             MathF.Sin(_scene.VertexAngles[b]) > .30f || MathF.Sin(_scene.VertexAngles[c]) > .30f))
                 continue;
-            indices.Add(a); indices.Add(b); indices.Add(c);
+            yield return i / 3;
         }
-        return new()
+    }
+
+    private MeshGeometry3D CreateSurface(IEnumerable<int> indices, bool heightColors, bool floor = false)
+        => new()
         {
             Positions = _positions,
             Normals = _normals,
-            TextureCoordinates = _textureCoordinates,
-            Tangents = _tangents,
-            BiTangents = _bitangents,
-            Colors = new Color4Collection(heightColors ? _surfaceColors : _rockColors),
-            Indices = indices
+            TextureCoordinates = floor ? _floorCoordinates : _textureCoordinates,
+            Tangents = floor ? _floorTangents : _tangents,
+            BiTangents = floor ? _floorBitangents : _bitangents,
+            Colors = heightColors ? _surfaceColors : _rockColors,
+            Indices = indices as IntCollection ?? new IntCollection(indices)
         };
-    }
 
     public LineGeometry3D Route(float progress, float startProgress = 0)
         => Route([new(startProgress, progress)]);

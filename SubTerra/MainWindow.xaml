@@ -61,6 +61,7 @@
                                     <CheckBox Content="Метки сценария" IsChecked="{Binding ShowMarkers}" Margin="0,0,0,13"/>
                                     <CheckBox Content="Срез потолка" IsChecked="{Binding CutRoof}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,13"/>
                                     <CheckBox Content="Следовать за сканером" IsChecked="{Binding FollowScanner}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,8"/>
+                                    <CheckBox Content="Тени от освещения" IsChecked="{Binding ShowShadows}" Margin="0,5,0,8" ToolTip="Тени в виде «Пещера». Можно отключить для снижения нагрузки на видеокарту."/>
 
                                     <Border Style="{StaticResource Divider}"/>
                                     <TextBlock Text="Внутри пещеры" Style="{StaticResource Section}" Margin="0,0,0,10"/>
@@ -143,18 +144,23 @@
                     <Border Grid.Row="2" BorderBrush="#2A3B47" BorderThickness="1" CornerRadius="10" Background="#0B1219" ClipToBounds="True"><Grid>
                         <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
                                        BackgroundColor="#0B1219" ShowViewCube="False" ShowCoordinateSystem="False" ModelUpDirection="0,0,1"
-                                       EnableSwapChainRendering="False" EnableSSAO="True" SSAOIntensity=".75" SSAOSamplingRadius=".38"
+                                       EnableSwapChainRendering="False" EnableSSAO="True" SSAOIntensity=".80" SSAOSamplingRadius=".45"
+                                       IsShadowMappingEnabled="{Binding ShadowsVisible}"
                                        CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7" IsInertiaEnabled="False"
                                        Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
-                            <h:AmbientLight3D Color="#454C55"/>
+                            <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding IsOverview}"/>
+                            <h:AmbientLight3D Color="#242C38" IsRendering="{Binding IsWalking}"/>
                             <h:DirectionalLight3D Direction="-.6,.8,-1.6" Color="#D7CABB" IsRendering="{Binding IsOverview}"/>
                             <h:DirectionalLight3D Direction="1,-.7,-.3" Color="#7C8FA1" IsRendering="{Binding IsOverview}"/>
-                            <h:SpotLight3D Position="{Binding Camera.Position}" Direction="{Binding Camera.LookDirection}" Color="#F4E8D7"
-                                           Attenuation="1,.03,.006" Range="42" OuterAngle="115" InnerAngle="72" Falloff="1" IsRendering="{Binding IsWalking}"/>
-                            <h:PointLight3D Position="{Binding Camera.Position}" Color="#626E7D" Attenuation="1,.12,.05" Range="15" IsRendering="{Binding IsWalking}"/>
+                            <h:SpotLight3D Position="{Binding LampCamera.Position}" Direction="{Binding LampCamera.LookDirection}" Color="#FFF0D9"
+                                           Attenuation="1,.025,.009" Range="36" OuterAngle="96" InnerAngle="48" Falloff="1.4" IsRendering="{Binding IsWalking}"/>
+                            <h:PointLight3D Position="{Binding Camera.Position}" Color="#475667" Attenuation="1,.20,.09" Range="10" IsRendering="{Binding IsWalking}"/>
+                            <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Grid}" Color="#1A2B34" Thickness=".45" IsRendering="{Binding GridVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="1.8,1.8" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="False"/>
-                            <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" CullMode="None" IsHitTestVisible="False"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding FloorSurface}" Material="{Binding FloorMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding DampSurface}" Material="{Binding DampMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding Route}" Color="#81C7B4" Thickness="1.4" IsRendering="{Binding RouteVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Markers}" Color="#FFCF67" Size="9,9" Figure="Ellipse" IsRendering="{Binding MarkersVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Scanner}" Color="#E1FFB3" Size="12,12" Figure="Ellipse" IsRendering="{Binding ScannerVisible}" IsHitTestVisible="False"/>

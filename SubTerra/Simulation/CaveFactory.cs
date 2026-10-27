@@ -29,5 +29,10 @@ public static class CaveFactory
         return new(Center(scenarioId, t), Quaternion.CreateFromRotationMatrix(basis));
     }
 
-    public static CaveScene Create(ScenarioDefinition scenario) => CaveMeshBuilder.Build(scenario);
+    public static CaveScene Create(ScenarioDefinition scenario, int sceneVersion = SceneVersions.Current) => sceneVersion switch
+    {
+        SceneVersions.Legacy => LegacyCaveMeshBuilder.Build(scenario),
+        SceneVersions.Current => CaveMeshBuilder.Build(scenario),
+        _ => throw new ArgumentOutOfRangeException(nameof(sceneVersion), "Неизвестная версия виртуальной сцены.")
+    };
 }

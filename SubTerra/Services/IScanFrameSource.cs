@@ -9,4 +9,5 @@ public interface IScanFrameSource
 }
 
 public sealed record ScanRequest(string ScenarioId, ScanSettings Settings, int FirstFrame = 0,
-    DateTimeOffset? FirstTimestamp = null, IReadOnlyList<ScannerAdjustment>? Adjustments = null);
+    DateTimeOffset? FirstTimestamp = null, IReadOnlyList<ScannerAdjustment>? Adjustments = null,
+    int SceneVersion = SceneVersions.Current);

@@ -42,11 +42,11 @@ public sealed class SimulatedScanSource : IScanSource
         var generator = await Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var scene = CaveFactory.Create(scenario);
+            var scene = CaveFactory.Create(scenario, request.SceneVersion);
             var index = new TriangleIndex(scene.Vertices, scene.Indices);
             var value = new FrameGenerator(scenario.Id, request.Settings, index,
                 request.FirstTimestamp ?? DateTimeOffset.UtcNow, adjustments);
-            // Replaying RNG state preserves compatibility with existing v2 scene recordings.
+            // Replaying RNG state against the recorded scene version preserves earlier measurements.
             // Previously committed frames are neither emitted nor changed.
             for (var f = 0; f < request.FirstFrame; f++) value.Next(f, cancellationToken);
             return value;

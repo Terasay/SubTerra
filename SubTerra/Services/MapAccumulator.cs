@@ -10,12 +10,15 @@ public sealed class MapAccumulator
     private readonly List<ScanFrame> _frames = [];
     public string ScenarioId { get; }
     public ScanSettings Settings { get; }
+    public int SceneVersion { get; }
     public int FrameCount => _frames.Count;
     public int PointCount { get; private set; }
 
-    public MapAccumulator(string scenarioId, ScanSettings settings)
+    public MapAccumulator(string scenarioId, ScanSettings settings, int sceneVersion = SceneVersions.Current)
     {
         settings.Validate();
+        if (!SceneVersions.IsSupported(sceneVersion)) throw new ArgumentOutOfRangeException(nameof(sceneVersion));
+        SceneVersion = sceneVersion;
         ScenarioId = scenarioId;
         Settings = settings;
     }
@@ -38,6 +41,6 @@ public sealed class MapAccumulator
     }
 
     public ScanSession Snapshot(ScannerAdjustment[]? adjustments = null) => new()
-        { ScenarioId = ScenarioId, Settings = Settings, Frames = _frames.ToArray(), Adjustments = adjustments ?? [] };
+        { ScenarioId = ScenarioId, SceneVersion = SceneVersion, Settings = Settings, Frames = _frames.ToArray(), Adjustments = adjustments ?? [] };
     private static bool Finite(Vector3 value) => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 }

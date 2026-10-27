@@ -45,6 +45,7 @@ public sealed record ScenarioDefinition(string Id, string Name, string Subtitle,
 
 public sealed class ScanSession
 {
+    public int SceneVersion { get; init; } = SceneVersions.Current;
     public required string ScenarioId { get; init; }
     public required ScanSettings Settings { get; init; }
     public required ScanFrame[] Frames { get; init; }
@@ -54,8 +55,20 @@ public sealed class ScanSession
 
 public sealed record ScanDataset(CaveScene Scene, ScanSession Session);
 
+public static class SceneVersions
+{
+    public const int Legacy = 2;
+    public const int Current = 3;
+    public static bool IsSupported(int version) => version is Legacy or Current;
+}
+
+public enum CaveSurfaceKind { Rock, Sediment, DampRock }
+
 public sealed class CaveScene
 {
+    public int SceneVersion { get; init; } = SceneVersions.Current;
+    // One classification per triangle. Legacy scenes fall back to the rock material.
+    public CaveSurfaceKind[] SurfaceKinds { get; init; } = [];
     public required ScenarioDefinition Scenario { get; init; }
     public required Vector3[] Vertices { get; init; }
     public required Vector3[] Normals { get; init; }

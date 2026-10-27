@@ -14,16 +14,16 @@ public sealed class SessionStorage
     private sealed record Manifest(int SchemaVersion, string SourceType, string CoordinateUnit,
         string ScenarioId, ScanSettings Settings, int FrameCount, int PointCount, int SceneVersion = 1,
         ScannerAdjustment[]? Adjustments = null);
-    private const int CurrentSceneVersion = 2;
     private const int MaximumPoints = 750_000;
 
     public Task SaveAsync(string path, ScanSession session, int frameCount) => Task.Run(() =>
     {
+        if (!SceneVersions.IsSupported(session.SceneVersion)) throw new InvalidDataException("Неизвестная версия виртуальной сцены.");
         var frames = session.Frames.Take(frameCount).ToArray();
         var adjustments = session.Adjustments.Where(a => a.FirstFrame <= frames.Length).ToArray();
         ScannerPlan.Validate(adjustments, session.Settings, frames.Length);
         var manifest = new Manifest(adjustments.Length > 0 ? 2 : 1, "simulation", "m", session.ScenarioId, session.Settings,
-            frames.Length, frames.Sum(f => f.Points.Length), CurrentSceneVersion, adjustments);
+            frames.Length, frames.Sum(f => f.Points.Length), session.SceneVersion, adjustments);
         var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         var temporary = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         try
@@ -64,7 +64,7 @@ public sealed class SessionStorage
             manifest = JsonSerializer.Deserialize<Manifest>(stream) ?? throw new InvalidDataException("Не удалось прочитать сеанс.");
         if (manifest.SchemaVersion is not (1 or 2) || manifest.SourceType != "simulation" || manifest.CoordinateUnit != "m")
             throw new InvalidDataException("Версия или тип сеанса не поддерживается.");
-        if (manifest.SceneVersion != CurrentSceneVersion)
+        if (!SceneVersions.IsSupported(manifest.SceneVersion))
             throw new InvalidDataException("Сеанс использует другую версию виртуальной пещеры. Создайте новый проход в текущем прототипе.");
         if (!ScenarioDefinition.All.Any(s => s.Id == manifest.ScenarioId) || manifest.FrameCount is < 1 or > 360 ||
             manifest.PointCount is < 0 or > MaximumPoints || manifest.Settings is null ||
@@ -83,7 +83,7 @@ public sealed class SessionStorage
         using var data = entry.Open();
         using var reader = new BinaryReader(data);
         var frames = new ScanFrame[manifest.FrameCount];
-        var validatedMap = new MapAccumulator(manifest.ScenarioId, manifest.Settings);
+        var validatedMap = new MapAccumulator(manifest.ScenarioId, manifest.Settings, manifest.SceneVersion);
         var total = 0;
         var previousProgress = manifest.Settings.StartProgress;
         for (var i = 0; i < frames.Length; i++)
@@ -106,7 +106,8 @@ public sealed class SessionStorage
             previousProgress = progress;
         }
         if (total != manifest.PointCount) throw new InvalidDataException("Количество точек в файле не совпадает.");
-        return new ScanSession { ScenarioId = manifest.ScenarioId, Settings = manifest.Settings, Frames = frames, Adjustments = adjustments };
+        return new ScanSession { ScenarioId = manifest.ScenarioId, SceneVersion = manifest.SceneVersion,
+            Settings = manifest.Settings, Frames = frames, Adjustments = adjustments };
     });
 
     public Task ExportPlyAsync(string path, IEnumerable<ScanPoint> points) => Task.Run(() =>

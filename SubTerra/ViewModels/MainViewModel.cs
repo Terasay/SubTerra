@@ -12,6 +12,8 @@ using SubTerra.Rendering;
 using SubTerra.Services;
 using SubTerra.Simulation;
 using PerspectiveCamera = HelixToolkit.Wpf.SharpDX.PerspectiveCamera;
+using OrthographicCamera = HelixToolkit.Wpf.SharpDX.OrthographicCamera;
+using ProjectionCamera = HelixToolkit.Wpf.SharpDX.ProjectionCamera;
 using MeshGeometry3D = HelixToolkit.SharpDX.MeshGeometry3D;
 
 namespace SubTerra.ViewModels;
@@ -48,6 +50,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _followScanner;
     private bool _isPresentationMode;
     private bool _isInspectorOpen;
+    private bool _showShadows = true;
     private double _range = 20;
     private double _speed = 1;
     private int _densityIndex = 1;
@@ -67,6 +70,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private PointGeometry3D? _scanner;
     private PointGeometry3D? _markers;
     private MeshGeometry3D? _surface;
+    private MeshGeometry3D? _floorSurface;
+    private MeshGeometry3D? _dampSurface;
     private LineGeometry3D? _route;
     private LineGeometry3D? _grid;
 
@@ -99,6 +104,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public PerspectiveCamera Camera { get; } = new()
     { FieldOfView = 47, NearPlaneDistance = .05, FarPlaneDistance = 1200 };
+    // A separate light camera keeps shadows aligned with the lamp without altering
+    // the user's view. The small offset reveals shadows alongside nearby rocks.
+    public PerspectiveCamera LampCamera { get; } = new()
+    { FieldOfView = 96, NearPlaneDistance = .08, FarPlaneDistance = 36, UpDirection = new(0, 0, 1) };
+    private OrthographicCamera OverviewLightCamera { get; } = new()
+    { Position = new(24, -32, 64), LookDirection = new(-24, 32, -64), UpDirection = new(0, 0, 1),
+        Width = 92, NearPlaneDistance = .5, FarPlaneDistance = 150 };
+    public ProjectionCamera ShadowCamera => IsWalking ? LampCamera : OverviewLightCamera;
+    public bool ShowShadows
+    {
+        get => _showShadows;
+        set { if (Set(ref _showShadows, value)) Raise(nameof(ShadowsVisible)); }
+    }
+    public bool ShadowsVisible => ShowShadows && IsCave;
     public IReadOnlyList<ScenarioDefinition> Scenarios => ScenarioDefinition.All;
     public IReadOnlyList<string> DensityOptions { get; } = ["Лёгкая · 65 тыс.", "Стандарт · 130 тыс.", "Детальная · 230 тыс."];
     public ObservableCollection<int> FrameIntervals { get; } = [200, 100, 50];
@@ -162,6 +181,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsHeight => _isHeight;
     public PhongMaterial SurfaceMaterial => IsHeight ? CaveMaterials.Height : _limestone ??= CaveMaterials.Limestone();
     private PhongMaterial? _limestone;
+    public PhongMaterial FloorMaterial => _sediment ??= CaveMaterials.Sediment();
+    public PhongMaterial DampMaterial => _dampLimestone ??= CaveMaterials.DampLimestone();
+    private PhongMaterial? _sediment;
+    private PhongMaterial? _dampLimestone;
     public bool IsWalking => _isWalking;
     public bool CanWalk => CanInteract && _viewFrames > 0 && WalkCoverage.End - WalkCoverage.Start >= .06f;
     public bool IsOverview => !IsWalking;
@@ -187,7 +210,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         private set
         {
             if (!Set(ref _isSurface, value)) return;
-            Raise(nameof(IsPoints)); Raise(nameof(IsCave)); Raise(nameof(RenderLabel));
+            Raise(nameof(IsPoints)); Raise(nameof(IsCave)); Raise(nameof(RenderLabel)); Raise(nameof(ShadowsVisible));
         }
     }
     private void SetView(bool surface, bool height)
@@ -196,6 +219,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _isHeight = height;
         IsSurface = surface;
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
+        Raise(nameof(ShadowsVisible));
         RefreshGeometry();
     }
     public string RenderLabel => IsPoints ? "ОБЛАКО ТОЧЕК" : IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
@@ -288,6 +312,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public PointGeometry3D? Scanner { get => _scanner; private set => Set(ref _scanner, value); }
     public PointGeometry3D? Markers { get => _markers; private set => Set(ref _markers, value); }
     public MeshGeometry3D? Surface { get => _surface; private set => Set(ref _surface, value); }
+    public MeshGeometry3D? FloorSurface { get => _floorSurface; private set => Set(ref _floorSurface, value); }
+    public MeshGeometry3D? DampSurface { get => _dampSurface; private set => Set(ref _dampSurface, value); }
     public LineGeometry3D? Route { get => _route; private set => Set(ref _route, value); }
     public LineGeometry3D? Grid { get => _grid; private set => Set(ref _grid, value); }
     private float SessionStart => _dataset?.Session.Settings.StartProgress ?? 0;
@@ -380,7 +406,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var settings = Settings;
                 settings.Validate();
                 var scenario = SelectedScenario;
-                var scene = _dataset?.Scene.Scenario.Id == scenario.Id ? _dataset.Scene :
+                var scene = _dataset?.Scene.Scenario.Id == scenario.Id && _dataset.Scene.SceneVersion == SceneVersions.Current ? _dataset.Scene :
                     await Task.Run(() => CaveFactory.Create(scenario));
                 if (_disposed || !IsAdministrator) return;
                 Assign(new(scene, new() { ScenarioId = scenario.Id, Settings = settings, Frames = [] }), 0);
@@ -397,7 +423,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Status = "Выполняется потоковое сканирование";
             var session = _dataset!.Session;
             var request = new ScanRequest(session.ScenarioId, session.Settings, _capturedFrames,
-                session.Frames.FirstOrDefault()?.Timestamp, _adjustments.ToArray());
+                session.Frames.FirstOrDefault()?.Timestamp, _adjustments.ToArray(), session.SceneVersion);
             _previewScanner = false;
             _captureTask = CaptureAsync(request, ++_runId, _captureCancellation.Token);
             AddEvent(resume ? "Сканирование продолжено с сохранённого кадра" : "Начат новый поток измерений");
@@ -433,7 +459,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         StopCapture();
         if (_dataset is not null)
             Assign(new(_dataset.Scene, new() { ScenarioId = _dataset.Session.ScenarioId,
-                Settings = _dataset.Session.Settings, Frames = [] }), 0);
+                SceneVersion = _dataset.Session.SceneVersion, Settings = _dataset.Session.Settings, Frames = [] }), 0);
         Status = "Готово к сканированию";
         _sessionPath = null;
         HasUnsavedChanges = false;
@@ -504,9 +530,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Release previous display buffers, including the currently hidden mode.
         Cloud = null;
         Surface = null;
+        FloorSurface = null;
+        DampSurface = null;
         _dataset = dataset;
         _adjustments = dataset.Session.Adjustments.ToList();
-        _map = new(dataset.Session.ScenarioId, dataset.Session.Settings);
+        _map = new(dataset.Session.ScenarioId, dataset.Session.Settings, dataset.Session.SceneVersion);
         _geometry = new SceneGeometry(dataset.Scene);
         _pointOffsets = new int[dataset.Session.Settings.FrameCount];
         var total = 0;
@@ -572,7 +600,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var clock = Stopwatch.StartNew();
         var coverage = VisibleCoverage;
         if (!IsSurface) Cloud = _geometry.Cloud(_viewFrames == 0 ? 0 : _pointOffsets[_viewFrames - 1], CutRoof, PointQuality.PointLimit);
-        else Surface = _geometry.Surface(coverage, CutRoof && !IsWalking, IsHeight);
+        else if (IsHeight)
+        {
+            Surface = _geometry.Surface(coverage, CutRoof && !IsWalking, true);
+            FloorSurface = null; DampSurface = null;
+        }
+        else
+        {
+            var layers = _geometry.SurfaceLayers(coverage, CutRoof && !IsWalking);
+            Surface = layers.Rock; FloorSurface = layers.Floor; DampSurface = layers.Damp;
+        }
         Route = _geometry.Route(coverage);
         UpdateScanner();
         var markerCoverage = IsWalking ? new[] { WalkCoverage } : coverage;
@@ -657,6 +694,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void NotifyWalking()
     {
         Raise(nameof(IsWalking)); Raise(nameof(IsOverview));
+        Raise(nameof(ShadowCamera)); Raise(nameof(ShadowsVisible));
         Raise(nameof(GridVisible)); Raise(nameof(RouteVisible)); Raise(nameof(MarkersVisible)); Raise(nameof(ScannerVisible));
         Raise(nameof(ControlsHint)); Raise(nameof(WalkPromptVisible));
         Raise(nameof(CanRepositionScanner)); Raise(nameof(ScannerControlHint));
@@ -667,6 +705,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Camera.Position = new(p.X, p.Y, p.Z);
         Camera.LookDirection = new(d.X, d.Y, d.Z);
         Camera.UpDirection = new(0, 0, 1);
+        var right = Vector3.Normalize(Vector3.Cross(d, Vector3.UnitZ));
+        var lamp = p + right * .18f + Vector3.UnitZ * -.08f;
+        LampCamera.Position = new(lamp.X, lamp.Y, lamp.Z);
+        LampCamera.LookDirection = new(d.X, d.Y, d.Z);
         CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
     }
     private void FollowCamera()
@@ -715,7 +757,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             var session = await _storage.LoadAsync(path);
             var scenario = Scenarios.First(s => s.Id == session.ScenarioId);
-            var scene = await Task.Run(() => CaveFactory.Create(scenario));
+            var scene = await Task.Run(() => CaveFactory.Create(scenario, session.SceneVersion));
             if (_disposed) return;
             SelectedScenario = scenario;
             _loadingSettings = true;
