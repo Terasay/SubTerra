@@ -80,7 +80,7 @@ internal static class Program
         var limited = Measure(prefixes.Length, i => geometry.Cloud(prefixes[i], false, 60_000), cancellationToken);
         var surface = Measure(prefixes.Length, i => geometry.SurfaceLayers(
             [new(settings.StartProgress, data.Session.Frames[i].Progress)], true), cancellationToken);
-        var growing = new SceneGeometry(data.Scene);
+        var growing = new SceneGeometry(data.Scene!);
         var streaming = Measure(prefixes.Length, i =>
         {
             growing.AppendFrame(data.Session.Frames[i]);

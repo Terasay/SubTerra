@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
+using System.Numerics;
 using System.Text;
 using SubTerra.Models;
 
@@ -21,7 +22,7 @@ public sealed class ScanImporter
         else if (new[] { ".asc", ".xyz", ".txt" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
             ReadText(file, builder, options, token, progress);
         else throw new InvalidDataException("Поддерживаются PLY, ASC, XYZ и TXT. Экспортируйте скан из 3DeVOK Studio в ASC или PLY.");
-        var scan = builder.Build();
+        var scan = builder.Build(token);
         scan.Validate(token);
         progress?.Report(100);
         return scan;
@@ -122,18 +123,21 @@ public sealed class ScanImporter
                         if (length < 0 || length > 4096 || length != Math.Truncate(length)) throw new InvalidDataException("Недопустимая длина списка PLY.");
                         var face = element.Name == "face" && property.Name is "vertex_indices" or "vertex_index";
                         if (face && !PlyBody.IsIntegerType(property.Type)) throw new InvalidDataException("Индексы PLY должны быть целыми.");
-                        int first = 0, previous = 0;
+                        var polygon = face ? new int[(int)length] : null;
                         for (var j = 0; j < (int)length; j++)
                         {
                             var value = body.Read(property.Type);
                             if (!face) continue;
                             if (value < 0 || value >= vertex.Count || value != Math.Truncate(value)) throw new InvalidDataException("Неверный индекс вершины PLY.");
-                            var index = (int)value;
-                            if (j == 0) first = index;
-                            else if (j > 1) builder.AddTriangle(first, previous, index);
-                            previous = index;
+                            polygon![j] = (int)value;
                         }
-                        if (face) { hasFaceList = true; if (length < 3) throw new InvalidDataException("Грань PLY содержит меньше трёх вершин."); }
+                        if (face)
+                        {
+                            hasFaceList = true;
+                            if (length < 3) throw new InvalidDataException("Грань PLY содержит меньше трёх вершин.");
+                            if (length == 3) builder.AddTriangle(polygon![0], polygon[1], polygon[2]);
+                            else builder.AddPolygon(polygon!);
+                        }
                     }
                     else
                     {
@@ -182,6 +186,8 @@ public sealed class ScanImporter
         private readonly List<ScanPoint> _points = [];
         private readonly List<uint> _colors = [];
         private readonly List<int> _triangles = [];
+        private readonly List<int[]> _polygons = [];
+        private int _pendingTriangles;
         private double _ox, _oy, _oz;
         private bool _hasColor;
         public void Add(double x, double y, double z, double intensity, uint? color)
@@ -199,11 +205,73 @@ public sealed class ScanImporter
         }
         public void AddTriangle(int a, int b, int c)
         {
-            if (_triangles.Count / 3 >= ImportedScan.MaximumTriangles) throw new InvalidDataException("Лимит импорта — 5 млн треугольников. Упростите сетку в 3DeVOK Studio.");
+            if (_triangles.Count / 3 + _pendingTriangles >= ImportedScan.MaximumTriangles) throw new InvalidDataException("Лимит импорта — 5 млн треугольников. Упростите сетку в 3DeVOK Studio.");
             _triangles.Add(a); _triangles.Add(b); _triangles.Add(c);
         }
-        public ImportedScan Build() => new() { Metadata = new(Path.GetFileName(path), options.Unit, options.UpAxis, _ox, _oy, _oz),
-            Points = _points.ToArray(), Colors = _hasColor ? _colors.ToArray() : [], Triangles = _triangles.ToArray() };
+        public void AddPolygon(int[] polygon)
+        {
+            if ((long)_triangles.Count / 3 + _pendingTriangles + polygon.Length - 2 > ImportedScan.MaximumTriangles)
+                throw new InvalidDataException("Лимит импорта — 5 млн треугольников. Упростите сетку в 3DeVOK Studio.");
+            _pendingTriangles += polygon.Length - 2;
+            _polygons.Add(polygon);
+        }
+        public ImportedScan Build(CancellationToken token)
+        {
+            foreach (var polygon in _polygons)
+            {
+                token.ThrowIfCancellationRequested();
+                _pendingTriangles -= polygon.Length - 2;
+                Triangulate(polygon, token);
+            }
+            return new() { Metadata = new(Path.GetFileName(path), options.Unit, options.UpAxis, _ox, _oy, _oz),
+                Points = _points.ToArray(), Colors = _hasColor ? _colors.ToArray() : [], Triangles = _triangles.ToArray() };
+        }
+        private void Triangulate(int[] polygon, CancellationToken token)
+        {
+            var normal = Vector3.Zero;
+            var origin = _points[polygon[0]].Position;
+            for (var i = 0; i < polygon.Length; i++) normal += Vector3.Cross(_points[polygon[i]].Position - origin, _points[polygon[(i + 1) % polygon.Length]].Position - origin);
+            var axis = Math.Abs(normal.X) >= Math.Abs(normal.Y) && Math.Abs(normal.X) >= Math.Abs(normal.Z) ? 0 : Math.Abs(normal.Y) >= Math.Abs(normal.Z) ? 1 : 2;
+            var projected = polygon.Select(index =>
+            {
+                var p = _points[index].Position - origin;
+                return axis switch { 0 => new Vector2(p.Y, p.Z), 1 => new Vector2(p.X, p.Z), _ => new Vector2(p.X, p.Y) };
+            }).ToArray();
+            var extent = projected.Max(p => Math.Max(Math.Abs(p.X), Math.Abs(p.Y)));
+            if (extent <= 0) throw new InvalidDataException("Вырожденная грань PLY.");
+            for (var i = 0; i < projected.Length; i++) projected[i] /= extent;
+            static double Cross(Vector2 a, Vector2 b, Vector2 c) => ((double)b.X - a.X) * (c.Y - a.Y) - ((double)b.Y - a.Y) * (c.X - a.X);
+            double area = 0;
+            for (var i = 0; i < projected.Length; i++) area += Cross(Vector2.Zero, projected[i], projected[(i + 1) % projected.Length]);
+            if (Math.Abs(area) < 1e-10) throw new InvalidDataException("Вырожденная грань PLY.");
+            var sign = Math.Sign(area);
+            if (Enumerable.Range(0, polygon.Length).All(i => Cross(projected[i], projected[(i + 1) % polygon.Length], projected[(i + 2) % polygon.Length]) * sign > 1e-10))
+            {
+                for (var i = 2; i < polygon.Length; i++) AddTriangle(polygon[0], polygon[i - 1], polygon[i]);
+                return;
+            }
+            var remaining = Enumerable.Range(0, polygon.Length).ToList();
+            while (remaining.Count > 3)
+            {
+                token.ThrowIfCancellationRequested();
+                var removed = false;
+                for (var i = 0; i < remaining.Count; i++)
+                {
+                    var a = remaining[(i + remaining.Count - 1) % remaining.Count];
+                    var b = remaining[i]; var c = remaining[(i + 1) % remaining.Count];
+                    var turn = Cross(projected[a], projected[b], projected[c]) * sign;
+                    if (Math.Abs(turn) < 1e-10) { remaining.RemoveAt(i); removed = true; break; }
+                    if (turn < 0) continue;
+                    if (remaining.Any(p => p != a && p != b && p != c &&
+                        Cross(projected[a], projected[b], projected[p]) * sign >= -1e-10 &&
+                        Cross(projected[b], projected[c], projected[p]) * sign >= -1e-10 &&
+                        Cross(projected[c], projected[a], projected[p]) * sign >= -1e-10)) continue;
+                    AddTriangle(polygon[a], polygon[b], polygon[c]); remaining.RemoveAt(i); removed = true; break;
+                }
+                if (!removed) throw new InvalidDataException("Не удалось разбить грань PLY. Экспортируйте треугольную сетку из Studio.");
+            }
+            AddTriangle(polygon[remaining[0]], polygon[remaining[1]], polygon[remaining[2]]);
+        }
     }
 
     private sealed class PlyBody : IDisposable

@@ -17,6 +17,7 @@ public sealed class ImportedGeometry(ImportedScan scan)
         new(.56f, .91f, .27f), new(.92f, .87f, .22f), new(.97f, .55f, .18f)];
     public PointGeometry3D Cloud(int limit, PointClipPlane? clip, bool height = false)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         var key = (limit, clip, height);
         if (_clouds.TryGetValue(key, out var cached)) return cached;
         // Count and sample in two passes; clipping never creates an array of millions of indices.

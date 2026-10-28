@@ -92,7 +92,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _access.AccessChanged += AccessChanged;
         PauseCommand = new RelayCommand(Pause, () => IsAdministrator && IsRunning && CanInteract);
         StopCommand = new RelayCommand(Stop, () => IsAdministrator && CanInteract && (IsRunning || CanResume));
-        ClearCommand = new AsyncRelayCommand(ClearAsync, () => CanSave, ex => ReportError("Не удалось очистить карту", ex));
+        ClearCommand = new AsyncRelayCommand(ClearAsync, () => CanSave && IsSimulation, ex => ReportError("Не удалось очистить карту", ex));
         ApplyScannerCommand = new AsyncRelayCommand(ApplyScannerAdjustmentAsync, () => CanRepositionScanner,
             ex => ReportError("Не удалось переставить датчик", ex));
         HomeCommand = new RelayCommand(Home);
@@ -513,8 +513,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task ClearAsync()
     {
-        if (!CanSave || !await ConfirmReplacementAsync("очистить карту") || !IsAdministrator) return;
-        if (IsImported) { await LoadDemoAsync(ScenarioDefinition.All[0]); return; }
+        if (IsImported || !CanSave || !await ConfirmReplacementAsync("очистить карту") || !IsAdministrator) return;
         if (IsNavigating) Home();
         StopCapture();
         if (_dataset is not null)
@@ -641,7 +640,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     private void Seek(int count)
     {
-        if (IsBusy || _dataset is null) return;
+        if (IsBusy || _dataset is null || IsImported) return;
         count = Math.Clamp(count, 0, CapturedFrameCount);
         if (_viewFrames == count) return;
         if (IsNavigating) ReturnToOverview();
@@ -784,6 +783,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CameraLabel = "Прогулка · высота глаз 1,65 м";
         RefreshGeometry();
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
+        Raise(nameof(IsSurfaceMode)); Raise(nameof(IsPointMode));
         NotifyWalking();
     }
     private void Fly()

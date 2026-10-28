@@ -90,6 +90,39 @@ public sealed class ScanImportTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ConcavePlyFacesDoNotFillTheOpenPartOfAShape(bool reverse)
+    {
+        using var files = new Files();
+        var vertices = "0 0 0\n3 0 0\n3 3 0\n2 3 0\n2 1 0\n1 1 0\n1 3 0\n0 3 0\n";
+        var indices = reverse ? "7 6 5 4 3 2 1 0" : "0 1 2 3 4 5 6 7";
+        var content = "ply\nformat ascii 1.0\nelement vertex 8\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n" + vertices + "8 " + indices;
+        var scan = await new ScanImporter().ImportAsync(files.Write("concave.ply", content), new(ScanUnit.Meters));
+        Assert.Equal(18, scan.Triangles.Length);
+        double area = 0;
+        for (var i = 0; i < scan.Triangles.Length; i += 3)
+        {
+            var a = scan.Points[scan.Triangles[i]].Position; var b = scan.Points[scan.Triangles[i + 1]].Position; var c = scan.Points[scan.Triangles[i + 2]].Position;
+            var cross = Vector3.Cross(b - a, c - a);
+            Assert.Equal(reverse ? -1 : 1, Math.Sign(cross.Z));
+            area += cross.Length() * .5;
+        }
+        Assert.Equal(7, area, 6);
+    }
+
+    [Fact]
+    public async Task ShippedExamplesHaveTheDocumentedSizeColorsAndTopology()
+    {
+        var importer = new ScanImporter();
+        var mesh = await importer.ImportAsync(Path.Combine(AppContext.BaseDirectory, "ScanExamples", "block-100x60x40-mm.ply"), new());
+        var cloud = await importer.ImportAsync(Path.Combine(AppContext.BaseDirectory, "ScanExamples", "points-with-normals-and-rgb.asc"), new(TextLayout: TextPointLayout.XyzNormalRgb));
+        Assert.Equal(new Vector3(.1f, .06f, .04f), mesh.Bounds.Maximum - mesh.Bounds.Minimum);
+        Assert.Equal(8, mesh.Points.Length); Assert.Equal(36, mesh.Triangles.Length); Assert.Equal(8, mesh.Colors.Length);
+        Assert.Equal(mesh.Points, cloud.Points); Assert.Equal(8, cloud.Colors.Length); Assert.Empty(cloud.Triangles);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task BinaryPlySupportsBothByteOrdersAndDoubleCoordinates(bool bigEndian)
     {
         using var files = new Files();
@@ -196,6 +229,31 @@ public sealed class ScanImportTests
         Assert.Same(full, geometry.Cloud(500, null));
         Assert.Equal(10000, scan.Points.Length);
         Assert.Empty(geometry.Cloud(500, new(Vector3.UnitZ, -1)).Positions!);
+    }
+
+    [Fact]
+    public async Task MillionPointImportAndSessionAreIndependentOfSimulationFrameLimits()
+    {
+        using var files = new Files();
+        const int count = 1_000_000;
+        var path = Path.Combine(files.Directory, "million.ply");
+        using (var stream = File.Create(path))
+        {
+            stream.Write(Encoding.ASCII.GetBytes($"ply\nformat binary_little_endian 1.0\nelement vertex {count}\nproperty float x\nproperty float y\nproperty float z\nend_header\n"));
+            using var writer = new BinaryWriter(stream);
+            for (var i = 0; i < count; i++) { writer.Write((float)i); writer.Write(0f); writer.Write(2000f); }
+        }
+        var scan = await new ScanImporter().ImportAsync(path, new());
+        Assert.Equal(count, scan.Points.Length);
+        Assert.InRange(scan.Points[^1].X, 999.998f, 1000);
+        Assert.Equal(60_000, new ImportedGeometry(scan).Cloud(60_000, null).Positions!.Count);
+        var saved = Path.Combine(files.Directory, "million.subterra");
+        var storage = new SessionStorage();
+        await storage.SaveAsync(saved, scan.ToSession(), 1);
+        var restored = await storage.LoadAsync(saved);
+        Assert.Empty(restored.Frames);
+        Assert.Equal(count, restored.PointCount);
+        Assert.Equal(scan.Points[^1], restored.ImportedScan!.Points[^1]);
     }
 
     [Fact]
