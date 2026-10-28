@@ -30,10 +30,28 @@ public sealed partial class MainViewModel
     public bool HasUnsavedChanges
     {
         get => _hasUnsavedChanges;
-        private set { if (Set(ref _hasUnsavedChanges, value)) Raise(nameof(SessionSaveLabel)); }
+        private set { if (Set(ref _hasUnsavedChanges, value)) NotifySessionProperties(); }
     }
     public string SessionSaveLabel => HasUnsavedChanges ? "● Есть несохранённые изменения" :
         _sessionPath is null ? "Демонстрационная карта" : "Сохранено · " + Path.GetFileName(_sessionPath);
+    public string SessionTitle => _sessionPath is not null ? Path.GetFileName(_sessionPath) :
+        HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
+    public string SaveStateText => HasUnsavedChanges ? "● Не сохранено" : _sessionPath is not null ? "Сохранено" : "Без изменений";
+    public string SessionStateText => IsBusy ? "Обработка" : IsRunning ? "Запись" : IsReviewing ? "История" :
+        _dataset is null || _capturedFrames == 0 ? "Готово" : _capturedFrames < _dataset.Session.Settings.FrameCount ? "Пауза" :
+        _sessionPath is null && !HasUnsavedChanges ? "Демо" : "Просмотр";
+    private void NotifySessionProperties()
+    {
+        Raise(nameof(SessionSaveLabel)); Raise(nameof(SessionTitle)); Raise(nameof(SaveStateText)); Raise(nameof(SessionStateText));
+    }
+
+    public async Task<bool> SaveCurrentAsync(bool saveAs = false)
+    {
+        if (!CanSave) return false;
+        Pause();
+        var path = (!saveAs ? _sessionPath : null) ?? await _interaction.ChooseSavePathAsync();
+        return path is not null && await SaveAsync(path);
+    }
 
     private void AccessChanged(object? sender, EventArgs e)
     {

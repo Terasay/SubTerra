@@ -41,6 +41,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isSurface = true;
     private bool _isHeight;
     private bool _isWalking;
+    private bool _isFlying;
+    private float _flightSpeed = 6;
     private bool _mouseCaptured;
     private float _walkTargetProgress;
     private bool _showGrid = true;
@@ -50,6 +52,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _followScanner;
     private bool _isPresentationMode;
     private bool _isInspectorOpen;
+    private bool _isSidebarOpen = true;
     private bool _showShadows = true;
     private double _range = 20;
     private double _speed = 1;
@@ -92,6 +95,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         HomeCommand = new RelayCommand(Home);
         TopCommand = new RelayCommand(Top);
         InsideCommand = new RelayCommand(Inside, () => CanWalk);
+        FlyCommand = new RelayCommand(Fly, () => CanFly);
+        ExploreCommand = new RelayCommand(() => { if (IsPoints) Fly(); else Inside(); }, () => IsPoints ? CanFly : CanWalk);
+        NavigateMarkerCommand = new RelayCommand<SceneMarker>(NavigateToMarker, marker => CanInteract && VisibleMarkers.Contains(marker));
         PointsCommand = new RelayCommand(() => SetView(false, false));
         SurfaceCommand = new RelayCommand(() => SetView(true, false));
         HeightCommand = new RelayCommand(() => SetView(true, true));
@@ -150,6 +156,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public RelayCommand HomeCommand { get; }
     public RelayCommand TopCommand { get; }
     public RelayCommand InsideCommand { get; }
+    public RelayCommand FlyCommand { get; }
+    public RelayCommand ExploreCommand { get; }
+    public RelayCommand<SceneMarker> NavigateMarkerCommand { get; }
     public RelayCommand PointsCommand { get; }
     public RelayCommand SurfaceCommand { get; }
     public RelayCommand HeightCommand { get; }
@@ -186,8 +195,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private PhongMaterial? _sediment;
     private PhongMaterial? _dampLimestone;
     public bool IsWalking => _isWalking;
+    public bool IsFlying => _isFlying;
+    public bool IsNavigating => IsWalking || IsFlying;
     public bool CanWalk => CanInteract && _viewFrames > 0 && WalkCoverage.End - WalkCoverage.Start >= .06f;
-    public bool IsOverview => !IsWalking;
+    public bool CanFly => CanInteract && IsPoints && _viewFrames > 0;
+    public bool IsOverview => !IsNavigating;
+    public string ExploreText => IsPoints ? "Свободный полёт" : "Прогулка внутри";
+    public string NavigationTitle => IsFlying ? "Свободный полёт" : "Прогулка по пещере";
+    public string NavigationSpeedText => $"{_flightSpeed:F1} м/с · колесо меняет скорость";
     public bool GridVisible => ShowGrid && !IsWalking;
     public bool RouteVisible => ShowRoute && !IsWalking;
     public bool MarkersVisible => ShowMarkers && !IsWalking;
@@ -197,13 +212,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         get => _mouseCaptured;
         set { if (Set(ref _mouseCaptured, value)) { Raise(nameof(WalkPromptVisible)); Raise(nameof(ControlsHint)); } }
     }
-    public bool WalkPromptVisible => IsWalking && !MouseCaptured;
-    public string WalkPrompt => "Нажмите на сцену, чтобы начать прогулку";
+    public bool WalkPromptVisible => IsNavigating && !MouseCaptured;
+    public string WalkPrompt => IsFlying ? "Щёлкните по сцене для полёта · Q / E — вниз / вверх" : "Щёлкните по сцене, чтобы идти · мышь — осмотр";
     public float WalkTargetProgress => _walkTargetProgress;
-    public string ControlsHint => IsWalking
-        ? "WASD / стрелки — идти   ·   Мышь — осмотр   ·   Shift — быстрее   ·   Tab — курсор   ·   Esc — выйти"
-        : "ЛКМ — вращение   ·   ПКМ — перемещение   ·   Колесо — масштаб   ·   Home — общий вид";
+    public string ControlsHint => IsFlying
+        ? "WASD — полёт · Q / E — вниз / вверх · Shift — быстрее · колесо — скорость · Tab — курсор · Esc — обзор"
+        : IsWalking ? "WASD — идти · мышь — осмотр · Shift — быстрее · Tab — курсор · Esc — обзор"
+        : "ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб · Home — общий вид";
     public WalkNavigator CreateNavigator() => new(_dataset!.Scene, WalkCoverage.End, WalkCoverage.Start);
+    public FlyNavigator CreateFlyNavigator() => new(SelectedScenario.Id,
+        new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
+        new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), _flightSpeed);
     public bool IsSurface
     {
         get => _isSurface;
@@ -211,15 +230,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             if (!Set(ref _isSurface, value)) return;
             Raise(nameof(IsPoints)); Raise(nameof(IsCave)); Raise(nameof(RenderLabel)); Raise(nameof(ShadowsVisible));
+            Raise(nameof(ExploreText)); Raise(nameof(CanFly));
         }
     }
     private void SetView(bool surface, bool height)
     {
-        if (IsWalking) Home();
+        if (IsNavigating) Home();
         _isHeight = height;
         IsSurface = surface;
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
         Raise(nameof(ShadowsVisible));
+        Raise(nameof(ExploreText));
+        Raise(nameof(CanFly));
         RefreshGeometry();
     }
     public string RenderLabel => IsPoints ? "ОБЛАКО ТОЧЕК" : IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
@@ -230,10 +252,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool FollowScanner { get => _followScanner; set => Set(ref _followScanner, value); }
     public bool IsPresentationMode { get => _isPresentationMode; set => Set(ref _isPresentationMode, value); }
     public bool IsInspectorOpen { get => _isInspectorOpen; set => Set(ref _isInspectorOpen, value); }
+    public bool IsSidebarOpen { get => _isSidebarOpen; set => Set(ref _isSidebarOpen, value); }
     public double Range
     {
         get => _range;
-        set { if ((_loadingSettings || CanEditSettings) && double.IsFinite(value) && Set(ref _range, value)) SettingsChanged(); }
+        set { if ((_loadingSettings || CanEditSettings) && double.IsFinite(value) && Set(ref _range, Math.Clamp(value, 1, 100))) SettingsChanged(); }
     }
     public double Speed
     {
@@ -282,7 +305,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         UpdateScanner();
         CommandManager.InvalidateRequerySuggested();
     }
-    public double BusyProgress { get => _busyProgress; private set => Set(ref _busyProgress, value); }
+    public double BusyProgress
+    {
+        get => _busyProgress;
+        private set { if (Set(ref _busyProgress, value)) Raise(nameof(BusyIsIndeterminate)); }
+    }
+    public bool BusyIsIndeterminate => BusyProgress <= 0;
     public string Status { get => _status; private set => Set(ref _status, value); }
     public string Notification
     {
@@ -296,17 +324,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         get => _selectedMarker;
         set
         {
-            if (!Set(ref _selectedMarker, value) || value is null) return;
-            if (IsWalking)
-            {
-                _walkTargetProgress = value.Progress;
-                Raise(nameof(WalkTargetProgress));
-                return;
-            }
-            FollowScanner = false;
-            var p = value.Position;
-            MoveCamera(p + new Vector3(12, -15, 10), p, "Метка сцены");
+            Set(ref _selectedMarker, value);
+            if (value is not null) NavigateToMarker(value);
         }
+    }
+    private void NavigateToMarker(SceneMarker marker)
+    {
+        if (!CanInteract || !VisibleMarkers.Contains(marker)) return;
+        if (IsNavigating)
+        {
+            _walkTargetProgress = marker.Progress;
+            Raise(nameof(WalkTargetProgress));
+            return;
+        }
+        FollowScanner = false;
+        MoveCamera(marker.Position + new Vector3(12, -15, 10), marker.Position, marker.Title);
     }
     public PointGeometry3D? Cloud { get => _cloud; private set => Set(ref _cloud, value); }
     public PointGeometry3D? Scanner { get => _scanner; private set => Set(ref _scanner, value); }
@@ -320,6 +352,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private float RouteProgress => _dataset is null || _viewFrames == 0 ? SessionStart :
         ScannerPlan.PositionAt(_dataset.Session.Settings, _adjustments, _viewFrames - 1);
     public double Progress => _dataset is null ? 0 : _viewFrames * 100d / _dataset.Session.Settings.FrameCount;
+    public double CaptureProgress => _dataset is null ? 0 : CapturedFrameCount * 100d / _dataset.Session.Settings.FrameCount;
+    public double CoveragePercent => Math.Clamp(VisibleCoverage.Sum(range => (double)range.End - range.Start) * 100, 0, 100);
     public string PointCountText => (_viewFrames == 0 ? 0 : _pointOffsets[_viewFrames - 1]).ToString("N0");
     public string DistanceText => $"{(_dataset?.Scene.LengthMeters ?? 0) * VisibleCoverage.Sum(r => r.End - r.Start):F1}";
     public string DurationText => FormatDuration(_viewFrames);
@@ -376,7 +410,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Assign(dataset, dataset.Session.Frames.Length);
             _sessionPath = null;
             HasUnsavedChanges = false;
-            Raise(nameof(SessionSaveLabel));
+            NotifySessionProperties();
             Status = "Демонстрационная карта готова";
             Home();
             AddEvent("Виртуальная пещера построена");
@@ -390,11 +424,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task StartAsync()
     {
         if (_disposed || !CanStart) return;
-        if (IsWalking) Home();
+        if (IsNavigating) Home();
         var resume = CanResume;
         if (!resume && !await ConfirmReplacementAsync("начать новый проход")) return;
         if (!IsAdministrator) return;
         IsBusy = true;
+        BusyProgress = 0;
         Notification = "";
         Status = resume ? "Подготовка продолжения прохода" : "Подготовка виртуального датчика";
         try
@@ -412,7 +447,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 Assign(new(scene, new() { ScenarioId = scenario.Id, Settings = settings, Frames = [] }), 0);
                 _sessionPath = null;
                 HasUnsavedChanges = false;
-                Raise(nameof(SessionSaveLabel));
+                NotifySessionProperties();
             }
             _viewFrames = _capturedFrames;
             NotifyView();
@@ -455,7 +490,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task ClearAsync()
     {
         if (!CanSave || !await ConfirmReplacementAsync("очистить карту") || !IsAdministrator) return;
-        if (IsWalking) Home();
+        if (IsNavigating) Home();
         StopCapture();
         if (_dataset is not null)
             Assign(new(_dataset.Scene, new() { ScenarioId = _dataset.Session.ScenarioId,
@@ -463,7 +498,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Status = "Готово к сканированию";
         _sessionPath = null;
         HasUnsavedChanges = false;
-        Raise(nameof(SessionSaveLabel));
+        NotifySessionProperties();
         AddEvent("Карта очищена");
     }
 
@@ -569,7 +604,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (IsBusy || _dataset is null) return;
         count = Math.Clamp(count, 0, CapturedFrameCount);
         if (_viewFrames == count) return;
-        if (IsWalking) Home();
+        if (IsNavigating) Home();
         Pause();
         _viewFrames = count;
         NotifyView();
@@ -579,6 +614,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         RefreshGeometry();
         Raise(nameof(Progress)); Raise(nameof(PointCountText)); Raise(nameof(DistanceText));
+        Raise(nameof(CoveragePercent));
+        Raise(nameof(CaptureProgress));
         Raise(nameof(DurationText)); Raise(nameof(PlaybackFrame)); Raise(nameof(TimelineText));
         Raise(nameof(IsReviewing)); Raise(nameof(ViewStateText));
         NotifyState();
@@ -590,6 +627,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(IsEmpty)); Raise(nameof(StartText));
         Raise(nameof(EmptyTitle)); Raise(nameof(EmptyHint));
         Raise(nameof(CanWalk));
+        Raise(nameof(CanFly));
+        Raise(nameof(SessionStateText));
         Raise(nameof(ViewStateText));
         UpdateScanner();
         CommandManager.InvalidateRequerySuggested();
@@ -672,6 +711,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void Inside()
     {
         if (!CanWalk) return;
+        ExitWalking();
         Pause();
         FollowScanner = false;
         _isHeight = false;
@@ -683,33 +723,53 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
         NotifyWalking();
     }
+    private void Fly()
+    {
+        if (!CanFly) return;
+        ExitWalking();
+        Pause();
+        FollowScanner = false;
+        _isFlying = true;
+        Camera.FieldOfView = 72;
+        NotifyWalking();
+    }
     private void ExitWalking()
     {
-        if (!_isWalking) return;
+        if (!IsNavigating) return;
         _isWalking = false;
+        _isFlying = false;
         Camera.FieldOfView = 47;
         NotifyWalking();
         RefreshGeometry();
     }
     private void NotifyWalking()
     {
-        Raise(nameof(IsWalking)); Raise(nameof(IsOverview));
+        Raise(nameof(IsWalking)); Raise(nameof(IsFlying)); Raise(nameof(IsNavigating)); Raise(nameof(IsOverview));
+        Raise(nameof(NavigationTitle)); Raise(nameof(NavigationSpeedText)); Raise(nameof(WalkPrompt));
         Raise(nameof(ShadowCamera)); Raise(nameof(ShadowsVisible));
         Raise(nameof(GridVisible)); Raise(nameof(RouteVisible)); Raise(nameof(MarkersVisible)); Raise(nameof(ScannerVisible));
         Raise(nameof(ControlsHint)); Raise(nameof(WalkPromptVisible));
         Raise(nameof(CanRepositionScanner)); Raise(nameof(ScannerControlHint));
     }
-    public void UpdateWalkPosition(WalkNavigator navigator)
+    public void UpdateWalkPosition(ICameraNavigator navigator)
     {
         var p = navigator.Position; var d = navigator.Forward;
         Camera.Position = new(p.X, p.Y, p.Z);
         Camera.LookDirection = new(d.X, d.Y, d.Z);
         Camera.UpDirection = new(0, 0, 1);
-        var right = Vector3.Normalize(Vector3.Cross(d, Vector3.UnitZ));
-        var lamp = p + right * .18f + Vector3.UnitZ * -.08f;
-        LampCamera.Position = new(lamp.X, lamp.Y, lamp.Z);
-        LampCamera.LookDirection = new(d.X, d.Y, d.Z);
-        CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
+        if (navigator is WalkNavigator)
+        {
+            var right = Vector3.Normalize(Vector3.Cross(d, Vector3.UnitZ));
+            var lamp = p + right * .18f + Vector3.UnitZ * -.08f;
+            LampCamera.Position = new(lamp.X, lamp.Y, lamp.Z);
+            LampCamera.LookDirection = new(d.X, d.Y, d.Z);
+        }
+        if (navigator is FlyNavigator flight)
+        {
+            if (_flightSpeed != flight.Speed) { _flightSpeed = flight.Speed; Raise(nameof(NavigationSpeedText)); }
+            CameraLabel = $"Полёт · {navigator.DistanceTravelled:F1} м";
+        }
+        else CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
     }
     private void FollowCamera()
     {
@@ -733,13 +793,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (_dataset is null || !IsAdministrator || IsBusy || _capturedFrames == 0) return false;
         Pause();
         IsBusy = true;
+        BusyProgress = 0;
         Status = "Сохранение сеанса";
         try
         {
             await _storage.SaveAsync(path, _dataset.Session, _capturedFrames);
             _sessionPath = path;
             HasUnsavedChanges = false;
-            Raise(nameof(SessionSaveLabel));
+            NotifySessionProperties();
             Status = "Сеанс сохранён"; AddEvent("Сеанс сохранён");
             return true;
         }
@@ -752,6 +813,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ExitWalking();
         Pause();
         IsBusy = true;
+        BusyProgress = 0;
         Status = "Открытие сеанса";
         try
         {
@@ -769,7 +831,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Assign(new(scene, session), session.Frames.Length);
             _sessionPath = path;
             HasUnsavedChanges = false;
-            Raise(nameof(SessionSaveLabel));
+            NotifySessionProperties();
             Status = "Сохранённый сеанс открыт";
             Notification = ""; Raise(nameof(HasNotification));
             Home();
@@ -783,6 +845,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (_dataset is null || !CanSave) return;
         Pause();
         IsBusy = true;
+        BusyProgress = 0;
         Status = "Экспорт облака точек";
         try
         {

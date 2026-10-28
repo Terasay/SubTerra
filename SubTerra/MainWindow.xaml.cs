@@ -85,11 +85,9 @@ public partial class MainWindow : Window
     }
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (!_viewModel.CanSave) return;
-        _viewModel.Pause();
-        var path = await _interaction.ChooseSavePathAsync();
-        if (path is not null) await _viewModel.SaveAsync(path);
+        await _viewModel.SaveCurrentAsync();
     }
+    private async void SaveAs_Click(object sender, RoutedEventArgs e) => await _viewModel.SaveCurrentAsync(saveAs: true);
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanSave) return;
@@ -99,19 +97,41 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // These shortcuts remain global, including while a slider or numeric field has focus.
+        if (e.Key == Key.F11)
+        {
+            if (!e.IsRepeat) _viewModel.IsPresentationMode = !_viewModel.IsPresentationMode;
+            e.Handled = true; return;
+        }
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.S)
+        {
+            if (!e.IsRepeat) SaveAs_Click(this, new());
+            e.Handled = true; return;
+        }
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.S or Key.O)
+        {
+            if (!e.IsRepeat) { if (e.Key == Key.S) Save_Click(this, new()); else Open_Click(this, new()); }
+            e.Handled = true; return;
+        }
+        if (e.Key == Key.Escape && _viewModel.IsPresentationMode && !_viewModel.IsNavigating)
+        {
+            if (!e.IsRepeat) _viewModel.IsPresentationMode = false;
+            e.Handled = true; return;
+        }
+        if (e.Key == Key.Escape && _viewModel.IsNavigating && Keyboard.FocusedElement is not ComboBox { IsDropDownOpen: true })
+        {
+            if (!e.IsRepeat) _viewModel.Home();
+            e.Handled = true; return;
+        }
         if (!_viewModel.MouseCaptured && (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase
             or PasswordBox or ComboBox or System.Windows.Controls.Primitives.RangeBase)) return;
         if (_walk.HandleKeyDown(e)) { e.Handled = true; return; }
-        if (e.Key == Key.F11) { if (!e.IsRepeat) _viewModel.IsPresentationMode = !_viewModel.IsPresentationMode; e.Handled = true; }
-        else if (e.Key == Key.Escape && _viewModel.IsPresentationMode) { _viewModel.IsPresentationMode = false; e.Handled = true; }
-        else if (e.Key == Key.Home) { _viewModel.Home(); e.Handled = true; }
+        if (e.Key == Key.Home) { if (!e.IsRepeat) _viewModel.Home(); e.Handled = true; }
         else if (e.Key == Key.Space && _viewModel.IsAdministrator && _viewModel.CanInteract)
         {
             e.Handled = true;
             if (!e.IsRepeat) { if (_viewModel.IsRunning) _viewModel.Pause(); else await _viewModel.StartAsync(); }
         }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { if (!e.IsRepeat) Save_Click(this, new()); e.Handled = true; }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O) { if (!e.IsRepeat) Open_Click(this, new()); e.Handled = true; }
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -120,22 +140,50 @@ public partial class MainWindow : Window
             _walk.PlaceAt(_viewModel.WalkTargetProgress);
             return;
         }
-        if (e.PropertyName == nameof(MainViewModel.IsWalking))
+        if (e.PropertyName == nameof(MainViewModel.IsNavigating))
         {
-            try { if (_viewModel.IsWalking) _walk.Start(); else _walk.Stop(); }
-            catch (Exception ex) { _viewModel.Home(); _viewModel.ReportError("Не удалось начать прогулку", ex); }
+            try { if (_viewModel.IsNavigating) _walk.Start(); else _walk.Stop(); }
+            catch (Exception ex) { _viewModel.Home(); _viewModel.ReportError("Не удалось включить навигацию", ex); }
             return;
         }
-        if (e.PropertyName is not (nameof(MainViewModel.IsPresentationMode) or nameof(MainViewModel.IsInspectorOpen))) return;
+        if (e.PropertyName is not (nameof(MainViewModel.IsPresentationMode) or nameof(MainViewModel.IsInspectorOpen) or nameof(MainViewModel.IsSidebarOpen))) return;
+        if (ActualWidth < 1200)
+        {
+            if (e.PropertyName == nameof(MainViewModel.IsInspectorOpen) && _viewModel.IsInspectorOpen) _viewModel.IsSidebarOpen = false;
+            if (e.PropertyName == nameof(MainViewModel.IsSidebarOpen) && _viewModel.IsSidebarOpen) _viewModel.IsInspectorOpen = false;
+        }
+        UpdatePanelLayout();
+        if (e.PropertyName != nameof(MainViewModel.IsPresentationMode)) return;
+        if (_viewModel.IsPresentationMode) { _previousWindowState = WindowState; WindowState = WindowState.Maximized; }
+        else WindowState = _previousWindowState;
+    }
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePanelLayout();
+    private void UpdatePanelLayout()
+    {
+        if (LeftPanel is null || RightPanel is null) return;
         var presentation = _viewModel.IsPresentationMode;
         var inspector = !presentation && _viewModel.IsInspectorOpen;
-        LeftPanel.Visibility = presentation ? Visibility.Collapsed : Visibility.Visible;
+        var sidebar = !presentation && _viewModel.IsSidebarOpen;
+        var floatingLeft = ActualWidth < 1200;
+        var floatingRight = ActualWidth < 1440;
+        LeftPanel.Visibility = sidebar ? Visibility.Visible : Visibility.Collapsed;
         RightPanel.Visibility = inspector ? Visibility.Visible : Visibility.Collapsed;
-        LeftColumn.Width = new GridLength(presentation ? 0 : 248);
-        RightColumn.Width = new GridLength(inspector ? 264 : 0);
-        if (e.PropertyName != nameof(MainViewModel.IsPresentationMode)) return;
-        if (presentation) { _previousWindowState = WindowState; WindowState = WindowState.Maximized; }
-        else WindowState = _previousWindowState;
+        LeftColumn.Width = new GridLength(sidebar && !floatingLeft ? 248 : 0);
+        RightColumn.Width = new GridLength(inspector && !floatingRight ? 288 : 0);
+        Grid.SetColumn(LeftPanel, floatingLeft ? 1 : 0);
+        Grid.SetColumn(RightPanel, floatingRight ? 1 : 2);
+        LeftPanel.Width = floatingLeft ? 232 : double.NaN;
+        RightPanel.Width = floatingRight ? 280 : double.NaN;
+        LeftPanel.HorizontalAlignment = floatingLeft ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        RightPanel.HorizontalAlignment = floatingRight ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+    }
+    private void CloseInspector_Click(object sender, RoutedEventArgs e) => _viewModel.IsInspectorOpen = false;
+    private void CloseSidebar_Click(object sender, RoutedEventArgs e) => _viewModel.IsSidebarOpen = false;
+    private void NumericInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not TextBox input) return;
+        input.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        e.Handled = true;
     }
     private void Viewport_RenderExceptionOccurred(object? sender, RelayExceptionEventArgs e)
     {

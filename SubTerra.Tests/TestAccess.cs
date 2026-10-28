@@ -14,7 +14,8 @@ internal sealed class TestInteraction : ISessionInteraction
     public UnsavedDecision Decision { get; set; } = UnsavedDecision.Discard;
     public string? SavePath { get; set; }
     public int Prompts { get; private set; }
+    public int SavePathPrompts { get; private set; }
     public Task<UnsavedDecision> ConfirmUnsavedAsync(string action, bool canSave)
     { Prompts++; return Task.FromResult(Decision); }
-    public Task<string?> ChooseSavePathAsync() => Task.FromResult(SavePath);
+    public Task<string?> ChooseSavePathAsync() { SavePathPrompts++; return Task.FromResult(SavePath); }
 }

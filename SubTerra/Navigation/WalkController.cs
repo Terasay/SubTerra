@@ -16,7 +16,7 @@ public sealed class WalkController : IDisposable
     private readonly MainViewModel _viewModel;
     private readonly Stopwatch _clock = new();
     private readonly MouseLookInput _mouseLook = new();
-    private WalkNavigator? _navigator;
+    private ICameraNavigator? _navigator;
     private bool _captured;
     private TimeSpan _lastRenderTime;
 
@@ -27,6 +27,7 @@ public sealed class WalkController : IDisposable
         // Walking is owned exclusively by WalkNavigator; overview uses mouse pan.
         _viewport.IsMoveEnabled = false;
         _viewport.PreviewMouseLeftButtonDown += MouseDown;
+        _viewport.PreviewMouseWheel += MouseWheel;
         _viewport.LostMouseCapture += LostCapture;
         _window.Deactivated += Deactivated;
     }
@@ -34,7 +35,7 @@ public sealed class WalkController : IDisposable
     public void Start()
     {
         Stop();
-        _navigator = _viewModel.CreateNavigator();
+        _navigator = _viewModel.IsFlying ? _viewModel.CreateFlyNavigator() : _viewModel.CreateNavigator();
         _viewport.IsRotationEnabled = _viewport.IsPanEnabled = _viewport.IsZoomEnabled = false;
         _viewport.IsChangeFieldOfViewEnabled = false;
         _viewport.IsInertiaEnabled = false;
@@ -79,7 +80,7 @@ public sealed class WalkController : IDisposable
         // With the cursor released, sidebar controls retain their normal keyboard input.
         if (!_captured && !_viewport.IsKeyboardFocusWithin) return false;
         if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right
-            or Key.LeftShift or Key.RightShift)
+            or Key.LeftShift or Key.RightShift or Key.E or Key.C)
         {
             if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0) return false;
             return true;
@@ -92,6 +93,13 @@ public sealed class WalkController : IDisposable
     {
         if (_navigator is null) return;
         CaptureMouse();
+        e.Handled = true;
+    }
+    private void MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_navigator is not FlyNavigator flight || !_captured) return;
+        flight.ChangeSpeed(e.Delta / 120f);
+        _viewModel.UpdateWalkPosition(flight);
         e.Handled = true;
     }
     private void CaptureMouse()
@@ -153,9 +161,10 @@ public sealed class WalkController : IDisposable
         // Poll actual key state: autorepeat and a missed KeyUp must not leave movement stuck.
         var forward = (Down(Key.W, Key.Up) ? 1 : 0) - (Down(Key.S, Key.Down) ? 1 : 0);
         var right = (Down(Key.D, Key.Right) ? 1 : 0) - (Down(Key.A, Key.Left) ? 1 : 0);
+        var up = (Down(Key.E, Key.Space) ? 1 : 0) - (Down(Key.Q, Key.C) || Keyboard.IsKeyDown(Key.Z) ? 1 : 0);
         var previousPosition = _navigator.Position;
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
-            _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift));
+            _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift), up);
         if (delta.LengthSquared() > 0 || _navigator.Position != previousPosition)
             _viewModel.UpdateWalkPosition(_navigator);
     }
@@ -177,6 +186,7 @@ public sealed class WalkController : IDisposable
     {
         Stop();
         _viewport.PreviewMouseLeftButtonDown -= MouseDown;
+        _viewport.PreviewMouseWheel -= MouseWheel;
         _viewport.LostMouseCapture -= LostCapture;
         _window.Deactivated -= Deactivated;
     }

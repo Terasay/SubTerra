@@ -31,6 +31,17 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
 
 public sealed record SessionEvent(string Time, string Message);
 
+public sealed class RelayCommand<T>(Action<T> execute, Func<T, bool>? canExecute = null) : ICommand where T : class
+{
+    public bool CanExecute(object? parameter) => parameter is T value && (canExecute?.Invoke(value) ?? true);
+    public void Execute(object? parameter) { if (parameter is T value && CanExecute(value)) execute(value); }
+    public event EventHandler? CanExecuteChanged
+    {
+        add => CommandManager.RequerySuggested += value;
+        remove => CommandManager.RequerySuggested -= value;
+    }
+}
+
 public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool> canExecute, Action<Exception> onError) : ICommand
 {
     private bool _running;

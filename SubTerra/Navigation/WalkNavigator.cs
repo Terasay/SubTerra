@@ -5,7 +5,7 @@ using SubTerra.Simulation;
 namespace SubTerra.Navigation;
 
 /// <summary>Floor following and wall sliding, independent of WPF and mouse input.</summary>
-public sealed class WalkNavigator
+public sealed class WalkNavigator : ICameraNavigator
 {
     public const float EyeHeight = 1.65f;
     public const float Radius = .28f;
@@ -54,7 +54,7 @@ public sealed class WalkNavigator
         Pitch = Math.Clamp(Pitch + pitchDelta, -1.28f, 1.28f);
     }
 
-    public void Move(float forward, float right, float deltaSeconds, bool fast)
+    public void Move(float forward, float right, float deltaSeconds, bool fast, float up = 0)
     {
         if (!float.IsFinite(deltaSeconds) || deltaSeconds <= 0 ||
             !float.IsFinite(forward) || !float.IsFinite(right) || (forward == 0 && right == 0)) return;
