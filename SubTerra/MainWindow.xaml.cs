@@ -99,18 +99,19 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (!_viewModel.MouseCaptured && (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase
+            or PasswordBox or ComboBox or System.Windows.Controls.Primitives.RangeBase)) return;
         if (_walk.HandleKeyDown(e)) { e.Handled = true; return; }
-        if (e.OriginalSource is TextBox or ComboBox) return;
-        if (e.Key == Key.F11) { _viewModel.IsPresentationMode = !_viewModel.IsPresentationMode; e.Handled = true; }
+        if (e.Key == Key.F11) { if (!e.IsRepeat) _viewModel.IsPresentationMode = !_viewModel.IsPresentationMode; e.Handled = true; }
         else if (e.Key == Key.Escape && _viewModel.IsPresentationMode) { _viewModel.IsPresentationMode = false; e.Handled = true; }
         else if (e.Key == Key.Home) { _viewModel.Home(); e.Handled = true; }
         else if (e.Key == Key.Space && _viewModel.IsAdministrator && _viewModel.CanInteract)
         {
             e.Handled = true;
-            if (_viewModel.IsRunning) _viewModel.Pause(); else await _viewModel.StartAsync();
+            if (!e.IsRepeat) { if (_viewModel.IsRunning) _viewModel.Pause(); else await _viewModel.StartAsync(); }
         }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { Save_Click(this, new()); e.Handled = true; }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O) { Open_Click(this, new()); e.Handled = true; }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { if (!e.IsRepeat) Save_Click(this, new()); e.Handled = true; }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O) { if (!e.IsRepeat) Open_Click(this, new()); e.Handled = true; }
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

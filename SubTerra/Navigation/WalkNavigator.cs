@@ -56,7 +56,8 @@ public sealed class WalkNavigator
 
     public void Move(float forward, float right, float deltaSeconds, bool fast)
     {
-        if (!float.IsFinite(deltaSeconds) || deltaSeconds <= 0) return;
+        if (!float.IsFinite(deltaSeconds) || deltaSeconds <= 0 ||
+            !float.IsFinite(forward) || !float.IsFinite(right) || (forward == 0 && right == 0)) return;
         var direction = new Vector2(MathF.Cos(Yaw), MathF.Sin(Yaw));
         var movement = direction * forward + new Vector2(direction.Y, -direction.X) * right;
         if (movement.LengthSquared() > 1) movement = Vector2.Normalize(movement);
@@ -73,7 +74,8 @@ public sealed class WalkNavigator
         var length = step.Length();
         if (length < 1e-6f) return;
         var direction = step / length;
-        foreach (var z in new[] { -1.12f, -.45f, .08f })
+        ReadOnlySpan<float> heights = [-1.12f, -.45f, .08f];
+        foreach (var z in heights)
         {
             if (_collision.Cast(Position + Vector3.UnitZ * z, direction, length + Radius, out _)) return;
         }

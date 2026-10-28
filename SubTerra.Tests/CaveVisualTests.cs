@@ -9,6 +9,32 @@ namespace SubTerra.Tests;
 public sealed class CaveVisualTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SurfaceVisibilityMatchesSceneAcrossSeekingAndRoofChanges(bool initialCutRoof)
+    {
+        var scene = CaveFactory.Create(ScenarioDefinition.All[0]);
+        var geometry = new SceneGeometry(scene);
+        foreach (var cutRoof in new[] { initialCutRoof, !initialCutRoof, initialCutRoof })
+        foreach (var coverage in new ScanCoverage[][] { [new(0, 1)], [new(.1f, .3f), new(.6f, .8f)], [] })
+        {
+            var expected = new List<int>();
+            for (var i = 0; i < scene.Indices.Length; i += 3)
+            {
+                var vertices = scene.Indices.AsSpan(i, 3);
+                var min = Math.Min(scene.VertexProgress[vertices[0]], Math.Min(scene.VertexProgress[vertices[1]], scene.VertexProgress[vertices[2]]));
+                var max = Math.Max(scene.VertexProgress[vertices[0]], Math.Max(scene.VertexProgress[vertices[1]], scene.VertexProgress[vertices[2]]));
+                if (!coverage.Any(range => min >= range.Start && max <= range.End)) continue;
+                if (cutRoof && (MathF.Sin(scene.VertexAngles[vertices[0]]) > .30f ||
+                                MathF.Sin(scene.VertexAngles[vertices[1]]) > .30f ||
+                                MathF.Sin(scene.VertexAngles[vertices[2]]) > .30f)) continue;
+                expected.AddRange(vertices);
+            }
+            Assert.Equal(expected, geometry.Surface(coverage, cutRoof).Indices);
+        }
+    }
+
+    [Theory]
     [InlineData("aurora")]
     [InlineData("mine")]
     [InlineData("lava")]

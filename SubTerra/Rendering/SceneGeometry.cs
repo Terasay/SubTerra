@@ -26,6 +26,8 @@ public sealed class SceneGeometry
     private readonly Vector2Collection _floorCoordinates;
     private readonly Vector3Collection _floorTangents;
     private readonly Vector3Collection _floorBitangents;
+    private readonly TriangleVisibility[] _triangleVisibility;
+    private readonly record struct TriangleVisibility(float Minimum, float Maximum, bool IsRoof);
     private readonly float _minimum;
     private readonly float _span;
     private static readonly Vector3[] Palette =
@@ -67,6 +69,20 @@ public sealed class SceneGeometry
             return Vector3.Normalize(axis - n * Vector3.Dot(n, axis));
         }));
         _floorBitangents = new(scene.Normals.Select((n, i) => Vector3.Cross(n, _floorTangents[i])));
+        // Scene topology is immutable. Do the per-vertex work once, instead of
+        // recomputing bounds and three sines per triangle on every scan update.
+        _triangleVisibility = new TriangleVisibility[scene.Indices.Length / 3];
+        var roofVertices = scene.VertexAngles.Select(angle => MathF.Sin(angle) > .30f).ToArray();
+        for (var triangle = 0; triangle < _triangleVisibility.Length; triangle++)
+        {
+            var a = scene.Indices[triangle * 3];
+            var b = scene.Indices[triangle * 3 + 1];
+            var c = scene.Indices[triangle * 3 + 2];
+            _triangleVisibility[triangle] = new(
+                Math.Min(scene.VertexProgress[a], Math.Min(scene.VertexProgress[b], scene.VertexProgress[c])),
+                Math.Max(scene.VertexProgress[a], Math.Max(scene.VertexProgress[b], scene.VertexProgress[c])),
+                roofVertices[a] || roofVertices[b] || roofVertices[c]);
+        }
     }
 
     public void AppendFrame(ScanFrame frame)
@@ -134,19 +150,14 @@ public sealed class SceneGeometry
 
     private IEnumerable<int> VisibleTriangles(IReadOnlyList<ScanCoverage> coverage, bool cutRoof)
     {
-        for (var i = 0; i < _scene.Indices.Length; i += 3)
+        for (var triangle = 0; triangle < _triangleVisibility.Length; triangle++)
         {
-            var a = _scene.Indices[i];
-            var b = _scene.Indices[i + 1];
-            var c = _scene.Indices[i + 2];
-            var maximum = Math.Max(_scene.VertexProgress[a], Math.Max(_scene.VertexProgress[b], _scene.VertexProgress[c]));
-            var minimum = Math.Min(_scene.VertexProgress[a], Math.Min(_scene.VertexProgress[b], _scene.VertexProgress[c]));
-            if (!Contains(coverage, minimum, maximum))
+            var visibility = _triangleVisibility[triangle];
+            if (cutRoof && visibility.IsRoof)
                 continue;
-            if (cutRoof && (MathF.Sin(_scene.VertexAngles[a]) > .30f ||
-                            MathF.Sin(_scene.VertexAngles[b]) > .30f || MathF.Sin(_scene.VertexAngles[c]) > .30f))
+            if (!Contains(coverage, visibility.Minimum, visibility.Maximum))
                 continue;
-            yield return i / 3;
+            yield return triangle;
         }
     }
 

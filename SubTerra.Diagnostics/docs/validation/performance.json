@@ -1,0 +1,548 @@
+{
+  "FinishedUtc": "2026-10-27T08:43:40.1338869+00:00",
+  "ElapsedSeconds": 59.2011709,
+  "OperatingSystem": "Microsoft Windows 10.0.26200",
+  "Runtime": ".NET 9.0.22",
+  "Architecture": "X64",
+  "Cpu": "12th Gen Intel(R) Core(TM) i7-12700K",
+  "LogicalProcessors": 20,
+  "GcAvailableMemoryBytes": 34121728000,
+  "Configuration": "Debug",
+  "WarmupPasses": 2,
+  "PointLimit": 60000,
+  "InitialMemory": {
+    "ManagedBytes": 318792,
+    "PrivateBytes": 85504000,
+    "WorkingSetBytes": 106348544
+  },
+  "Passes": [
+    {
+      "Pass": 1,
+      "Scenario": "aurora",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127806,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1661.3961,
+      "ScenePreparationMs": 41.5396,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9777394444444445,
+        "P95Ms": 3.6613,
+        "MaximumMs": 5.414,
+        "AllocatedBytes": 324771400
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9104550000000003,
+        "P95Ms": 1.7775,
+        "MaximumMs": 2.7219,
+        "AllocatedBytes": 152492088
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.224471666666664,
+        "P95Ms": 8.7181,
+        "MaximumMs": 9.6205,
+        "AllocatedBytes": 184118904
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.5601411111111108,
+        "P95Ms": 2.1946,
+        "MaximumMs": 4.1608,
+        "AllocatedBytes": 277220824
+      },
+      "ProcessPeakWorkingSetBytes": 146796544,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 311152,
+        "PrivateBytes": 70770688,
+        "WorkingSetBytes": 94388224
+      }
+    },
+    {
+      "Pass": 2,
+      "Scenario": "mine",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0,
+      "PointCount": 226105,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1994.7321,
+      "ScenePreparationMs": 44.7787,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.4629027777777783,
+        "P95Ms": 6.4827,
+        "MaximumMs": 7.0753,
+        "AllocatedBytes": 573936584
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.960782777777778,
+        "P95Ms": 2.1249,
+        "MaximumMs": 4.1803,
+        "AllocatedBytes": 152361112
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 6.914591666666668,
+        "P95Ms": 8.4138,
+        "MaximumMs": 9.7442,
+        "AllocatedBytes": 167665720
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9135577777777775,
+        "P95Ms": 2.3779,
+        "MaximumMs": 15.6237,
+        "AllocatedBytes": 320424064
+      },
+      "ProcessPeakWorkingSetBytes": 226590720,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 312504,
+        "PrivateBytes": 129077248,
+        "WorkingSetBytes": 152612864
+      }
+    },
+    {
+      "Pass": 3,
+      "Scenario": "lava",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127431,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1703.1527,
+      "ScenePreparationMs": 40.801,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 2.015676111111111,
+        "P95Ms": 3.8063,
+        "MaximumMs": 4.9085,
+        "AllocatedBytes": 323038376
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9333722222222224,
+        "P95Ms": 1.7333,
+        "MaximumMs": 2.5341,
+        "AllocatedBytes": 152136280
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.277053333333335,
+        "P95Ms": 8.808,
+        "MaximumMs": 9.6328,
+        "AllocatedBytes": 185120912
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.5970927777777781,
+        "P95Ms": 2.5808,
+        "MaximumMs": 3.661,
+        "AllocatedBytes": 275873520
+      },
+      "ProcessPeakWorkingSetBytes": 226590720,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 312872,
+        "PrivateBytes": 70119424,
+        "WorkingSetBytes": 94003200
+      }
+    },
+    {
+      "Pass": 4,
+      "Scenario": "aurora",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0.35,
+      "PointCount": 227703,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 2260.6242,
+      "ScenePreparationMs": 48.29,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.6357805555555562,
+        "P95Ms": 6.8662,
+        "MaximumMs": 8.9846,
+        "AllocatedBytes": 584343192
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9657966666666672,
+        "P95Ms": 1.7861,
+        "MaximumMs": 2.8048,
+        "AllocatedBytes": 154030880
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 6.656885000000001,
+        "P95Ms": 8.0792,
+        "MaximumMs": 14.2303,
+        "AllocatedBytes": 127565064
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.8314955555555554,
+        "P95Ms": 2.2723,
+        "MaximumMs": 5.1365,
+        "AllocatedBytes": 322599232
+      },
+      "ProcessPeakWorkingSetBytes": 226590720,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 313248,
+        "PrivateBytes": 70955008,
+        "WorkingSetBytes": 93470720
+      }
+    },
+    {
+      "Pass": 5,
+      "Scenario": "mine",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127155,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1477.1031,
+      "ScenePreparationMs": 40.1685,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 2.1233738888888882,
+        "P95Ms": 3.705,
+        "MaximumMs": 5.27,
+        "AllocatedBytes": 322741792
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.8968949999999999,
+        "P95Ms": 1.7097,
+        "MaximumMs": 2.2092,
+        "AllocatedBytes": 152351624
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 6.994378333333332,
+        "P95Ms": 8.9827,
+        "MaximumMs": 10.7085,
+        "AllocatedBytes": 167667016
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.6207827777777775,
+        "P95Ms": 2.1939,
+        "MaximumMs": 13.0774,
+        "AllocatedBytes": 275609888
+      },
+      "ProcessPeakWorkingSetBytes": 226590720,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 313632,
+        "PrivateBytes": 66260992,
+        "WorkingSetBytes": 89014272
+      }
+    },
+    {
+      "Pass": 6,
+      "Scenario": "lava",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0,
+      "PointCount": 226530,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 2263.7121,
+      "ScenePreparationMs": 48.3239,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.5000127777777785,
+        "P95Ms": 6.8805,
+        "MaximumMs": 8.3553,
+        "AllocatedBytes": 574168400
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9390350000000003,
+        "P95Ms": 1.6836,
+        "MaximumMs": 4.4767,
+        "AllocatedBytes": 152143736
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.37881333333334,
+        "P95Ms": 9.3322,
+        "MaximumMs": 13.2641,
+        "AllocatedBytes": 185111464
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.8108744444444451,
+        "P95Ms": 2.66,
+        "MaximumMs": 4.5955,
+        "AllocatedBytes": 320679400
+      },
+      "ProcessPeakWorkingSetBytes": 240668672,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 322256,
+        "PrivateBytes": 184795136,
+        "WorkingSetBytes": 208474112
+      }
+    },
+    {
+      "Pass": 7,
+      "Scenario": "aurora",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127806,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1655.2169,
+      "ScenePreparationMs": 46.9183,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 2.137488888888889,
+        "P95Ms": 4.2504,
+        "MaximumMs": 8.4563,
+        "AllocatedBytes": 324710936
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 1.0255533333333338,
+        "P95Ms": 1.9618,
+        "MaximumMs": 6.1499,
+        "AllocatedBytes": 152482144
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.463673333333332,
+        "P95Ms": 9.4097,
+        "MaximumMs": 11.0609,
+        "AllocatedBytes": 184117608
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.6662788888888889,
+        "P95Ms": 2.2469,
+        "MaximumMs": 10.8524,
+        "AllocatedBytes": 277208712
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 314408,
+        "PrivateBytes": 89583616,
+        "WorkingSetBytes": 113963008
+      }
+    },
+    {
+      "Pass": 8,
+      "Scenario": "mine",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0.35,
+      "PointCount": 227049,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1987.4143,
+      "ScenePreparationMs": 45.5819,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.7797650000000016,
+        "P95Ms": 7.522,
+        "MaximumMs": 9.9235,
+        "AllocatedBytes": 584432584
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9867161111111113,
+        "P95Ms": 1.767,
+        "MaximumMs": 5.6932,
+        "AllocatedBytes": 154491816
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 6.271589444444445,
+        "P95Ms": 7.4462,
+        "MaximumMs": 9.4406,
+        "AllocatedBytes": 118084872
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9976894444444433,
+        "P95Ms": 3.1013,
+        "MaximumMs": 23.1723,
+        "AllocatedBytes": 322598032
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 314792,
+        "PrivateBytes": 129429504,
+        "WorkingSetBytes": 153747456
+      }
+    },
+    {
+      "Pass": 9,
+      "Scenario": "lava",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127431,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1681.9988,
+      "ScenePreparationMs": 45.1647,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9659005555555558,
+        "P95Ms": 3.765,
+        "MaximumMs": 6.0105,
+        "AllocatedBytes": 323017296
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9263722222222222,
+        "P95Ms": 1.7345,
+        "MaximumMs": 2.6856,
+        "AllocatedBytes": 152127184
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.314103888888893,
+        "P95Ms": 8.986,
+        "MaximumMs": 10.7887,
+        "AllocatedBytes": 185115200
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.5599388888888888,
+        "P95Ms": 2.4585,
+        "MaximumMs": 3.5343,
+        "AllocatedBytes": 275861768
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 315160,
+        "PrivateBytes": 55140352,
+        "WorkingSetBytes": 79605760
+      }
+    },
+    {
+      "Pass": 10,
+      "Scenario": "aurora",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0,
+      "PointCount": 227162,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 2202.4077,
+      "ScenePreparationMs": 48.0174,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.4565205555555565,
+        "P95Ms": 6.5957,
+        "MaximumMs": 9.3958,
+        "AllocatedBytes": 577039192
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9537199999999997,
+        "P95Ms": 1.7321,
+        "MaximumMs": 5.9206,
+        "AllocatedBytes": 152466984
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.2940661111111105,
+        "P95Ms": 8.8557,
+        "MaximumMs": 10.347,
+        "AllocatedBytes": 184117608
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.7542544444444454,
+        "P95Ms": 2.1092,
+        "MaximumMs": 5.1088,
+        "AllocatedBytes": 321965184
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 315600,
+        "PrivateBytes": 130789376,
+        "WorkingSetBytes": 155271168
+      }
+    },
+    {
+      "Pass": 11,
+      "Scenario": "mine",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127155,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 1470.3056,
+      "ScenePreparationMs": 39.4471,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9450111111111104,
+        "P95Ms": 3.634,
+        "MaximumMs": 4.8888,
+        "AllocatedBytes": 322737944
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9009027777777776,
+        "P95Ms": 1.6852,
+        "MaximumMs": 2.1526,
+        "AllocatedBytes": 152321424
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 7.00443944444444,
+        "P95Ms": 8.5923,
+        "MaximumMs": 10.3902,
+        "AllocatedBytes": 167666752
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.654178333333334,
+        "P95Ms": 2.9474,
+        "MaximumMs": 3.9342,
+        "AllocatedBytes": 275618536
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 315984,
+        "PrivateBytes": 88727552,
+        "WorkingSetBytes": 111255552
+      }
+    },
+    {
+      "Pass": 12,
+      "Scenario": "lava",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0.35,
+      "PointCount": 227602,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 2270.7357,
+      "ScenePreparationMs": 45.5528,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 3.5269733333333333,
+        "P95Ms": 6.6426,
+        "MaximumMs": 9.3422,
+        "AllocatedBytes": 584213080
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.9382372222222225,
+        "P95Ms": 1.723,
+        "MaximumMs": 4.7246,
+        "AllocatedBytes": 154072536
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 6.585659444444443,
+        "P95Ms": 7.9161,
+        "MaximumMs": 10.7615,
+        "AllocatedBytes": 126203816
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 1.9141555555555543,
+        "P95Ms": 2.9401,
+        "MaximumMs": 6.7335,
+        "AllocatedBytes": 321490280
+      },
+      "ProcessPeakWorkingSetBytes": 240676864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 316352,
+        "PrivateBytes": 174092288,
+        "WorkingSetBytes": 196534272
+      }
+    }
+  ]
+}

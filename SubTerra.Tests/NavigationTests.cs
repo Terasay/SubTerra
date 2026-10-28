@@ -8,6 +8,22 @@ namespace SubTerra.Tests;
 
 public sealed class NavigationTests
 {
+    [Fact]
+    public void InvalidInputDoesNotMoveCameraAndRunningDoesNotAllocatePerStep()
+    {
+        var walker = new WalkNavigator(CaveFactory.Create(ScenarioDefinition.All[0]));
+        var initial = walker.Position;
+        walker.Move(float.NaN, 1, .02f, true);
+        walker.Move(1, float.PositiveInfinity, .02f, true);
+        walker.Move(1, 0, float.NaN, true);
+        Assert.Equal(initial, walker.Position);
+        // Warm up the collision path before measuring steady-state allocations.
+        for (var i = 0; i < 20; i++) walker.Move(1, 0, 1f / 60, true);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 300; i++) walker.Move(1, 0, 1f / 60, true);
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
     [Theory]
     [InlineData("aurora")]
     [InlineData("mine")]

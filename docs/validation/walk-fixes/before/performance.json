@@ -1,0 +1,152 @@
+{
+  "FinishedUtc": "2026-10-28T06:40:59.9253139+00:00",
+  "ElapsedSeconds": 6.7154453,
+  "OperatingSystem": "Microsoft Windows 10.0.26200",
+  "Runtime": ".NET 9.0.22",
+  "Architecture": "X64",
+  "Cpu": "12th Gen Intel(R) Core(TM) i7-12700K",
+  "LogicalProcessors": 20,
+  "GcAvailableMemoryBytes": 34121728000,
+  "Configuration": "Release",
+  "WarmupPasses": 2,
+  "PointLimit": 60000,
+  "InitialMemory": {
+    "ManagedBytes": 318600,
+    "PrivateBytes": 81285120,
+    "WorkingSetBytes": 103243776
+  },
+  "Passes": [
+    {
+      "Pass": 1,
+      "Scenario": "aurora",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127806,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 470.1054,
+      "ScenePreparationMs": 21.6666,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 0.6333094444444446,
+        "P95Ms": 1.2416,
+        "MaximumMs": 2.2931,
+        "AllocatedBytes": 324762080
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.29506999999999994,
+        "P95Ms": 0.6226,
+        "MaximumMs": 2.2303,
+        "AllocatedBytes": 152492088
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 1.8567149999999988,
+        "P95Ms": 2.6003,
+        "MaximumMs": 3.2851,
+        "AllocatedBytes": 184123864
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 0.5997544444444445,
+        "P95Ms": 0.9944,
+        "MaximumMs": 2.064,
+        "AllocatedBytes": 277201816
+      },
+      "ProcessPeakWorkingSetBytes": 170614784,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 310960,
+        "PrivateBytes": 66580480,
+        "WorkingSetBytes": 91639808
+      }
+    },
+    {
+      "Pass": 2,
+      "Scenario": "mine",
+      "RaysPerFrame": 1280,
+      "StartProgress": 0,
+      "PointCount": 226105,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 562.1243,
+      "ScenePreparationMs": 25.0817,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 1.1025372222222225,
+        "P95Ms": 2.0756,
+        "MaximumMs": 3.5468,
+        "AllocatedBytes": 573949512
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.3330522222222223,
+        "P95Ms": 0.6297,
+        "MaximumMs": 2.7718,
+        "AllocatedBytes": 152358640
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 1.844926111111111,
+        "P95Ms": 2.7595,
+        "MaximumMs": 4.2451,
+        "AllocatedBytes": 167662840
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 0.7298244444444444,
+        "P95Ms": 1.1199,
+        "MaximumMs": 2.9717,
+        "AllocatedBytes": 320408040
+      },
+      "ProcessPeakWorkingSetBytes": 220708864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 311616,
+        "PrivateBytes": 112517120,
+        "WorkingSetBytes": 136822784
+      }
+    },
+    {
+      "Pass": 3,
+      "Scenario": "lava",
+      "RaysPerFrame": 720,
+      "StartProgress": 0,
+      "PointCount": 127431,
+      "DisplayedPoints": 60000,
+      "GenerationMs": 469.5012,
+      "ScenePreparationMs": 23.164,
+      "FullCloud": {
+        "Frames": 180,
+        "MeanMs": 0.6834427777777775,
+        "P95Ms": 1.2635,
+        "MaximumMs": 10.4386,
+        "AllocatedBytes": 323041312
+      },
+      "LimitedCloud": {
+        "Frames": 180,
+        "MeanMs": 0.30654388888888884,
+        "P95Ms": 0.6748,
+        "MaximumMs": 1.6059,
+        "AllocatedBytes": 152151320
+      },
+      "Surface": {
+        "Frames": 180,
+        "MeanMs": 1.9027677777777778,
+        "P95Ms": 2.7819,
+        "MaximumMs": 3.6101,
+        "AllocatedBytes": 185110144
+      },
+      "StreamingCloud": {
+        "Frames": 180,
+        "MeanMs": 0.6018588888888889,
+        "P95Ms": 1.0107,
+        "MaximumMs": 2.3484,
+        "AllocatedBytes": 275861736
+      },
+      "ProcessPeakWorkingSetBytes": 220708864,
+      "MemoryAfterCollection": {
+        "ManagedBytes": 320216,
+        "PrivateBytes": 58445824,
+        "WorkingSetBytes": 81940480
+      }
+    }
+  ]
+}

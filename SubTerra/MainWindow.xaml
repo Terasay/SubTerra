@@ -147,7 +147,7 @@
                                        EnableSwapChainRendering="False" EnableSSAO="True" SSAOIntensity=".80" SSAOSamplingRadius=".45"
                                        IsShadowMappingEnabled="{Binding ShadowsVisible}"
                                        CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7" IsInertiaEnabled="False"
-                                       Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
+                                       UseDefaultGestures="False" Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
                             <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding IsOverview}"/>
                             <h:AmbientLight3D Color="#242C38" IsRendering="{Binding IsWalking}"/>
                             <h:DirectionalLight3D Direction="-.6,.8,-1.6" Color="#D7CABB" IsRendering="{Binding IsOverview}"/>

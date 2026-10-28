@@ -14,18 +14,20 @@ public sealed class WalkController : IDisposable
     private readonly Window _window;
     private readonly Viewport3DX _viewport;
     private readonly MainViewModel _viewModel;
-    private readonly HashSet<Key> _keys = [];
     private readonly Stopwatch _clock = new();
     private readonly MouseLookInput _mouseLook = new();
     private WalkNavigator? _navigator;
     private bool _captured;
+    private TimeSpan _lastRenderTime;
 
     public WalkController(Window window, Viewport3DX viewport, MainViewModel viewModel)
     {
         _window = window; _viewport = viewport; _viewModel = viewModel;
+        // Helix handles Q/Z (and WASD) outside InputBindings, even with inertia off.
+        // Walking is owned exclusively by WalkNavigator; overview uses mouse pan.
+        _viewport.IsMoveEnabled = false;
         _viewport.PreviewMouseLeftButtonDown += MouseDown;
         _viewport.LostMouseCapture += LostCapture;
-        _window.PreviewKeyUp += KeyUp;
         _window.Deactivated += Deactivated;
     }
 
@@ -34,10 +36,12 @@ public sealed class WalkController : IDisposable
         Stop();
         _navigator = _viewModel.CreateNavigator();
         _viewport.IsRotationEnabled = _viewport.IsPanEnabled = _viewport.IsZoomEnabled = false;
+        _viewport.IsChangeFieldOfViewEnabled = false;
         _viewport.IsInertiaEnabled = false;
         _viewport.ShowViewCube = false;
         _viewModel.UpdateWalkPosition(_navigator);
         _clock.Restart();
+        _lastRenderTime = TimeSpan.MinValue;
         CompositionTarget.Rendering += Render;
     }
 
@@ -48,6 +52,7 @@ public sealed class WalkController : IDisposable
         _navigator = null;
         _clock.Stop();
         _viewport.IsRotationEnabled = _viewport.IsPanEnabled = _viewport.IsZoomEnabled = true;
+        _viewport.IsChangeFieldOfViewEnabled = true;
         _viewport.IsInertiaEnabled = false;
         _viewport.ShowViewCube = false;
     }
@@ -63,25 +68,26 @@ public sealed class WalkController : IDisposable
         if (_navigator is null) return false;
         if (e.Key is Key.Escape or Key.Home)
         {
-            _viewModel.Home();
+            if (!e.IsRepeat) _viewModel.Home();
             return true;
         }
-        if (e.Key == Key.Tab)
+        if (e.Key == Key.Tab && (_captured || _viewport.IsKeyboardFocusWithin))
         {
             if (!e.IsRepeat) { if (_captured) ReleaseMouse(); else CaptureMouse(); }
             return true;
         }
+        // With the cursor released, sidebar controls retain their normal keyboard input.
+        if (!_captured && !_viewport.IsKeyboardFocusWithin) return false;
         if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right
             or Key.LeftShift or Key.RightShift)
         {
-            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) return false;
-            if (_captured) _keys.Add(e.Key);
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0) return false;
             return true;
         }
-        return e.Key == Key.Space;
+        // Block Helix's vertical movement, zoom and camera-history shortcuts.
+        return e.Key is Key.Space or Key.Q or Key.Z or Key.PageUp or Key.PageDown or Key.Back;
     }
 
-    private void KeyUp(object sender, KeyEventArgs e) => _keys.Remove(e.Key);
     private void MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (_navigator is null) return;
@@ -102,7 +108,6 @@ public sealed class WalkController : IDisposable
     private void ReleaseMouse()
     {
         _captured = false;
-        _keys.Clear();
         _mouseLook.Reset();
         _viewport.Cursor = Cursors.Arrow;
         if (Mouse.Captured == _viewport) Mouse.Capture(null);
@@ -123,6 +128,12 @@ public sealed class WalkController : IDisposable
     private bool CenterCursor() => SetCursorPos(_mouseLook.CenterX, _mouseLook.CenterY);
     private void Render(object? sender, EventArgs e)
     {
+        // WPF can raise Rendering more than once for the same composition frame.
+        if (e is RenderingEventArgs rendering)
+        {
+            if (rendering.RenderingTime == _lastRenderTime) return;
+            _lastRenderTime = rendering.RenderingTime;
+        }
         var dt = (float)_clock.Elapsed.TotalSeconds;
         _clock.Restart();
         if (!_captured || _navigator is null || !_window.IsActive) return;
@@ -139,13 +150,17 @@ public sealed class WalkController : IDisposable
         if (Math.Abs(delta.X) < _viewport.ActualWidth / 2 && Math.Abs(delta.Y) < _viewport.ActualHeight / 2)
             _navigator.Look(-delta.X * .0025f, -delta.Y * .0025f);
         if (delta.LengthSquared() > 0 && !CenterCursor()) { ReleaseMouse(); return; }
-        var forward = (_keys.Contains(Key.W) || _keys.Contains(Key.Up) ? 1 : 0)
-                    - (_keys.Contains(Key.S) || _keys.Contains(Key.Down) ? 1 : 0);
-        var right = (_keys.Contains(Key.D) || _keys.Contains(Key.Right) ? 1 : 0)
-                  - (_keys.Contains(Key.A) || _keys.Contains(Key.Left) ? 1 : 0);
-        _navigator.Move(forward, right, dt, _keys.Contains(Key.LeftShift) || _keys.Contains(Key.RightShift));
-        _viewModel.UpdateWalkPosition(_navigator);
+        // Poll actual key state: autorepeat and a missed KeyUp must not leave movement stuck.
+        var forward = (Down(Key.W, Key.Up) ? 1 : 0) - (Down(Key.S, Key.Down) ? 1 : 0);
+        var right = (Down(Key.D, Key.Right) ? 1 : 0) - (Down(Key.A, Key.Left) ? 1 : 0);
+        var previousPosition = _navigator.Position;
+        if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
+            _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift));
+        if (delta.LengthSquared() > 0 || _navigator.Position != previousPosition)
+            _viewModel.UpdateWalkPosition(_navigator);
     }
+
+    private static bool Down(Key first, Key second) => Keyboard.IsKeyDown(first) || Keyboard.IsKeyDown(second);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -163,7 +178,6 @@ public sealed class WalkController : IDisposable
         Stop();
         _viewport.PreviewMouseLeftButtonDown -= MouseDown;
         _viewport.LostMouseCapture -= LostCapture;
-        _window.PreviewKeyUp -= KeyUp;
         _window.Deactivated -= Deactivated;
     }
 }
