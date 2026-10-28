@@ -201,6 +201,8 @@
                             <h:LineGeometryModel3D Geometry="{Binding MeasurementLine}" Color="#9DEAFF" Thickness="2" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding AnnotationGeometry}" Color="#FFAA62" Size="10,10" Figure="Ellipse" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding ClipPlaneGuide}" Color="#8DABD2" Thickness="1" IsRendering="{Binding ClipGuideVisible}" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding StructureGeometry}" Color="White" Size="3.5,3.5" Figure="Ellipse" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding StructureOutline}" Color="#EFF9FF" Thickness="2" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
                         </h:Viewport3DX>
                         <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" ClipToBounds="True"/>
                         <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,54,10,0" Padding="12,7" Background="#EE254535" CornerRadius="7" IsHitTestVisible="False" Visibility="{Binding IsScreenSelecting, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" Foreground="#D0EDBD"/></Border>

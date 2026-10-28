@@ -149,6 +149,7 @@ public sealed partial class MainViewModel
         var corners = new[] { center - right - up, center + right - up, center + right + up, center - right + up };
         ClipPlaneGuide = SceneGeometry.Lines([corners[0], corners[1], corners[1], corners[2], corners[2], corners[3], corners[3], corners[0]]);
         UpdateAnnotations();
+        UpdateStructureDisplay();
         if (IsPoints) RefreshGeometry();
     }
 }

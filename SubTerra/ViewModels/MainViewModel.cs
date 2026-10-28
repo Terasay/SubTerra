@@ -80,11 +80,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private LineGeometry3D? _grid;
 
     public MainViewModel(IScanSource source, SessionStorage storage, IScanFrameSource? frameSource = null,
-        IAccessSession? access = null, ISessionInteraction? interaction = null, WorkspaceStateStore? workspaceStore = null)
+        IAccessSession? access = null, ISessionInteraction? interaction = null, WorkspaceStateStore? workspaceStore = null,
+        IStructureAnalyzer? structureAnalyzer = null)
     {
         _source = source;
         _frameSource = frameSource ?? source;
         _storage = storage;
+        _structureAnalyzer = structureAnalyzer ?? new PlaneStructureAnalyzer();
         _access = access ?? new AdminAccessService();
         _interaction = interaction ?? new CancelSessionInteraction();
         _workspaceStore = workspaceStore;
@@ -263,6 +265,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(ImportedMeshVisible));
         RefreshGeometry();
         UpdateAnnotations();
+        UpdateStructureDisplay();
     }
     public string RenderLabel => IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : IsPoints ? "ОБЛАКО ТОЧЕК" : IsImported ? "ПОВЕРХНОСТЬ СКАНА" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
     public bool ShowGrid { get => _showGrid; set { if (Set(ref _showGrid, value)) Raise(nameof(GridVisible)); } }
@@ -589,6 +592,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void Assign(ScanDataset dataset, int capturedFrames, ScanProjectView? preparedProject = null)
     {
+        ClearStructureAnalysis();
         ++_sessionEpoch;
         _editVersion = 0; _recoveredVersion = -1;
         _clipEnabled = false; _clipOffset = 0; ClipPlaneGuide = null;

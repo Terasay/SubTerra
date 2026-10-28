@@ -25,6 +25,21 @@
         </ListBox>
         <UniformGrid Columns="2" Margin="0,9,0,0"><Button Content="Показать" Command="{Binding FocusObjectCommand}" FontSize="11" Margin="0,0,4,0" ToolTip="Подобрать камеру под выбранный объект"/><Button Content="Удалить" Command="{Binding RemoveObjectCommand}" FontSize="11"/></UniformGrid>
         <UniformGrid Columns="2" Margin="0,7,0,13"><Button Content="↶ Отмена" Command="{Binding UndoProjectCommand}" ToolTip="{Binding UndoProjectText}" FontSize="11" Margin="0,0,4,0"/><Button Content="↷ Повтор" Command="{Binding RedoProjectCommand}" ToolTip="{Binding RedoProjectText}" FontSize="11"/></UniformGrid>
+        <Expander Header="Структура помещения" IsExpanded="True" Margin="0,0,0,14"><StackPanel Margin="0,10,0,0">
+            <TextBlock Text="{Binding StructureSummary}" Style="{StaticResource Hint}"/>
+            <Grid Margin="0,10,0,4"><TextBlock Text="Допуск плоскости" Style="{StaticResource Hint}"/><TextBlock Text="{Binding StructureTolerance, StringFormat={}{0:F3} м}" HorizontalAlignment="Right" FontSize="11"/></Grid>
+            <Slider Minimum=".005" Maximum=".1" TickFrequency=".005" IsSnapToTickEnabled="True" Value="{Binding StructureTolerance}" IsEnabled="{Binding CanAnalyzeStructure}" AutomationProperties.Name="Допуск анализа плоскостей"/>
+            <Button Content="Найти поверхности" Command="{Binding AnalyzeStructureCommand}" FontSize="12" Margin="0,5,0,9"/>
+            <StackPanel Visibility="{Binding HasStructureAnalysis, Converter={StaticResource BoolVisibility}}">
+                <CheckBox Content="Подсветка структуры" IsChecked="{Binding ShowStructure}" FontSize="11" Margin="0,0,0,9"/>
+                <WrapPanel Margin="0,0,0,8"><TextBlock Text="● Пол  " Foreground="#61E08C" FontSize="10"/><TextBlock Text="● Стены  " Foreground="#F5B84D" FontSize="10"/><TextBlock Text="● Потолок  " Foreground="#66A6FA" FontSize="10"/><TextBlock Text="● Не определено" Foreground="#BD8CE0" FontSize="10"/></WrapPanel>
+                <ListBox ItemsSource="{Binding StructureSurfaces}" SelectedItem="{Binding SelectedStructureSurface}" ItemContainerStyle="{StaticResource ObjectRow}" MaxHeight="230" Background="Transparent" BorderThickness="0" Foreground="#E4ECF4" AutomationProperties.Name="Кандидаты поверхностей">
+                    <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Title}" FontSize="11" TextWrapping="Wrap"/><TextBlock Text="{Binding Details}" Style="{StaticResource Hint}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <Button Content="Сбросить анализ" Command="{Binding ClearStructureCommand}" FontSize="11" Margin="0,8,0,0"/>
+                <TextBlock Text="Временный результат. Площадь — выпуклый опорный контур, а не точный обмер стены. Изменение проекта сбрасывает анализ." Style="{StaticResource Hint}" Margin="0,8,0,0"/>
+            </StackPanel>
+        </StackPanel></Expander>
         <Expander Header="Свойства объекта"><StackPanel Margin="0,10,0,10" IsEnabled="{Binding CanEditObject}">
             <TextBox Text="{Binding ObjectName, UpdateSourceTrigger=LostFocus}" MaxLength="120" AutomationProperties.Name="Имя объекта"/>
             <ComboBox ItemsSource="{Binding ObjectColors}" SelectedItem="{Binding ObjectColor}" DisplayMemberPath="Name" Margin="0,8,0,8" AutomationProperties.Name="Цвет объекта"/>

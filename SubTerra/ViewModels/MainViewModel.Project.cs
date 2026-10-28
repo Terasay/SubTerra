@@ -114,6 +114,7 @@ public sealed partial class MainViewModel
     }
     private void NotifyProjectState()
     {
+        NotifyStructureState();
         foreach (var name in new[] { nameof(CanManageProject), nameof(CanEditObject), nameof(CanVoxelClean), nameof(CanUndoProject), nameof(CanRedoProject), nameof(UndoProjectText), nameof(RedoProjectText), nameof(ProjectSummary), nameof(HasEditPreview), nameof(EditPreviewText), nameof(IsScreenSelecting), nameof(SelectionTool), nameof(SelectionHint), nameof(CanSave), nameof(CanExport), nameof(CanSelectScanObject), nameof(CanAddAnnotation), nameof(CloudQualityVisible) }) Raise(name);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
@@ -178,6 +179,7 @@ public sealed partial class MainViewModel
     }
     private void ApplyProjectView(ScanProjectView view)
     {
+        ClearStructureAnalysis();
         _importedGeometry = view.Geometry; _importedBounds = view.Data.Bounds;
         _pointOffsets = [view.Data.VisibleScan?.Points.Length ?? 0];
         Grid = view.Geometry?.Grid(); Cloud = null; Surface = null; CloudOnly = null;

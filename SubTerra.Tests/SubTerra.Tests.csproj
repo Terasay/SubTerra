@@ -13,5 +13,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
     <ProjectReference Include="..\SubTerra\SubTerra.csproj" />
     <None Include="..\samples\scan-import\*.ply;..\samples\scan-import\*.asc" Link="ScanExamples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\samples\indoor-analysis\*.ply" Link="ScanExamples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

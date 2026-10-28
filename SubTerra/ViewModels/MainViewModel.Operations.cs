@@ -22,7 +22,7 @@ public sealed partial class MainViewModel
 
     private void InitializeNewCommands()
     {
-        InitializeProjectCommands(); InitializeCleaningCommands();
+        InitializeProjectCommands(); InitializeCleaningCommands(); InitializeStructureCommands();
         CancelOperationCommand = new RelayCommand(CancelOperation, () => CanCancelOperation);
         CoordinatesCommand = new RelayCommand(() => BeginInspection(false), () => CanInteract && _viewFrames > 0);
         MeasureCommand = new RelayCommand(() => BeginInspection(true), () => CanInteract && _viewFrames > 0);

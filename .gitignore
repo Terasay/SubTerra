@@ -26,6 +26,7 @@
 *.subterra
 *.ply
 !/samples/scan-import/*.ply
+!/samples/indoor-analysis/*.ply
 
 # Local account data, credentials and environment
 admin-account.json
