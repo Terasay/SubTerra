@@ -17,7 +17,7 @@
 *.trx
 *.coverage
 *.coveragexml
-/artifacts/
+**/artifacts/
 /publish/
 *.nupkg
 *.snupkg

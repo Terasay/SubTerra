@@ -16,7 +16,19 @@ public sealed record UserAnnotation(string Name, InspectionPoint Point);
 /// <summary>Keeps the half-space dot(normal, point) &lt;= offset; source measurements are untouched.</summary>
 public readonly record struct PointClipPlane(Vector3 Normal, float Offset)
 {
-    public bool Contains(Vector3 point) => Vector3.Dot(Normal, point) <= Offset + .00001f;
+    private const float Epsilon = .00001f;
+    public bool Contains(Vector3 point) => Vector3.Dot(Normal, point) <= Offset + Epsilon;
+    public bool TryClipSegment(ref Vector3 start, ref Vector3 end)
+    {
+        var insideStart = Contains(start); var insideEnd = Contains(end);
+        if (!insideStart && !insideEnd) return false;
+        if (insideStart != insideEnd)
+        {
+            var cut = Vector3.Lerp(start, end, (Offset + Epsilon - Vector3.Dot(Normal, start)) / Vector3.Dot(Normal, end - start));
+            if (insideStart) end = cut; else start = cut;
+        }
+        return true;
+    }
     public static PointClipPlane FromAngles(double yawDegrees, double pitchDegrees, double offset)
     {
         var yaw = (float)(yawDegrees * Math.PI / 180);

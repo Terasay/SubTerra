@@ -174,16 +174,7 @@ public sealed partial class MainViewModel
         for (var i = 0; i < boundary.Length; i++)
         {
             var a = boundary[i]; var b = boundary[(i + 1) % boundary.Length];
-            if (ActiveClipPlane is { } plane)
-            {
-                var insideA = plane.Contains(a); var insideB = plane.Contains(b);
-                if (!insideA && !insideB) continue;
-                if (insideA != insideB)
-                {
-                    var cut = Vector3.Lerp(a, b, (plane.Offset + .00001f - Vector3.Dot(plane.Normal, a)) / Vector3.Dot(plane.Normal, b - a));
-                    if (insideA) b = cut; else a = cut;
-                }
-            }
+            if (ActiveClipPlane is { } plane && !plane.TryClipSegment(ref a, ref b)) continue;
             segments.Add(a); segments.Add(b);
         }
         StructureOutline = segments.Count == 0 ? null : Rendering.SceneGeometry.Lines(segments);
@@ -194,6 +185,7 @@ public sealed partial class MainViewModel
         SelectedStructureSurface = null;
         StructureSurfaces.Clear(); StructureGeometry = null; StructureOutline = null;
         RefreshRoomDocument();
+        UpdateRoomDisplay();
         NotifyStructureState();
     }
     private void NotifyStructureState()

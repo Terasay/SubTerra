@@ -70,7 +70,7 @@ public sealed partial class MainViewModel
         RoomBuildMessage = "";
         _roomIsStale = _structureDocument is { Room: not null } document && !RoomPlanner.IsCurrent(document);
         if (_structureDocument?.Room is { } room) RoomName = room.Name;
-        UpdateRoomDisplay(); NotifyRoomState();
+        NotifyRoomState();
     }
     private void UpdateRoomDisplay()
     {

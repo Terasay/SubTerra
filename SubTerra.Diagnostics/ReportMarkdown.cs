@@ -53,7 +53,7 @@ internal static class ReportMarkdown
         s.AppendLine();
         s.AppendLine("Из корня проекта:");
         s.AppendLine();
-        s.AppendLine("    dotnet run --project .\\SubTerra.Diagnostics\\SubTerra.Diagnostics.csproj -c Release -- --passes 12 --output .\\docs\\validation");
+        s.AppendLine("    dotnet run --project .\\SubTerra.Diagnostics\\SubTerra.Diagnostics.csproj -c Release -- --passes 12 --output .\\artifacts\\diagnostics");
         s.AppendLine();
         s.AppendLine("Подробные значения, средние, максимумы и объёмы выделений каждого режима находятся в performance.json рядом с этим отчётом.");
         return s.ToString();

@@ -22,7 +22,7 @@ internal static class Program
         try
         {
             var passes = 12;
-            var output = Path.GetFullPath(Path.Combine("docs", "validation"));
+            var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--passes" && i + 1 < args.Length) passes = int.Parse(args[++i], CultureInfo.InvariantCulture);

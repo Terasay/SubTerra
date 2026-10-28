@@ -11,16 +11,7 @@ public static class RoomGeometry
         var outline = new List<Vector3>(); var gaps = new List<Vector3>();
         void Add(List<Vector3> target, Vector3 a, Vector3 b)
         {
-            if (clip is { } plane)
-            {
-                var insideA = plane.Contains(a); var insideB = plane.Contains(b);
-                if (!insideA && !insideB) return;
-                if (insideA != insideB)
-                {
-                    var cut = Vector3.Lerp(a, b, (plane.Offset + .00001f - Vector3.Dot(plane.Normal, a)) / Vector3.Dot(plane.Normal, b - a));
-                    if (insideA) b = cut; else a = cut;
-                }
-            }
+            if (clip is { } plane && !plane.TryClipSegment(ref a, ref b)) return;
             target.Add(a); target.Add(b);
         }
         for (var i = 0; i < room.FloorContour.Length; i++)
