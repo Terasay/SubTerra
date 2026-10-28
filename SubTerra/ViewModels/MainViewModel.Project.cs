@@ -143,7 +143,7 @@ public sealed partial class MainViewModel
         var token = BeginOperation("Подготовка проекта · " + description);
         try
         {
-            var view = await ScanProjectView.PrepareAsync(next, token);
+            var view = ReferenceEquals(_scanProject!.Objects, next.Objects) ? _projectView! : await ScanProjectView.PrepareAsync(next, token);
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator) return;
             _projectHistory.Commit(before, next, description);
@@ -162,7 +162,7 @@ public sealed partial class MainViewModel
         var token = BeginOperation(redo ? "Повтор действия" : "Отмена действия");
         try
         {
-            var view = await ScanProjectView.PrepareAsync(next, token);
+            var view = ReferenceEquals(_scanProject!.Objects, next.Objects) ? _projectView! : await ScanProjectView.PrepareAsync(next, token);
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator) return;
             if (redo) _projectHistory.CompleteRedo(); else _projectHistory.CompleteUndo();
@@ -173,13 +173,26 @@ public sealed partial class MainViewModel
     }
     private void SetProject(ScanProject project, ScanProjectView view)
     {
+        if (project.Structure is { } structure) project = project with { Structure = StructureProvenance.Refresh(structure, project) };
+        var sameView = ReferenceEquals(_projectView, view);
         _scanProject = project; _projectView = view;
         _dataset = new(null, project.ToSession(UserAnnotations.ToArray()));
-        ApplyProjectView(view); RefreshProjectItems(); NotifySourceProperties(); NotifySessionProperties();
+        if (sameView)
+        {
+            SetStructureDocument(project.Structure);
+            if (_selectedScanObject?.Id != project.ActiveObjectId)
+            {
+                _selectedScanObject = ScanObjects.FirstOrDefault(o => o.Id == project.ActiveObjectId);
+                Raise(nameof(SelectedScanObject)); LoadObjectDraft();
+            }
+            NotifyProjectState();
+        }
+        else { ApplyProjectView(view); RefreshProjectItems(); }
+        NotifySourceProperties(); NotifySessionProperties();
     }
     private void ApplyProjectView(ScanProjectView view)
     {
-        ClearStructureAnalysis();
+        SetStructureDocument(HasEditPreview ? null : _scanProject?.Structure);
         _importedGeometry = view.Geometry; _importedBounds = view.Data.Bounds;
         _pointOffsets = [view.Data.VisibleScan?.Points.Length ?? 0];
         Grid = view.Geometry?.Grid(); Cloud = null; Surface = null; CloudOnly = null;

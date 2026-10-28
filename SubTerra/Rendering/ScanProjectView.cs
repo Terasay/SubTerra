@@ -14,6 +14,7 @@ public sealed record ScanProjectView(EvaluatedScanProject Data, ImportedGeometry
             try
             {
                 var data = ScanProjectEvaluator.Evaluate(project, token);
+                if (project.Structure is not null) StructureProvenance.WarmHashes(project, token);
                 var geometry = data.VisibleScan is null ? null : new ImportedGeometry(data.VisibleScan);
                 geometry?.PrepareMeshPreviews(token);
                 ImportedGeometry? cloudOnly = null;

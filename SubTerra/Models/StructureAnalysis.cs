@@ -3,19 +3,26 @@ using System.Numerics;
 namespace SubTerra.Models;
 
 public enum StructureSurfaceKind { Unknown, Floor, Wall, Ceiling }
+public enum StructureReviewState { Proposed, Confirmed, Rejected }
 public readonly record struct SourcePointReference(Guid ObjectId, int PointIndex);
 public readonly record struct StructureSample(SourcePointReference Source, Vector3 Position);
 
 public sealed record StructureSurface(int Id, StructureSurfaceKind Kind, Vector3 Normal, double Offset,
-    Vector3 Center, Vector3[] Boundary, double AreaSquareMeters, double RmsMeters, StructureSample[] Samples)
+    Vector3 Center, Vector3[] Boundary, double AreaSquareMeters, double RmsMeters, StructureSample[] Samples,
+    StructureReviewState Review = StructureReviewState.Proposed, StructureSurfaceKind? SuggestedKind = null)
 {
     public string KindText => Kind switch
     {
-        StructureSurfaceKind.Floor => "Кандидат пола", StructureSurfaceKind.Ceiling => "Кандидат потолка",
-        StructureSurfaceKind.Wall => "Кандидат стены", _ => "Не определено"
+        StructureSurfaceKind.Floor => "Пол", StructureSurfaceKind.Ceiling => "Потолок",
+        StructureSurfaceKind.Wall => "Стена", _ => "Не определено"
     };
     public string Title => $"{Id:00} · {KindText}";
-    public string Details => $"≈ {AreaSquareMeters:F1} м² · RMS {RmsMeters * 100:F1} см · {Samples.Length:N0} точек выборки";
+    public string ReviewText => Review switch
+    {
+        StructureReviewState.Confirmed => "Подтверждено оператором",
+        StructureReviewState.Rejected => "Отклонено · скрыто", _ => "Кандидат · требует проверки"
+    };
+    public string Details => $"≈ {AreaSquareMeters:F1} м² · разброс {RmsMeters * 100:F1} см · {Samples.Length:N0} точек выборки";
 }
 
 public sealed record StructureAnalysisOptions(double DistanceTolerance = .025, int MaximumSamples = 30_000,
@@ -36,3 +43,10 @@ public sealed record StructureAnalysisResult(StructureSurface[] Surfaces, int Sa
 {
     public const string Algorithm = "planes-ransac-v1";
 }
+
+/// <summary>Geometry provenance; names, tint and active selection do not affect plane analysis.</summary>
+public sealed record StructureInputStamp(Guid ObjectId, int PointCount, int IncludedCount, string PointsHash,
+    string MaskHash, ScanTransform Transform, bool IsVisible);
+
+public sealed record StructureAnalysisDocument(int Version, string Algorithm, DateTimeOffset CreatedAtUtc,
+    StructureInputStamp[] Inputs, StructureAnalysisResult Result, bool IsStale = false);

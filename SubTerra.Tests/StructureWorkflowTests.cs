@@ -37,7 +37,7 @@ public sealed class StructureWorkflowTests
         Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasStructureAnalysis);
         Assert.Equal(7, vm.StructureSurfaces.Count); Assert.True(vm.StructureVisible);
         Assert.NotNull(vm.StructureGeometry); Assert.NotNull(vm.StructureOutline);
-        Assert.False(vm.HasUnsavedChanges); Assert.False(vm.CanUndoProject);
+        Assert.True(vm.HasUnsavedChanges); Assert.True(vm.CanUndoProject);
         var samples = vm.StructureSurfaces.SelectMany(s => s.Samples).ToArray();
         var fullCount = vm.StructureGeometry.Positions!.Count;
         vm.PointQuality = PointCloudQuality.All[0];
@@ -54,7 +54,8 @@ public sealed class StructureWorkflowTests
         Assert.Equal(before.Active!.Source.Points, after.Active!.Source.Points);
         Assert.Equal(before.Active.Transform, after.Active.Transform); Assert.Null(after.Active.Mask);
         using var reopened = Vm(); await reopened.OpenAsync(path);
-        Assert.True(reopened.IsImported); Assert.False(reopened.HasStructureAnalysis);
+        Assert.True(reopened.IsImported); Assert.True(reopened.HasStructureAnalysis); Assert.False(reopened.StructureIsStale);
+        Assert.Equal(samples, reopened.StructureSurfaces.SelectMany(s => s.Samples).ToArray());
     });
 
     [Theory]
@@ -66,12 +67,26 @@ public sealed class StructureWorkflowTests
         {
             case "visibility": await vm.ToggleObjectAsync(vm.SelectedScanObject!.Id); break;
             case "transform": vm.ObjectX = 1; await vm.ApplyObjectCommand.ExecuteAsync(); break;
-            case "cleanup": vm.CleanMaxX = 3; await vm.PreviewBoxAsync(true); Assert.True(vm.HasEditPreview); break;
+            case "cleanup":
+                vm.CleanMaxX = 3; await vm.PreviewBoxAsync(true); Assert.True(vm.HasEditPreview); Assert.False(vm.HasStructureAnalysis);
+                vm.CancelCleanPreview(); Assert.True(vm.HasStructureAnalysis); Assert.False(vm.StructureIsStale);
+                vm.CleanMaxX = 3; await vm.PreviewBoxAsync(true); vm.ApplyCleanPreviewCommand.Execute(null); break;
             case "replacement": await vm.LoadDemoAsync(); break;
         }
         Assert.False(vm.HasNotification, vm.Notification);
-        Assert.False(vm.HasStructureAnalysis); Assert.Empty(vm.StructureSurfaces);
+        if (change == "replacement") { Assert.False(vm.HasStructureAnalysis); Assert.Empty(vm.StructureSurfaces); }
+        else
+        {
+            Assert.True(vm.HasStructureAnalysis); Assert.True(vm.StructureIsStale); Assert.False(vm.StructureVisible);
+            Assert.False(vm.CanReviewStructure); Assert.NotEmpty(vm.StructureSurfaces);
+        }
         Assert.Null(vm.StructureGeometry); Assert.Null(vm.StructureOutline);
+        if (change != "replacement")
+        {
+            await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasStructureAnalysis); Assert.False(vm.StructureIsStale);
+            Assert.NotNull(vm.StructureGeometry);
+            await vm.RedoProjectCommand.ExecuteAsync(); Assert.True(vm.StructureIsStale); Assert.Null(vm.StructureGeometry);
+        }
     });
 
     [Fact]
@@ -114,6 +129,97 @@ public sealed class StructureWorkflowTests
             for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) Check(VisualTreeHelper.GetChild(element, i));
         }
         Check(panel);
+    });
+
+    [Fact]
+    public Task ReviewCorrectionRejectionResetAndHistoryPreserveTheAlgorithmSuggestion() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        var table = vm.StructureSurfaces.Single(s => s.Kind == StructureSurfaceKind.Unknown);
+        vm.SelectedStructureSurface = table;
+        vm.SelectedStructureClass = vm.StructureClasses.Single(c => c.Kind == StructureSurfaceKind.Floor);
+        vm.ConfirmStructureSurfaceCommand.Execute(null);
+        Assert.Equal(table.Id, vm.SelectedStructureSurface!.Id);
+        Assert.Equal(StructureSurfaceKind.Floor, vm.SelectedStructureSurface.Kind);
+        Assert.Equal(StructureSurfaceKind.Unknown, vm.SelectedStructureSurface.SuggestedKind);
+        Assert.Equal(StructureReviewState.Confirmed, vm.SelectedStructureSurface.Review);
+        var count = vm.StructureGeometry!.Positions!.Count;
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.Equal(StructureReviewState.Proposed, vm.SelectedStructureSurface!.Review);
+        Assert.Equal(StructureSurfaceKind.Unknown, vm.SelectedStructureSurface.Kind);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.Equal(StructureReviewState.Confirmed, vm.SelectedStructureSurface!.Review);
+        vm.RejectStructureSurfaceCommand.Execute(null);
+        Assert.Equal(StructureReviewState.Rejected, vm.SelectedStructureSurface!.Review);
+        Assert.Equal(count - table.Samples.Length, vm.StructureGeometry!.Positions!.Count); Assert.Null(vm.StructureOutline);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.Equal(count, vm.StructureGeometry!.Positions!.Count);
+        vm.ResetStructureSurfaceCommand.Execute(null);
+        Assert.Equal(StructureSurfaceKind.Unknown, vm.SelectedStructureSurface!.Kind);
+        Assert.Equal(StructureReviewState.Proposed, vm.SelectedStructureSurface.Review); Assert.False(vm.CanRedoProject);
+        vm.ClearStructureCommand.Execute(null); Assert.False(vm.HasStructureAnalysis);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasStructureAnalysis);
+        Assert.False(vm.HasNotification, vm.Notification);
+    });
+
+    [Fact]
+    public Task ReanalysisCanBeUndoneToRestoreOperatorDecisions() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        vm.RejectStructureSurfaceCommand.Execute(null); var rejectedId = vm.SelectedStructureSurface!.Id;
+        await vm.AnalyzeStructureAsync(); Assert.All(vm.StructureSurfaces, s => Assert.Equal(StructureReviewState.Proposed, s.Review));
+        await vm.UndoProjectCommand.ExecuteAsync();
+        Assert.Equal(StructureReviewState.Rejected, vm.StructureSurfaces.Single(s => s.Id == rejectedId).Review);
+    });
+
+    [Fact]
+    public Task SavedReviewsAreViewableByGuestsButAllMutationCommandsAreBlocked() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var path = Path.Combine(files.Directory, "reviewed.subterra");
+        using (var admin = Vm())
+        {
+            await Import(admin); await admin.AnalyzeStructureAsync(); admin.ConfirmStructureSurfaceCommand.Execute(null);
+            Assert.True(await admin.SaveAsync(path));
+        }
+        using var guest = Vm(new(false)); await guest.OpenAsync(path);
+        Assert.True(guest.HasStructureAnalysis); Assert.True(guest.StructureVisible);
+        var surfaces = guest.StructureSurfaces.ToArray();
+        guest.SelectedStructureClass = guest.StructureClasses.Single(c => c.Kind == StructureSurfaceKind.Unknown);
+        foreach (var command in new[] { guest.ConfirmStructureSurfaceCommand, guest.RejectStructureSurfaceCommand,
+                     guest.ResetStructureSurfaceCommand, guest.ClearStructureCommand })
+        { Assert.False(command.CanExecute(null)); command.Execute(null); }
+        await guest.AnalyzeStructureAsync();
+        Assert.Equal(surfaces, guest.StructureSurfaces.ToArray()); Assert.False(guest.HasUnsavedChanges);
+        Assert.False(guest.CanUndoProject); Assert.False(guest.HasNotification, guest.Notification);
+    });
+
+    [Fact]
+    public Task RevokingAccessAlsoBlocksReviewOfAnExistingResult() => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess(); using var vm = Vm(access); await Import(vm); await vm.AnalyzeStructureAsync();
+        access.Logout(); vm.ConfirmStructureSurfaceCommand.Execute(null); vm.RejectStructureSurfaceCommand.Execute(null);
+        vm.ClearStructureCommand.Execute(null);
+        Assert.True(vm.HasStructureAnalysis); Assert.False(vm.CanReviewStructure);
+        Assert.All(vm.StructureSurfaces, s => Assert.Equal(StructureReviewState.Proposed, s.Review));
+    });
+
+    [Fact]
+    public Task RecoveryRestoresReviewsWithoutOverwritingTheSavedProject() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var store = new WorkspaceStateStore(files.Directory);
+        var path = Path.Combine(files.Directory, "room.subterra"); var storage = new SessionStorage();
+        using (var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage,
+                   access: new TestAccess(), interaction: new TestInteraction(), workspaceStore: store))
+        {
+            await Import(vm); Assert.True(await vm.SaveAsync(path)); await vm.AnalyzeStructureAsync();
+            vm.ConfirmStructureSurfaceCommand.Execute(null); await vm.AutoSaveAsync(); Assert.True(store.HasRecovery);
+            Assert.Null((await storage.LoadAsync(path)).Project!.Structure);
+        }
+        using var restored = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage,
+            access: new TestAccess(), interaction: new TestInteraction(), workspaceStore: new WorkspaceStateStore(files.Directory));
+        await restored.RestoreRecoveryAsync();
+        Assert.False(restored.HasNotification, restored.Notification); Assert.True(restored.HasUnsavedChanges);
+        Assert.True(restored.HasStructureAnalysis); Assert.False(restored.StructureIsStale);
+        Assert.Single(restored.StructureSurfaces, s => s.Review == StructureReviewState.Confirmed);
+        Assert.Null((await storage.LoadAsync(path)).Project!.Structure);
+        Assert.True(await restored.SaveCurrentAsync()); Assert.NotNull((await storage.LoadAsync(path)).Project!.Structure);
     });
 
     private sealed class BlockingAnalyzer(bool firstReal = false) : IStructureAnalyzer

@@ -58,6 +58,7 @@ public sealed record ScanObject(Guid Id, string Name, ImportedScan Source, bool 
 
 public sealed record ScanProject(ScanObject[] Objects, Guid ActiveObjectId, ImportMetadata? Origin)
 {
+    public StructureAnalysisDocument? Structure { get; init; }
     public const int MaximumObjects = 32;
     public ScanObject? Active => Objects.FirstOrDefault(o => o.Id == ActiveObjectId);
     public int PointCount => Objects.Sum(o => o.PointCount);

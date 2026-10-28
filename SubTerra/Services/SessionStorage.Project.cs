@@ -9,24 +9,30 @@ public sealed partial class SessionStorage
 {
     private sealed record ObjectManifest(Guid Id, string Name, bool IsVisible, uint? Tint, ScanTransform? Transform,
         ImportMetadata Metadata, int PointCount, int TriangleCount, bool HasColors, bool HasMask);
-    private sealed record ProjectManifest(ObjectManifest[] Objects, Guid ActiveObjectId, ImportMetadata? Origin);
+    private sealed record ProjectManifest(ObjectManifest[] Objects, Guid ActiveObjectId, ImportMetadata? Origin, bool HasStructure = false);
     private static string ObjectPrefix(Guid id) => $"objects/{id:N}/";
     private static void SaveProject(string path, ScanSession session, CancellationToken token, IProgress<double>? progress)
     {
         var project = session.Project!;
         project.Validate(token); ValidateAnnotations(session.Annotations);
+        var structureBytes = PrepareStructure(project, token);
         if (session.Frames.Length != 0 || session.Adjustments.Length != 0) throw new InvalidDataException("Проект сканов не содержит кадров симулятора.");
         var objects = project.Objects.Select(o => new ObjectManifest(o.Id, o.Name, o.IsVisible, o.Tint, o.Transform,
             o.Source.Metadata, o.Source.Points.Length, o.Source.Triangles.Length / 3, o.Source.Colors.Length > 0, o.Mask is not null)).ToArray();
-        var manifest = new Manifest(5, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
+        var manifest = new Manifest(structureBytes is null ? 5 : 6, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
             Annotations: session.Annotations, TriangleCount: objects.Sum(o => o.TriangleCount),
-            Project: new(objects, project.ActiveObjectId, project.Origin));
+            Project: new(objects, project.ActiveObjectId, project.Origin, structureBytes is not null));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         if (bytes.Length > MaximumManifestBytes) throw new InvalidDataException("Описание проекта слишком большое.");
         AtomicWrite(path, temporary =>
         {
             using var archive = ZipFile.Open(temporary, ZipArchiveMode.Create);
             using (var stream = archive.CreateEntry("manifest.json").Open()) stream.Write(bytes);
+            if (structureBytes is not null)
+            {
+                token.ThrowIfCancellationRequested();
+                using var stream = archive.CreateEntry(StructureEntry, CompressionLevel.Fastest).Open(); stream.Write(structureBytes);
+            }
             for (var objectIndex = 0; objectIndex < project.Objects.Length; objectIndex++)
             {
                 var o = project.Objects[objectIndex]; var prefix = ObjectPrefix(o.Id);
@@ -62,7 +68,7 @@ public sealed partial class SessionStorage
             info.Objects.Any(o => o.PointCount is < 1 or > ImportedScan.MaximumPoints || o.TriangleCount is < 0 or > ImportedScan.MaximumTriangles) ||
             info.Objects.Sum(o => (long)o.PointCount) != manifest.PointCount || manifest.PointCount > ImportedScan.MaximumPoints ||
             info.Objects.Sum(o => (long)o.TriangleCount) != manifest.TriangleCount || manifest.TriangleCount > ImportedScan.MaximumTriangles ||
-            (manifest.Adjustments?.Length ?? 0) != 0)
+            (manifest.Adjustments?.Length ?? 0) != 0 || info.HasStructure != (manifest.SchemaVersion == 6))
             throw new InvalidDataException("Некорректное описание проекта сканов.");
         var annotations = manifest.Annotations ?? []; ValidateAnnotations(annotations);
         var objects = new ScanObject[info.Objects.Length];
@@ -86,6 +92,7 @@ public sealed partial class SessionStorage
         }
         var project = new ScanProject(objects, info.ActiveObjectId, info.Origin);
         project.Validate(token);
+        if (info.HasStructure) project = project with { Structure = ReadStructure(archive, project, token) };
         progress?.Report(100);
         return project.ToSession(annotations);
     }
