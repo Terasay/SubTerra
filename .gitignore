@@ -25,6 +25,7 @@
 # Captured sessions and exports (not source assets)
 *.subterra
 *.ply
+!/samples/scan-import/*.ply
 
 # Local account data, credentials and environment
 admin-account.json

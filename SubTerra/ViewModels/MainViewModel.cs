@@ -861,7 +861,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task<bool> SaveCoreAsync(string path)
     {
-        if (_dataset is null || !IsAdministrator || IsBusy || _capturedFrames == 0) return false;
+        if (_dataset is null || !IsAdministrator || IsBusy || (_capturedFrames == 0 && !IsImported)) return false;
         Pause();
         var token = BeginOperation("Сохранение сеанса");
         BusyProgress = 0;

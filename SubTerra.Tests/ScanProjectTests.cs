@@ -49,6 +49,18 @@ public sealed class ScanProjectTests
         Assert.Equal(4, o.Source.Points.Length);
     }
 
+    [Theory]
+    [InlineData(.01f)] [InlineData(.02f)] [InlineData(.13f)]
+    [InlineData(-.01f)] [InlineData(-.02f)] [InlineData(-.13f)]
+    public void VoxelBoundariesRespectFloatPrecisionAndKeepAdjacentCellsSeparate(float boundary)
+    {
+        foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+        {
+            var o = Object(Cloud(axis * MathF.BitDecrement(boundary), axis * boundary, axis * MathF.BitIncrement(boundary)));
+            Assert.Equal(new[] { true, true, false }, ScanCleaner.Voxel(o, .01).Copy());
+        }
+    }
+
     [Fact]
     public void IsolatedPointFilterCountsNeighborsAcrossCellBoundariesWithoutCountingItself()
     {
@@ -110,6 +122,22 @@ public sealed class ScanProjectTests
         Assert.Equal(new Vector3(10, 0, 0), result.VisibleScan.Points[0].Position);
         Assert.All(result.VisibleScan.Colors, color => Assert.Equal(0xff0000u, color));
         Assert.Equal(4, source.Points.Length); Assert.Equal(6, source.Triangles.Length);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task MeshViewRetainsVerticesThatHaveNoSurvivingFaces(bool cleaned)
+    {
+        var source = new ImportedScan { Metadata = new("mesh.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
+            Points = [new(0, 0, 0, 1), new(1, 0, 0, 1), new(0, 1, 0, 1), new(1, 1, 0, 1)], Triangles = [0, 1, 2] };
+        var a = Object(source) with { Mask = cleaned ? new([true, false, true, true]) : null };
+        var b = Object(source);
+        var view = await ScanProjectView.PrepareAsync(new([a, b], a.Id, source.Metadata));
+        Assert.True(view.Data.VisibleScan!.HasMesh);
+        Assert.Equal(cleaned ? new[] { 0, 1, 2, 6 } : new[] { 3, 7 }, view.Data.CloudOnlyIndices);
+        Assert.NotNull(view.CloudOnly);
+        Assert.Equal(view.Data.CloudOnlyIndices.Length, view.CloudOnly.Cloud(100, null).Positions!.Count);
+        Assert.Equal(4, source.Points.Length);
     }
 
     [Fact]
@@ -284,6 +312,44 @@ public sealed class ScanProjectTests
         Assert.Empty(vm.ScanObjects); Assert.True(vm.IsImported); Assert.True(vm.CanSave); Assert.False(vm.CanExport);
         Assert.True(await vm.SaveAsync(Path.Combine(files.Directory, "empty.subterra")));
         await vm.UndoProjectCommand.ExecuteAsync(); Assert.Single(vm.ScanObjects); Assert.Equal("1", vm.PointCountText);
+    });
+
+    [Theory]
+    [InlineData("hide")] [InlineData("clean")]
+    public Task ProjectWithoutVisiblePointsCanBeSavedOnCloseAndReopened(string operation) => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var storage = new SessionStorage();
+        var path = Path.Combine(files.Directory, "empty-view.subterra");
+        var interaction = new TestInteraction { Decision = UnsavedDecision.Save, SavePath = path };
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage, access: new TestAccess(), interaction: interaction);
+        await vm.ImportAsync(files.Write("scan.asc", "0 0 0\n1 0 0\n2 0 0"), new(ScanUnit.Meters));
+        if (operation == "hide") await vm.ToggleObjectAsync(vm.SelectedScanObject!.Id);
+        else { await vm.PreviewBoxAsync(false); vm.ApplyCleanPreviewCommand.Execute(null); }
+        Assert.Equal("0", vm.PointCountText); Assert.True(vm.CanSave); Assert.False(vm.CanExport);
+        Assert.True(await vm.RequestCloseAsync()); Assert.False(vm.HasUnsavedChanges);
+        var saved = (await storage.LoadAsync(path)).Project!;
+        Assert.Single(saved.Objects); Assert.Equal(3, saved.Active!.Source.Points.Length);
+        Assert.Null(ScanProjectEvaluator.Evaluate(saved).VisibleScan);
+        using var reopened = Vm(storage); await reopened.OpenAsync(path);
+        Assert.False(reopened.HasNotification, reopened.Notification);
+        Assert.True(reopened.IsImported); Assert.Equal("0", reopened.PointCountText);
+        if (operation == "hide") await reopened.ToggleObjectAsync(reopened.SelectedScanObject!.Id);
+        else await reopened.RestoreObjectCommand.ExecuteAsync();
+        Assert.Equal("3", reopened.PointCountText);
+    });
+
+    [Fact]
+    public Task RevokedAccessCannotCommitAnImportIntoTheCurrentProject() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var access = new TestAccess(); var storage = new SessionStorage();
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage, access: access, interaction: new TestInteraction());
+        await vm.ImportAsync(files.Write("first.asc", "0 0 0\n1 0 0"), new(ScanUnit.Meters));
+        Assert.True(await vm.SaveAsync(Path.Combine(files.Directory, "original.subterra")));
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.IsBusy) && vm.IsBusy) access.Logout(); };
+        await vm.ImportAsync(files.Write("second.asc", "2 0 0\n3 0 0"), new(ScanUnit.Meters), true);
+        Assert.False(vm.IsAdministrator); Assert.Single(vm.ScanObjects);
+        Assert.Equal("2", vm.PointCountText); Assert.False(vm.HasUnsavedChanges);
+        Assert.False(vm.HasNotification, vm.Notification);
     });
 
     [Fact]

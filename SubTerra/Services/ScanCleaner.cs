@@ -14,7 +14,10 @@ public static class ScanCleaner
 {
     private readonly record struct Cell(long X, long Y, long Z)
     {
-        public static Cell At(Vector3 p, double size) => new((long)Math.Floor(p.X / size), (long)Math.Floor(p.Y / size), (long)Math.Floor(p.Z / size));
+        // Round the quotient to the precision of the stored coordinates before flooring.
+        // Otherwise, e.g. 0.02f / 0.01 lands just below cell 2 in double precision.
+        public static Cell At(Vector3 p, double size) => new((long)MathF.Floor((float)(p.X / size)),
+            (long)MathF.Floor((float)(p.Y / size)), (long)MathF.Floor((float)(p.Z / size)));
     }
     public static ScanPointMask Region(ScanObject o, ScanBox box, bool keepInside, CancellationToken token = default)
     {

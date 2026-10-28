@@ -17,7 +17,8 @@ public static class ScanProjectEvaluator
         var points = new ScanPoint[count];
         var hasColors = objects.Any(o => o.Tint.HasValue || o.Source.Colors.Length > 0);
         var colors = hasColors ? new uint[count] : [];
-        var triangles = new List<int>(); var cloudOnly = new List<int>();
+        var triangles = new List<int>();
+        var referenced = new bool[count];
         var next = 0;
         var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
         foreach (var o in objects)
@@ -35,7 +36,6 @@ public static class ScanProjectEvaluator
                 points[next] = new(position.X, position.Y, position.Z, o.Source.Points[i].Intensity);
                 if (hasColors) colors[next] = o.Tint ?? (o.Source.Colors.Length > 0 ? o.Source.Colors[i] : 0xd0dbe2u);
                 if (remap is not null) remap[i] = next;
-                if (!o.Source.HasMesh) cloudOnly.Add(next);
                 min = Vector3.Min(min, position); max = Vector3.Max(max, position);
                 ++next;
             }
@@ -43,10 +43,18 @@ public static class ScanProjectEvaluator
             {
                 if ((i % 4095) == 0) token.ThrowIfCancellationRequested();
                 var a = o.Source.Triangles[i]; var b = o.Source.Triangles[i + 1]; var c = o.Source.Triangles[i + 2];
-                if (remap is null) { triangles.Add(a + offset); triangles.Add(b + offset); triangles.Add(c + offset); }
-                else if (remap[a] >= 0 && remap[b] >= 0 && remap[c] >= 0)
-                { triangles.Add(remap[a]); triangles.Add(remap[b]); triangles.Add(remap[c]); }
+                if (remap is null) { a += offset; b += offset; c += offset; }
+                else { a = remap[a]; b = remap[b]; c = remap[c]; }
+                if (a < 0 || b < 0 || c < 0) continue;
+                triangles.Add(a); triangles.Add(b); triangles.Add(c);
+                referenced[a] = referenced[b] = referenced[c] = true;
             }
+        }
+        var cloudOnly = new List<int>();
+        for (var i = 0; i < count; i++)
+        {
+            if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
+            if (!referenced[i]) cloudOnly.Add(i);
         }
         var scan = new ImportedScan { Metadata = new("SubTerra-project.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
             Points = points, Colors = colors, Triangles = triangles.ToArray() };

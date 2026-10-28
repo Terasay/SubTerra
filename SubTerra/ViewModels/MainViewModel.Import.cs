@@ -64,7 +64,7 @@ public sealed partial class MainViewModel
             }
             var view = await ScanProjectView.PrepareAsync(next, token);
             token.ThrowIfCancellationRequested();
-            if (_disposed) return;
+            if (_disposed || (append && !IsAdministrator)) return;
             if (append) { _projectHistory.Commit(_scanProject!, next, "добавление объекта"); SetProject(next, view); }
             else { Assign(new(null, next.ToSession()), 1, view); _sessionPath = null; }
             MarkSessionDirty();
