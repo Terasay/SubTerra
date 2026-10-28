@@ -39,7 +39,7 @@ public sealed partial class SessionStorage
         progress?.Report(100);
     }
 
-    private static ScanSession LoadImported(ZipArchive archive, Manifest manifest, CancellationToken token, IProgress<double>? progress)
+    private static ScanSession LoadImported(ZipArchive archive, Manifest manifest, CancellationToken token, IProgress<double>? progress, string prefix = "")
     {
         if (manifest.SourceType != "import" || manifest.CoordinateUnit != "m" || manifest.ScenarioId != "imported" ||
             manifest.FrameCount != 0 || manifest.PointCount is < 1 or > ImportedScan.MaximumPoints ||
@@ -48,8 +48,8 @@ public sealed partial class SessionStorage
             throw new InvalidDataException("Некорректное описание импортированного скана.");
         var annotations = manifest.Annotations ?? [];
         ValidateAnnotations(annotations);
-        var pointsEntry = archive.GetEntry("points.bin") ?? throw new InvalidDataException("В сеансе нет точек.");
-        var trianglesEntry = archive.GetEntry("triangles.bin") ?? throw new InvalidDataException("В сеансе нет описания сетки.");
+        var pointsEntry = archive.GetEntry(prefix + "points.bin") ?? throw new InvalidDataException("В сеансе нет точек.");
+        var trianglesEntry = archive.GetEntry(prefix + "triangles.bin") ?? throw new InvalidDataException("В сеансе нет описания сетки.");
         if (pointsEntry.Length != manifest.PointCount * (manifest.HasColors ? 20L : 16L) || trianglesEntry.Length != manifest.TriangleCount * 12L)
             throw new InvalidDataException("Размер скана не соответствует описанию.");
         var points = new ScanPoint[manifest.PointCount];

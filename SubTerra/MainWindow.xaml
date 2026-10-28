@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:h="http://helix-toolkit.org/wpf/SharpDX"
+        xmlns:views="clr-namespace:SubTerra.Views"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Subterra — исследование пространства" Width="1440" Height="900" MinWidth="1040" MinHeight="640"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Background="#0B1218"
@@ -108,6 +109,7 @@
                                     </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
                                 </StackPanel></ScrollViewer>
                             </TabItem>
+                            <TabItem Header="Объекты" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:ScanProjectPanel/></TabItem>
                             <TabItem Header="Сканер" Style="{StaticResource SideTab}" Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}">
                                 <ScrollViewer Padding="0,18,4,0"><StackPanel>
                                     <Border Background="#26352B" CornerRadius="8" Padding="10" Margin="0,0,0,14" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}">
@@ -187,6 +189,7 @@
                             <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Grid}" Color="#253B48" Thickness=".5" IsRendering="{Binding GridVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>
+                            <h:PointGeometryModel3D Geometry="{Binding CloudOnly}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding ImportedMeshVisible}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>
                             <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
                             <h:MeshGeometryModel3D Geometry="{Binding FloorSurface}" Material="{Binding FloorMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
                             <h:MeshGeometryModel3D Geometry="{Binding DampSurface}" Material="{Binding DampMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
@@ -199,6 +202,13 @@
                             <h:PointGeometryModel3D Geometry="{Binding AnnotationGeometry}" Color="#FFAA62" Size="10,10" Figure="Ellipse" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding ClipPlaneGuide}" Color="#8DABD2" Thickness="1" IsRendering="{Binding ClipGuideVisible}" IsHitTestVisible="False"/>
                         </h:Viewport3DX>
+                        <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                        <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,54,10,0" Padding="12,7" Background="#EE254535" CornerRadius="7" IsHitTestVisible="False" Visibility="{Binding IsScreenSelecting, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" Foreground="#D0EDBD"/></Border>
+                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" MaxWidth="260" IsHitTestVisible="False" Visibility="{Binding ImportedMeshVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding MeshPreviewText}" TextWrapping="Wrap" FontSize="11" Foreground="#B9CFAB"/></Border>
+                        <Border VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="14" Background="#F0253B31" BorderBrush="#789C72" BorderThickness="1" CornerRadius="8" Visibility="{Binding HasEditPreview, Converter={StaticResource BoolVisibility}}"><StackPanel>
+                            <TextBlock Text="Предпросмотр очистки" FontWeight="SemiBold" Foreground="#D0EDBD"/><TextBlock Text="{Binding EditPreviewText}" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                            <StackPanel Orientation="Horizontal"><Button Content="Применить" Command="{Binding ApplyCleanPreviewCommand}" Style="{StaticResource Primary}" Margin="0,0,8,0"/><Button Content="Отменить · Esc" Command="{Binding CancelCleanPreviewCommand}"/></StackPanel>
+                        </StackPanel></Border>
                         <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="#EC14212B" CornerRadius="6" Padding="9,6" Margin="12" IsHitTestVisible="False" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionStateText}" FontSize="11" Foreground="#C2DCAE"/></Border>
                         <Border HorizontalAlignment="Center" VerticalAlignment="Top" Background="#EF14212B" BorderBrush="#344652" BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,10,0,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
                             <StackPanel Orientation="Horizontal">
@@ -322,7 +332,7 @@
                                 <Grid Margin="0,7,0,0"><TextBlock Text="{Binding HeightMinText}" FontSize="11"/><TextBlock Text="{Binding HeightMaxText}" FontSize="11" HorizontalAlignment="Right"/></Grid>
                             </StackPanel>
                             <Button Click="SaveAs_Click" IsEnabled="{Binding CanSave}" Content="Сохранить как…" ToolTip="Создать отдельный файл · Ctrl+Shift+S" Margin="0,0,0,8"/>
-                            <Button Click="Export_Click" IsEnabled="{Binding CanSave}" Content="{Binding ExportButtonText}" ToolTip="Экспортируются все измерения, независимо от качества просмотра"/>
+                            <Button Click="Export_Click" IsEnabled="{Binding CanExport}" Content="{Binding ExportButtonText}" ToolTip="Весь результат видимых объектов после очистки; детализация просмотра не влияет"/>
                             <TextBlock Text="Для сохранения и экспорта нужен вход администратора." Style="{StaticResource Muted}" Margin="0,9,0,0" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}"/>
                             <Expander Header="Журнал событий" Margin="0,18,0,0"><ItemsControl ItemsSource="{Binding Events}" Margin="0,10,0,0"><ItemsControl.ItemTemplate><DataTemplate>
                                 <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock Text="{Binding Time}" FontSize="11" Foreground="#A0B5C5"/><TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" FontSize="11" Foreground="#B7CAD7"/></Grid>

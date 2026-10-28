@@ -14,7 +14,7 @@ public sealed partial class SessionStorage
     private sealed record Manifest(int SchemaVersion, string SourceType, string CoordinateUnit,
         string ScenarioId, ScanSettings Settings, int FrameCount, int PointCount, int SceneVersion = 1,
         ScannerAdjustment[]? Adjustments = null, UserAnnotation[]? Annotations = null,
-        ImportMetadata? ImportMetadata = null, int TriangleCount = 0, bool HasColors = false);
+        ImportMetadata? ImportMetadata = null, int TriangleCount = 0, bool HasColors = false, ProjectManifest? Project = null);
     private const int MaximumPoints = 750_000;
     private const int MaximumManifestBytes = 262_144;
 
@@ -22,6 +22,11 @@ public sealed partial class SessionStorage
         IProgress<double>? progress = null) => Task.Run(() =>
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (session.Project is not null)
+        {
+            SaveProject(path, session, cancellationToken, progress);
+            return;
+        }
         if (session.ImportedScan is not null)
         {
             SaveImported(path, session, frameCount, cancellationToken, progress);
@@ -82,6 +87,7 @@ public sealed partial class SessionStorage
         Manifest manifest;
         using (var stream = metadata.Open())
             manifest = JsonSerializer.Deserialize<Manifest>(stream) ?? throw new InvalidDataException("Не удалось прочитать сеанс.");
+        if (manifest.SchemaVersion == 5) return LoadProject(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion == 4) return LoadImported(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion is not (1 or 2 or 3) || manifest.SourceType != "simulation" || manifest.CoordinateUnit != "m")
             throw new InvalidDataException("Версия или тип сеанса не поддерживается.");

@@ -23,7 +23,7 @@ public sealed partial class MainViewModel
     private LineGeometry3D? _clipPlaneGuide;
     public ObservableCollection<UserAnnotation> UserAnnotations { get; } = [];
     public bool IsPicking => _inspectionMode != 0 && IsOverview && !IsBusy;
-    public bool CloudQualityVisible => IsPoints && !IsPicking && !HasRecovery;
+    public bool CloudQualityVisible => IsPoints && !IsPicking && !HasRecovery && !IsScreenSelecting;
     public string InspectionHint => _inspectionMode == 2 ? _measurementStart is null ? "Щёлкните первую точку расстояния" :
         "Щёлкните вторую точку · следующее нажатие начнёт новое измерение" : "Щёлкните поверхность или точку облака";
     public string PickedCoordinates => _pickedPoint is { } point ? IsImported ? $"X {point.X:F5} · Y {point.Y:F5} · Z {point.Z:F5} м" : $"X {point.X:F3} · Y {point.Y:F3} · Z {point.Z:F3} м" : "Точка не выбрана";
@@ -32,19 +32,21 @@ public sealed partial class MainViewModel
         get
         {
             if (!IsImported || _pickedPoint is not { } p) return "";
-            var m = _dataset!.Session.ImportedScan!.Metadata;
+            if (ActiveScanObject is not { } o || !Matrix4x4.Invert(o.Matrix, out var inverse)) return "";
+            p = InspectionPoint.From(Vector3.Transform(p.Position, inverse));
+            var m = o.Source.Metadata;
             var scale = new ScanImportOptions(m.Unit).Scale;
             var x = p.X / scale + m.OriginX;
             var y = (m.UpAxis == ScanUpAxis.Y ? p.Z : p.Y) / scale + m.OriginY;
             var z = (m.UpAxis == ScanUpAxis.Y ? -p.Y : p.Z) / scale + m.OriginZ;
-            return $"В исходном файле: X {x:G12} · Y {y:G12} · Z {z:G12}";
+            return $"В системе выбранного объекта: X {x:G12} · Y {y:G12} · Z {z:G12}";
         }
     }
     public string MeasurementText => _measurementStart is { } start && _measurementEnd is { } end
         ? IsImported ? $"Расстояние: {Vector3.Distance(start.Position, end.Position):F5} м · {Vector3.Distance(start.Position, end.Position) * 1000:F2} мм" :
             $"Расстояние: {Vector3.Distance(start.Position, end.Position):F3} м" : "Выберите две точки";
     public string AnnotationName { get => _annotationName; set => Set(ref _annotationName, value); }
-    public bool CanAddAnnotation => IsAdministrator && CanInteract && !HasRecovery && _pickedPoint is not null && _capturedFrames > 0 && UserAnnotations.Count < 256;
+    public bool CanAddAnnotation => IsAdministrator && CanInteract && !HasRecovery && !HasEditPreview && !IsScreenSelecting && _pickedPoint is not null && _capturedFrames > 0 && UserAnnotations.Count < 256;
     public PointGeometry3D? InspectionPoints { get => _inspectionPoints; private set => Set(ref _inspectionPoints, value); }
     public LineGeometry3D? MeasurementLine { get => _measurementLine; private set => Set(ref _measurementLine, value); }
     public PointGeometry3D? AnnotationGeometry { get => _annotationGeometry; private set => Set(ref _annotationGeometry, value); }
@@ -62,6 +64,7 @@ public sealed partial class MainViewModel
     public void BeginInspection(bool measure)
     {
         if (!CanInteract || _viewFrames == 0) return;
+        EndScreenSelection();
         ReturnToOverview();
         _inspectionMode = measure ? 2 : 1;
         _measurementStart = _measurementEnd = null;
@@ -129,6 +132,7 @@ public sealed partial class MainViewModel
     private ScanSession SnapshotWithAnnotations() => new()
     {
         ScenarioId = _dataset!.Session.ScenarioId, SceneVersion = _dataset.Session.SceneVersion, ImportedScan = _dataset.Session.ImportedScan,
+        Project = _scanProject,
         Settings = _dataset.Session.Settings, Frames = _dataset.Session.Frames,
         Adjustments = _adjustments.ToArray(), Annotations = UserAnnotations.ToArray()
     };

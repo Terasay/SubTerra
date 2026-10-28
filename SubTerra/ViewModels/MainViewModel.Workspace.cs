@@ -80,7 +80,7 @@ public sealed partial class MainViewModel
     public async Task AutoSaveAsync()
     {
         if (_workspaceStore is null || !AutoSaveEnabled || HasRecovery || _autosaving || !HasUnsavedChanges ||
-            !IsAdministrator || _dataset is null || _capturedFrames == 0 || IsBusy || _editVersion == _recoveredVersion) return;
+            !IsAdministrator || _dataset is null || (_capturedFrames == 0 && !IsImported) || IsBusy || _editVersion == _recoveredVersion) return;
         _autosaving = true;
         var version = _editVersion;
         var epoch = _sessionEpoch;

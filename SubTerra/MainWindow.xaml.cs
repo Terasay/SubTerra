@@ -57,6 +57,7 @@ public partial class MainWindow : Window
             async (_, _) => await _viewModel.AutoSaveAsync(), Dispatcher);
         _interactionTimer.Stop(); _autosaveTimer.Stop();
         Viewport.OnRendered += Viewport_OnRendered;
+        InitializeScreenSelection();
         Viewport.PreviewMouseLeftButtonDown += InspectPoint_Click;
         _viewModel.Camera.Changed += Camera_Changed;
         Viewport.SizeChanged += (_, _) => _viewModel.SetViewportSize(Viewport.ActualWidth, Viewport.ActualHeight);
@@ -128,7 +129,7 @@ public partial class MainWindow : Window
     private async void SaveAs_Click(object sender, RoutedEventArgs e) => await _viewModel.SaveCurrentAsync(saveAs: true);
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (!_viewModel.CanSave) return;
+        if (!_viewModel.CanExport) return;
         _viewModel.Pause();
         var dialog = new SaveFileDialog { Title = "Экспорт облака точек", Filter = "Облако точек PLY (*.ply)|*.ply", DefaultExt = ".ply", FileName = "Subterra_scan" };
         if (dialog.ShowDialog(this) == true) await _viewModel.ExportAsync(dialog.FileName);
@@ -143,6 +144,12 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape && _viewModel.IsPicking)
         {
             _viewModel.EndInspection(); e.Handled = true; return;
+        }
+        if (e.Key == Key.Escape && (_viewModel.HasEditPreview || _viewModel.IsScreenSelecting))
+        {
+            if (_viewModel.HasEditPreview) _viewModel.CancelCleanPreview();
+            else _viewModel.EndScreenSelection();
+            ClearScreenStroke(); e.Handled = true; return;
         }
         // These shortcuts remain global, including while a slider or numeric field has focus.
         if (e.Key == Key.F11)
@@ -172,6 +179,17 @@ public partial class MainWindow : Window
         }
         if (!_viewModel.MouseCaptured && (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase
             or PasswordBox or ComboBox or System.Windows.Controls.Primitives.RangeBase)) return;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key is Key.Z or Key.Y && _viewModel.IsImported)
+        {
+            e.Handled = true;
+            if (!e.IsRepeat)
+            {
+                if (e.Key == Key.Y || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) await _viewModel.RedoProjectCommand.ExecuteAsync();
+                else await _viewModel.UndoProjectCommand.ExecuteAsync();
+            }
+            return;
+        }
+        if (_viewModel.IsScreenSelecting && e.Key is Key.Home or Key.Space) { e.Handled = true; return; }
         if (_walk.HandleKeyDown(e)) { e.Handled = true; return; }
         if (e.Key == Key.Home) { if (!e.IsRepeat) _viewModel.Home(); e.Handled = true; }
         else if (e.Key == Key.Space && _viewModel.IsAdministrator && _viewModel.CanInteract)
@@ -182,7 +200,12 @@ public partial class MainWindow : Window
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsImported) && _viewModel.IsImported) SidebarTabs.SelectedIndex = 0;
+        if (e.PropertyName == nameof(MainViewModel.IsImported) && _viewModel.IsImported) SidebarTabs.SelectedIndex = 1;
+        if (e.PropertyName == nameof(MainViewModel.IsScreenSelecting))
+        {
+            if (_viewModel.IsScreenSelecting) Viewport.Cursor = Cursors.Cross;
+            else if (_drawingSelection || Viewport.Cursor == Cursors.Cross) { ClearScreenStroke(); Viewport.Cursor = Cursors.Arrow; }
+        }
         if (e.PropertyName == nameof(MainViewModel.WalkTargetProgress))
         {
             _walk.PlaceAt(_viewModel.WalkTargetProgress);

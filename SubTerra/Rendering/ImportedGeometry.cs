@@ -12,7 +12,18 @@ public sealed class ImportedGeometry(ImportedScan scan)
     private readonly (Vector3 Minimum, Vector3 Maximum) _bounds = scan.Bounds;
     public (Vector3 Minimum, Vector3 Maximum) Bounds => _bounds;
     private readonly Dictionary<(int Limit, PointClipPlane? Clip, bool Height), PointGeometry3D> _clouds = [];
-    private readonly Dictionary<bool, MeshGeometry3D> _meshes = [];
+    private readonly Dictionary<(bool Height, bool Coarse), MeshGeometry3D> _meshes = [];
+    private ImportedScan? _meshPreview;
+    private ImportedScan? _coarsePreview;
+    public int MeshTriangleCount(bool coarse) => (coarse ? _coarsePreview ?? scan : _meshPreview ?? scan).Triangles.Length / 3;
+    public void PrepareMeshPreviews(CancellationToken token = default)
+    {
+        if (!scan.HasMesh) return;
+        _meshPreview = MeshPreviewBuilder.Build(scan, 250_000, token);
+        _coarsePreview = MeshPreviewBuilder.Build(_meshPreview, 50_000, token);
+        foreach (var coarse in new[] { false, true }) foreach (var height in new[] { false, true })
+        { token.ThrowIfCancellationRequested(); _ = Mesh(height, coarse); }
+    }
     private static readonly Vector3[] Palette = [new(.10f, .30f, .52f), new(.06f, .73f, .79f), new(.13f, .84f, .54f),
         new(.56f, .91f, .27f), new(.92f, .87f, .22f), new(.97f, .55f, .18f)];
     public PointGeometry3D Cloud(int limit, PointClipPlane? clip, bool height = false)
@@ -46,36 +57,38 @@ public sealed class ImportedGeometry(ImportedScan scan)
         if (_clouds.Count >= 2) _clouds.Clear();
         return _clouds[key] = new() { Positions = positions, Colors = colors };
     }
-    public MeshGeometry3D Mesh(bool height)
+    public MeshGeometry3D Mesh(bool height, bool coarse = false)
     {
-        if (_meshes.TryGetValue(height, out var cached)) return cached;
-        var count = Math.Min(250_000, scan.Triangles.Length / 3);
+        if (_meshes.TryGetValue((height, coarse), out var cached)) return cached;
+        var data = coarse ? _coarsePreview ?? scan : _meshPreview ?? scan;
+        var count = data.Triangles.Length / 3;
         var positions = new Vector3Collection(count * 3); var normals = new Vector3Collection(count * 3);
         var colors = new Color4Collection(count * 3); var indices = new IntCollection(count * 3);
         for (var i = 0; i < count; i++)
         {
-            var triangle = count < 2 ? 0 : (int)((long)i * (scan.Triangles.Length / 3 - 1) / (count - 1));
-            var a = scan.Points[scan.Triangles[triangle * 3]].Position;
-            var b = scan.Points[scan.Triangles[triangle * 3 + 1]].Position;
-            var c = scan.Points[scan.Triangles[triangle * 3 + 2]].Position;
+            var triangle = i;
+            var a = data.Points[data.Triangles[triangle * 3]].Position;
+            var b = data.Points[data.Triangles[triangle * 3 + 1]].Position;
+            var c = data.Points[data.Triangles[triangle * 3 + 2]].Position;
             var cross = Vector3.Cross(b - a, c - a);
             var normal = cross.LengthSquared() > 1e-16f ? Vector3.Normalize(cross) : Vector3.UnitZ;
             for (var j = 0; j < 3; j++)
             {
-                var index = scan.Triangles[triangle * 3 + j];
-                positions.Add(scan.Points[index].Position); normals.Add(normal); colors.Add(Color(index, height)); indices.Add(indices.Count);
+                var index = data.Triangles[triangle * 3 + j];
+                positions.Add(data.Points[index].Position); normals.Add(normal); colors.Add(Color(data, index, height)); indices.Add(indices.Count);
             }
         }
-        return _meshes[height] = new() { Positions = positions, Normals = normals, Colors = colors, Indices = indices };
+        return _meshes[(height, coarse)] = new() { Positions = positions, Normals = normals, Colors = colors, Indices = indices };
     }
-    private Color4 Color(int index, bool height)
+    private Color4 Color(int index, bool height) => Color(scan, index, height);
+    private Color4 Color(ImportedScan data, int index, bool height)
     {
-        if (!height && scan.Colors.Length > 0)
+        if (!height && data.Colors.Length > 0)
         {
-            var color = scan.Colors[index];
+            var color = data.Colors[index];
             return new((color >> 16 & 255) / 255f, (color >> 8 & 255) / 255f, (color & 255) / 255f, 1);
         }
-        var t = Math.Clamp((scan.Points[index].Z - _bounds.Minimum.Z) / Math.Max(.0001f, _bounds.Maximum.Z - _bounds.Minimum.Z), 0, 1);
+        var t = Math.Clamp((data.Points[index].Z - _bounds.Minimum.Z) / Math.Max(.0001f, _bounds.Maximum.Z - _bounds.Minimum.Z), 0, 1);
         var position = t * (Palette.Length - 1);
         var i = Math.Min(Palette.Length - 2, (int)position);
         var rgb = Vector3.Lerp(Palette[i], Palette[i + 1], position - i);

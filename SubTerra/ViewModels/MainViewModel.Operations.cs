@@ -22,6 +22,7 @@ public sealed partial class MainViewModel
 
     private void InitializeNewCommands()
     {
+        InitializeProjectCommands(); InitializeCleaningCommands();
         CancelOperationCommand = new RelayCommand(CancelOperation, () => CanCancelOperation);
         CoordinatesCommand = new RelayCommand(() => BeginInspection(false), () => CanInteract && _viewFrames > 0);
         MeasureCommand = new RelayCommand(() => BeginInspection(true), () => CanInteract && _viewFrames > 0);
@@ -84,8 +85,9 @@ public sealed partial class MainViewModel
             var session = await _storage.LoadAsync(path, token, OperationProgress(token, .8)).WaitAsync(token);
             var originalPath = recovery && _workspaceStore is not null
                 ? await Task.Run(_workspaceStore.RecoveryOriginalPath, token).WaitAsync(token) : path;
-            var scenario = session.ImportedScan is null ? Scenarios.First(s => s.Id == session.ScenarioId) : null;
+            var scenario = session.ImportedScan is null && session.Project is null ? Scenarios.First(s => s.Id == session.ScenarioId) : null;
             var scene = scenario is null ? null : await Task.Run(() => Simulation.CaveFactory.Create(scenario, session.SceneVersion), token).WaitAsync(token);
+            var projectView = scenario is null ? await Rendering.ScanProjectView.PrepareAsync(ScanProject.FromSession(session), token) : null;
             token.ThrowIfCancellationRequested();
             if (_disposed) return;
             if (scenario is not null) SelectedScenario = scenario;
@@ -95,7 +97,7 @@ public sealed partial class MainViewModel
             StartPosition = session.Settings.StartProgress * 100d;
             FrameIntervalMilliseconds = session.Settings.FrameIntervalMilliseconds;
             _loadingSettings = false;
-            Assign(new(scene, session), session.ImportedScan is null ? session.Frames.Length : 1);
+            Assign(new(scene, session), scenario is null ? 1 : session.Frames.Length, projectView);
             _sessionPath = originalPath;
             HasUnsavedChanges = recovery;
             if (recovery) { ++_editVersion; HasRecovery = false; }

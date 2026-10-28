@@ -35,7 +35,7 @@ public sealed partial class MainViewModel
     public string SessionSaveLabel => HasUnsavedChanges ? "● Есть несохранённые изменения" :
         _sessionPath is null ? "Демонстрационная карта" : "Сохранено · " + Path.GetFileName(_sessionPath);
     public string SessionTitle => _sessionPath is not null ? Path.GetFileName(_sessionPath) :
-        IsImported ? _dataset!.Session.ImportedScan!.Metadata.FileName : HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
+        IsImported ? "Проект сканов" : HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
     public string SaveStateText => HasUnsavedChanges ? "● Не сохранено" : _sessionPath is not null ? "Сохранено" : "Без изменений";
     public string SessionStateText => IsBusy ? "Обработка" : IsRunning ? "Запись" : IsReviewing ? "История" :
         IsImported ? "Скан · просмотр" : _dataset is null || _capturedFrames == 0 ? "Готово" : _capturedFrames < _dataset.Session.Settings.FrameCount ? "Пауза" :
@@ -63,6 +63,7 @@ public sealed partial class MainViewModel
     private async Task<bool> ConfirmReplacementAsync(string action)
     {
         Pause();
+        if (HasEditPreview) CancelCleanPreview();
         if (!HasUnsavedChanges) return true;
         if (_confirming) return false;
         _confirming = true;

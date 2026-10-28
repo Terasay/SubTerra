@@ -3,6 +3,8 @@ using System.IO;
 using System.Numerics;
 using SubTerra.Models;
 using SubTerra.Rendering;
+using SubTerra.Services;
+using HelixToolkit.SharpDX;
 
 namespace SubTerra.ViewModels;
 
@@ -16,34 +18,55 @@ public sealed partial class MainViewModel
         if (double.IsFinite(width) && double.IsFinite(height) && width > 0 && height > 0)
             _viewportAspectRatio = Math.Clamp(width / height, .1, 10);
     }
-    public bool IsImported => _dataset?.Session.ImportedScan is not null;
+    public bool IsImported => _dataset?.Session.ImportedScan is not null || _dataset?.Session.Project is not null;
     public bool IsSimulation => !IsImported;
-    public bool CanShowSurface => !IsImported || _dataset!.Session.ImportedScan!.HasMesh;
+    private ScanProjectView? CurrentProjectView => _previewView ?? _projectView;
+    public bool CanShowSurface => !IsImported || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
     public string SurfaceModeText => IsImported ? "Сетка" : "Пещера";
     public string DataSourceText => IsImported ? "Реальный скан · метры · локальные координаты" : "Симуляция LiDAR · данные на этом компьютере";
     public string DistanceMetricTitle => IsImported ? "ГАБАРИТ X" : "ПРОЙДЕНО";
     public string DurationMetricTitle => IsImported ? "ГАБАРИТ Y" : "ВРЕМЯ СКАНА";
     public string CoverageMetricTitle => IsImported ? "ГАБАРИТ Z" : "ПОКРЫТИЕ";
     public string CoverageMetricText => IsImported ? $"{(_importedBounds.Maximum.Z - _importedBounds.Minimum.Z):F3} м" : $"{CoveragePercent:F0}%";
-    public string ImportDetails => IsImported ? $"{_dataset!.Session.ImportedScan!.Metadata.FileName}\n" +
-        $"{_dataset.Session.ImportedScan.Points.Length:N0} точек · {_dataset.Session.ImportedScan.Triangles.Length / 3:N0} треугольников\n" +
-        "Просмотр ограничивает детализацию. Сохранение и экспорт включают весь скан." : "3DeVOK MQ → Studio → ASC / PLY → SubTerra";
+    public string ImportDetails => IsImported ? $"{ProjectSummary}\nВидимых точек: {CurrentProjectView?.Data.VisibleScan?.Points.Length ?? 0:N0}\n" +
+        "Проект хранит исходники и очистку. PLY включает видимые объекты после очистки." : "3DeVOK MQ → Studio → ASC / PLY → SubTerra";
     public string ExportButtonText => IsImported ? "Экспорт скана в PLY" : "Экспорт точек в PLY";
-    public string ImportTransformText => IsImported ? $"Исходные единицы: {_dataset!.Session.ImportedScan!.Metadata.Unit switch { ScanUnit.Meters => "м", ScanUnit.Centimeters => "см", _ => "мм" }} · вверх: {_dataset.Session.ImportedScan.Metadata.UpAxis}\n" +
-        $"Смещение XYZ: {_dataset.Session.ImportedScan.Metadata.OriginX:G10}; {_dataset.Session.ImportedScan.Metadata.OriginY:G10}; {_dataset.Session.ImportedScan.Metadata.OriginZ:G10}" : "";
+    public string ImportTransformText => ActiveScanObject is { } o ? $"Исходные единицы: {o.Source.Metadata.Unit switch { ScanUnit.Meters => "м", ScanUnit.Centimeters => "см", _ => "мм" }} · вверх: {o.Source.Metadata.UpAxis}\n" +
+        $"Смещение XYZ: {o.Source.Metadata.OriginX:G10}; {o.Source.Metadata.OriginY:G10}; {o.Source.Metadata.OriginZ:G10}" : "";
+    private PointGeometry3D? _cloudOnly;
+    public PointGeometry3D? CloudOnly { get => _cloudOnly; private set => Set(ref _cloudOnly, value); }
+    public bool ImportedMeshVisible => IsImported && IsSurface;
+    private bool CoarseMesh => AdaptiveQuality && (IsCameraMoving || Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
+        (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4);
+    public string MeshPreviewText => $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
+    public bool CanExport => CanSave && (!IsImported || CurrentProjectView?.Data.VisibleScan is not null);
 
-    public async Task ImportAsync(string path, ScanImportOptions options)
+    public async Task ImportAsync(string path, ScanImportOptions options, bool addToProject = false)
     {
-        if (!CanInteract || !await ConfirmReplacementAsync("импортировать скан")) return;
+        var append = addToProject && IsImported;
+        if (!CanInteract || (append && !CanManageProject) || (!append && !await ConfirmReplacementAsync("импортировать скан"))) return;
         ReturnToOverview(); Pause();
         var token = BeginOperation("Импорт скана · чтение файла");
         try
         {
             var scan = await new Services.ScanImporter().ImportAsync(path, options, token, OperationProgress(token, .9));
+            var next = ScanProject.FromSession(scan.ToSession());
+            if (append)
+            {
+                var o = next.Objects[0];
+                if (_scanProject!.Origin is { } origin && origin.Unit == scan.Metadata.Unit && origin.UpAxis == scan.Metadata.UpAxis)
+                {
+                    var delta = new Vector3((float)((scan.Metadata.OriginX - origin.OriginX) * options.Scale), (float)((scan.Metadata.OriginY - origin.OriginY) * options.Scale), (float)((scan.Metadata.OriginZ - origin.OriginZ) * options.Scale));
+                    if (origin.UpAxis == ScanUpAxis.Y) delta = new(delta.X, -delta.Z, delta.Y);
+                    o = o with { Transform = new(delta.X, delta.Y, delta.Z) };
+                }
+                next = _scanProject! with { Objects = [.. _scanProject.Objects, o], ActiveObjectId = o.Id };
+            }
+            var view = await ScanProjectView.PrepareAsync(next, token);
             token.ThrowIfCancellationRequested();
             if (_disposed) return;
-            Assign(new(null, scan.ToSession()), 1);
-            _sessionPath = null;
+            if (append) { _projectHistory.Commit(_scanProject!, next, "добавление объекта"); SetProject(next, view); }
+            else { Assign(new(null, next.ToSession()), 1, view); _sessionPath = null; }
             MarkSessionDirty();
             NotifySessionProperties();
             await ClearRecoveryAsync();
@@ -56,21 +79,21 @@ public sealed partial class MainViewModel
         catch (Exception ex) { ReportError("Не удалось импортировать скан", ex); }
         finally { EndOperation(); }
     }
-    private void AssignImported(ScanDataset dataset)
+    private void AssignImported(ScanDataset dataset, ScanProjectView? prepared)
     {
-        var scan = dataset.Session.ImportedScan!;
         _map = null; _geometry = null;
-        _importedGeometry = new(scan); _importedBounds = _importedGeometry.Bounds;
-        _pointOffsets = [scan.Points.Length];
+        _previewProject = null; _previewView = null; _projectHistory.Clear(); EndScreenSelection();
+        var project = ScanProject.FromSession(dataset.Session);
+        var view = prepared ?? ScanProjectView.PrepareAsync(project).GetAwaiter().GetResult();
         _baselineSettings = null;
-        SelectedScenario = new("imported", Path.GetFileNameWithoutExtension(scan.Metadata.FileName), "РЕАЛЬНЫЙ 3D-СКАН · ASC / PLY", "Импортированные измерения в метрах");
-        Grid = _importedGeometry.Grid(); Route = null; Markers = null; Scanner = null; ScannerHeading = null;
+        SelectedScenario = new("imported", "Проект сканов", "РЕАЛЬНЫЕ 3D-СКАНЫ · ASC / PLY", "Импортированные измерения в метрах");
+        Route = null; Markers = null; Scanner = null; ScannerHeading = null;
         VisibleMarkers.Clear();
         _isHeight = false; _isSurface = false;
         Raise(nameof(IsHeight)); Raise(nameof(IsSurface)); Raise(nameof(IsPoints)); Raise(nameof(IsCave));
         Raise(nameof(IsPointMode)); Raise(nameof(IsSurfaceMode));
         Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel)); Raise(nameof(ShadowsVisible)); Raise(nameof(SsaoEnabled));
-        _capturedFrames = -1; SetCapture(1);
+        SetProject(project, view);
     }
     private void NotifySourceProperties()
     {
@@ -81,14 +104,16 @@ public sealed partial class MainViewModel
             nameof(CloudQualityVisible), nameof(MarkerCountText), nameof(RecordingText) }) Raise(name);
         Raise(nameof(ClipMinimum)); Raise(nameof(ClipMaximum)); Raise(nameof(ClipStep)); Raise(nameof(NavigationSpeedText));
         Raise(nameof(ImportTransformText)); Raise(nameof(SourceCoordinates));
+        Raise(nameof(ImportedMeshVisible)); Raise(nameof(MeshPreviewText)); NotifyProjectState();
     }
     private void RefreshImportedGeometry()
     {
         var clock = Stopwatch.StartNew();
-        if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry!.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight);
-        else Surface = _viewFrames == 0 ? null : _importedGeometry!.Mesh(IsHeight);
+        if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry?.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight);
+        else Surface = _viewFrames == 0 ? null : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
+        CloudOnly = IsSurface ? CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight) : null;
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
-        Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText));
+        Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
     }
     private void FitImported(bool top = false)
     {

@@ -46,13 +46,14 @@ public sealed record ScenarioDefinition(string Id, string Name, string Subtitle,
 public sealed class ScanSession
 {
     public ImportedScan? ImportedScan { get; init; }
+    public ScanProject? Project { get; init; }
     public int SceneVersion { get; init; } = SceneVersions.Current;
     public required string ScenarioId { get; init; }
     public required ScanSettings Settings { get; init; }
     public required ScanFrame[] Frames { get; init; }
     public ScannerAdjustment[] Adjustments { get; init; } = [];
     public UserAnnotation[] Annotations { get; init; } = [];
-    public int PointCount => ImportedScan?.Points.Length ?? Frames.Sum(frame => frame.Points.Length);
+    public int PointCount => Project?.PointCount ?? ImportedScan?.Points.Length ?? Frames.Sum(frame => frame.Points.Length);
 }
 
 public sealed record ScanDataset(CaveScene? Scene, ScanSession Session);

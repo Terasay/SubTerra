@@ -185,11 +185,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         private set { if (Set(ref _isRunning, value)) NotifyState(); }
     }
     public bool CanInteract => !IsBusy && !_confirming;
-    public bool CanSave => IsAdministrator && CanInteract && _capturedFrames > 0;
+    public bool CanSave => IsAdministrator && CanInteract && !HasEditPreview && (_capturedFrames > 0 || IsImported);
     public bool CanEditSettings => IsSimulation && IsAdministrator && CanInteract && !IsRunning;
     public bool IsEmpty => !IsBusy && !IsRunning && _viewFrames == 0;
-    public string EmptyTitle => _capturedFrames > 0 ? "Начало записи" : "Готово к сканированию";
-    public string EmptyHint => _capturedFrames > 0 ? "Передвиньте временную шкалу или нажмите «К последнему»" :
+    public string EmptyTitle => IsImported ? "Нет видимых точек" : _capturedFrames > 0 ? "Начало записи" : "Готово к сканированию";
+    public string EmptyHint => IsImported ? "Добавьте объект, включите его видимость или отмените очистку" : _capturedFrames > 0 ? "Передвиньте временную шкалу или нажмите «К последнему»" :
         "Запустите проход, чтобы увидеть, как формируется карта";
     public bool IsPoints => !IsSurface;
     public bool IsPointMode => IsPoints && !IsHeight;
@@ -260,6 +260,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(CanFly));
         Raise(nameof(SsaoEnabled));
         Raise(nameof(CloudQualityVisible)); Raise(nameof(ClipGuideVisible));
+        Raise(nameof(ImportedMeshVisible));
         RefreshGeometry();
         UpdateAnnotations();
     }
@@ -321,6 +322,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         Raise(nameof(StartText)); Raise(nameof(HasPendingSettings)); Raise(nameof(SettingsHint));
         Raise(nameof(CanRepositionScanner)); Raise(nameof(ScannerControlHint));
+        NotifyProjectState();
         UpdateScanner();
         CommandManager.InvalidateRequerySuggested();
     }
@@ -585,7 +587,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         NotifyView();
     }
 
-    private void Assign(ScanDataset dataset, int capturedFrames)
+    private void Assign(ScanDataset dataset, int capturedFrames, ScanProjectView? preparedProject = null)
     {
         ++_sessionEpoch;
         _editVersion = 0; _recoveredVersion = -1;
@@ -599,14 +601,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DampSurface = null;
         _dataset = dataset;
         _adjustments = dataset.Session.Adjustments.ToList();
-        if (dataset.Session.ImportedScan is not null)
+        if (dataset.Session.ImportedScan is not null || dataset.Session.Project is not null)
         {
-            AssignImported(dataset);
+            AssignImported(dataset, preparedProject);
             NotifySourceProperties();
             NotifyState();
             return;
         }
         _importedGeometry = null;
+        _scanProject = null; _projectView = null; _previewProject = null; _previewView = null; CloudOnly = null;
+        _projectHistory.Clear(); EndScreenSelection(); RefreshProjectItems();
         _map = new(dataset.Session.ScenarioId, dataset.Session.Settings, dataset.Session.SceneVersion);
         _geometry = new SceneGeometry(dataset.Scene!);
         _pointOffsets = new int[dataset.Session.Settings.FrameCount];
@@ -674,11 +678,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(BusyIsIndeterminate));
         Raise(nameof(ViewStateText));
         UpdateScanner();
+        NotifyProjectState();
         CommandManager.InvalidateRequerySuggested();
     }
     private void RefreshGeometry()
     {
-        if (IsImported && _importedGeometry is not null) { RefreshImportedGeometry(); return; }
+        if (IsImported) { RefreshImportedGeometry(); return; }
         if (_dataset is null || _geometry is null || _viewFrames < 0) return;
         var clock = Stopwatch.StartNew();
         var coverage = VisibleCoverage;
@@ -879,14 +884,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public Task OpenAsync(string path) => OpenSessionAsync(path);
     public async Task ExportAsync(string path)
     {
-        if (_dataset is null || !CanSave) return;
+        if (_dataset is null || !CanExport) return;
         Pause();
         var token = BeginOperation("Экспорт облака точек");
         BusyProgress = 0;
         Status = "Экспорт облака точек";
         try
         {
-            if (_dataset.Session.ImportedScan is { } imported)
+            if (IsImported && CurrentProjectView?.Data.VisibleScan is { } imported)
                 await _storage.ExportImportedPlyAsync(path, imported, token, OperationProgress(token));
             else
                 await _storage.ExportPlyAsync(path, _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points), token, OperationProgress(token));

@@ -30,7 +30,7 @@ public sealed partial class MainViewModel
     private void RefreshAdaptiveQuality()
     {
         Raise(nameof(IsCameraMoving)); Raise(nameof(QualityStateText)); Raise(nameof(SsaoEnabled)); Raise(nameof(ShadowsVisible));
-        if (IsPoints) RefreshGeometry();
+        if (IsPoints || IsImported) RefreshGeometry();
     }
     public void UpdateFrameTiming((double Fps, double FrameMilliseconds)? timing) => FrameRateText = timing is { } value
         ? $"{value.Fps:F0} FPS · кадр {value.FrameMilliseconds:F1} мс" : "Кадры: покой";
