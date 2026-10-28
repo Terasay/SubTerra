@@ -9,11 +9,12 @@ using SubTerra.Simulation;
 
 namespace SubTerra.Services;
 
-public sealed class SessionStorage
+public sealed partial class SessionStorage
 {
     private sealed record Manifest(int SchemaVersion, string SourceType, string CoordinateUnit,
         string ScenarioId, ScanSettings Settings, int FrameCount, int PointCount, int SceneVersion = 1,
-        ScannerAdjustment[]? Adjustments = null, UserAnnotation[]? Annotations = null);
+        ScannerAdjustment[]? Adjustments = null, UserAnnotation[]? Annotations = null,
+        ImportMetadata? ImportMetadata = null, int TriangleCount = 0, bool HasColors = false);
     private const int MaximumPoints = 750_000;
     private const int MaximumManifestBytes = 262_144;
 
@@ -21,6 +22,11 @@ public sealed class SessionStorage
         IProgress<double>? progress = null) => Task.Run(() =>
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (session.ImportedScan is not null)
+        {
+            SaveImported(path, session, frameCount, cancellationToken, progress);
+            return;
+        }
         if (!SceneVersions.IsSupported(session.SceneVersion)) throw new InvalidDataException("Неизвестная версия виртуальной сцены.");
         var frames = session.Frames.Take(frameCount).ToArray();
         var adjustments = session.Adjustments.Where(a => a.FirstFrame <= frames.Length).ToArray();
@@ -76,6 +82,7 @@ public sealed class SessionStorage
         Manifest manifest;
         using (var stream = metadata.Open())
             manifest = JsonSerializer.Deserialize<Manifest>(stream) ?? throw new InvalidDataException("Не удалось прочитать сеанс.");
+        if (manifest.SchemaVersion == 4) return LoadImported(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion is not (1 or 2 or 3) || manifest.SourceType != "simulation" || manifest.CoordinateUnit != "m")
             throw new InvalidDataException("Версия или тип сеанса не поддерживается.");
         if (!SceneVersions.IsSupported(manifest.SceneVersion))
@@ -152,7 +159,7 @@ public sealed class SessionStorage
             // Finish and close the new file before replacing a previous export.
             using (var writer = new StreamWriter(temporary, false, new UTF8Encoding(false)))
             {
-                writer.WriteLine("ply\nformat ascii 1.0\ncomment Subterra simulated LiDAR scan; units meters");
+                writer.WriteLine("ply\nformat ascii 1.0\ncomment Subterra scan; units meters; Z up");
                 writer.WriteLine($"element vertex {snapshot.Length}");
                 writer.WriteLine("property float x\nproperty float y\nproperty float z\nproperty float intensity\nend_header");
                 var written = 0;

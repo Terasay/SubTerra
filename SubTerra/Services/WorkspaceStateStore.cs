@@ -42,7 +42,7 @@ public sealed class WorkspaceStateStore
         try
         {
             Directory.CreateDirectory(_directory);
-            await storage.SaveAsync(RecoveryPath, session, session.Frames.Length);
+            await storage.SaveAsync(RecoveryPath, session, session.ImportedScan is null ? session.Frames.Length : 1);
             var hash = RecoveryHash();
             await WriteJsonAsync(Path.Combine(_directory, "recovery.json"), new RecoveryInfo(originalPath, DateTimeOffset.UtcNow, hash), CancellationToken.None);
         }

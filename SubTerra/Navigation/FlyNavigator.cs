@@ -7,6 +7,7 @@ namespace SubTerra.Navigation;
 public sealed class FlyNavigator : ICameraNavigator
 {
     private readonly string _scenario;
+    private readonly float _minimumSpeed;
     public Vector3 Position { get; private set; }
     public float Yaw { get; private set; }
     public float Pitch { get; private set; }
@@ -15,19 +16,20 @@ public sealed class FlyNavigator : ICameraNavigator
     public float DistanceTravelled { get; private set; }
     public Vector3 Forward => new(MathF.Cos(Yaw) * MathF.Cos(Pitch), MathF.Sin(Yaw) * MathF.Cos(Pitch), MathF.Sin(Pitch));
 
-    public FlyNavigator(string scenario, Vector3 position, Vector3 direction, float speed = 6)
+    public FlyNavigator(string scenario, Vector3 position, Vector3 direction, float speed = 6, float minimumSpeed = .5f)
     {
         _scenario = scenario;
+        _minimumSpeed = float.IsFinite(minimumSpeed) ? Math.Clamp(minimumSpeed, .0005f, .5f) : .5f;
         Position = position;
         var unit = direction.LengthSquared() > 1e-8f ? Vector3.Normalize(direction) : Vector3.UnitX;
         Yaw = MathF.Atan2(unit.Y, unit.X);
         Pitch = Math.Clamp(MathF.Asin(Math.Clamp(unit.Z, -1, 1)), -1.5f, 1.5f);
-        if (float.IsFinite(speed)) Speed = Math.Clamp(speed, .5f, 40);
+        if (float.IsFinite(speed)) Speed = Math.Clamp(speed, _minimumSpeed, 40);
     }
 
     public void PlaceAt(float progress)
     {
-        if (!float.IsFinite(progress)) return;
+        if (!float.IsFinite(progress) || _scenario == "imported") return;
         var t = Math.Clamp(progress, 0, 1);
         Position = CaveFactory.Center(_scenario, t);
         var forward = CaveFactory.Basis(_scenario, t).Forward;
@@ -44,9 +46,9 @@ public sealed class FlyNavigator : ICameraNavigator
 
     public void ChangeSpeed(float wheelSteps)
     {
-        if (float.IsFinite(wheelSteps)) Speed = Math.Clamp(Speed * MathF.Pow(1.25f, wheelSteps), .5f, 40);
+        if (float.IsFinite(wheelSteps)) Speed = Math.Clamp(Speed * MathF.Pow(1.25f, wheelSteps), _minimumSpeed, 40);
     }
-    public void SetSpeed(float speed) { if (float.IsFinite(speed)) Speed = Math.Clamp(speed, .5f, 40); }
+    public void SetSpeed(float speed) { if (float.IsFinite(speed)) Speed = Math.Clamp(speed, _minimumSpeed, 40); }
 
     public void Move(float forward, float right, float deltaSeconds, bool fast, float up = 0)
     {

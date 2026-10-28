@@ -59,6 +59,7 @@ public partial class MainWindow : Window
         Viewport.OnRendered += Viewport_OnRendered;
         Viewport.PreviewMouseLeftButtonDown += InspectPoint_Click;
         _viewModel.Camera.Changed += Camera_Changed;
+        Viewport.SizeChanged += (_, _) => _viewModel.SetViewportSize(Viewport.ActualWidth, Viewport.ActualHeight);
         Viewport.InputBindings.Clear();
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Rotate, new MouseGesture(MouseAction.LeftClick)));
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.RightClick)));
@@ -104,8 +105,21 @@ public partial class MainWindow : Window
     private async void Open_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanInteract) return;
-        var dialog = new OpenFileDialog { Title = "Открыть сеанс Subterra", Filter = "Сеанс Subterra (*.subterra)|*.subterra", CheckFileExists = true };
-        if (dialog.ShowDialog(this) == true) await _viewModel.OpenAsync(dialog.FileName);
+        var dialog = new OpenFileDialog { Title = "Открыть сеанс или скан", Filter = "Сеансы и сканы|*.subterra;*.ply;*.asc;*.xyz;*.txt|Сеанс SubTerra|*.subterra|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        if (dialog.ShowDialog(this) != true) return;
+        if (System.IO.Path.GetExtension(dialog.FileName).Equals(".subterra", StringComparison.OrdinalIgnoreCase)) await _viewModel.OpenAsync(dialog.FileName);
+        else await ImportScanFileAsync(dialog.FileName);
+    }
+    private async void Import_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.CanInteract) return;
+        var dialog = new OpenFileDialog { Title = "Импорт скана 3DeVOK MQ", Filter = "Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        if (dialog.ShowDialog(this) == true) await ImportScanFileAsync(dialog.FileName);
+    }
+    private async Task ImportScanFileAsync(string path)
+    {
+        var options = new ScanImportWindow(path) { Owner = this };
+        if (options.ShowDialog() == true) await _viewModel.ImportAsync(path, options.Options);
     }
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
@@ -168,6 +182,7 @@ public partial class MainWindow : Window
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.IsImported) && _viewModel.IsImported) SidebarTabs.SelectedIndex = 0;
         if (e.PropertyName == nameof(MainViewModel.WalkTargetProgress))
         {
             _walk.PlaceAt(_viewModel.WalkTargetProgress);

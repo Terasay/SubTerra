@@ -186,15 +186,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     public bool CanInteract => !IsBusy && !_confirming;
     public bool CanSave => IsAdministrator && CanInteract && _capturedFrames > 0;
-    public bool CanEditSettings => IsAdministrator && CanInteract && !IsRunning;
+    public bool CanEditSettings => IsSimulation && IsAdministrator && CanInteract && !IsRunning;
     public bool IsEmpty => !IsBusy && !IsRunning && _viewFrames == 0;
     public string EmptyTitle => _capturedFrames > 0 ? "Начало записи" : "Готово к сканированию";
     public string EmptyHint => _capturedFrames > 0 ? "Передвиньте временную шкалу или нажмите «К последнему»" :
         "Запустите проход, чтобы увидеть, как формируется карта";
     public bool IsPoints => !IsSurface;
-    public bool IsCave => IsSurface && !IsHeight;
+    public bool IsPointMode => IsPoints && !IsHeight;
+    public bool IsSurfaceMode => IsSurface && !IsHeight;
+    public bool IsCave => IsSimulation && IsSurface && !IsHeight;
     public bool IsHeight => _isHeight;
-    public PhongMaterial SurfaceMaterial => IsHeight ? CaveMaterials.Height : _limestone ??= CaveMaterials.Limestone();
+    public PhongMaterial SurfaceMaterial => IsImported || IsHeight ? CaveMaterials.Height : _limestone ??= CaveMaterials.Limestone();
     private PhongMaterial? _limestone;
     public PhongMaterial FloorMaterial => _sediment ??= CaveMaterials.Sediment();
     public PhongMaterial DampMaterial => _dampLimestone ??= CaveMaterials.DampLimestone();
@@ -203,16 +205,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsWalking => _isWalking;
     public bool IsFlying => _isFlying;
     public bool IsNavigating => IsWalking || IsFlying;
-    public bool CanWalk => CanInteract && _viewFrames > 0 && WalkCoverage.End - WalkCoverage.Start >= .06f;
+    public bool CanWalk => IsSimulation && CanInteract && _viewFrames > 0 && WalkCoverage.End - WalkCoverage.Start >= .06f;
     public bool CanFly => CanInteract && IsPoints && _viewFrames > 0;
     public bool IsOverview => !IsNavigating;
     public string ExploreText => IsPoints ? "Свободный полёт" : "Прогулка внутри";
     public string NavigationTitle => IsFlying ? "Свободный полёт" : "Прогулка по пещере";
-    public string NavigationSpeedText => $"{_flightSpeed:F1} м/с · колесо меняет скорость";
+    public float FlightSpeedScale => IsImported ? Math.Clamp((_importedBounds.Maximum - _importedBounds.Minimum).Length() / 10, .001f, 1) : 1;
+    public float EffectiveFlightSpeed => _flightSpeed * FlightSpeedScale;
+    public string NavigationSpeedText => $"{EffectiveFlightSpeed:F3} м/с · колесо меняет скорость";
     public bool GridVisible => ShowGrid && !IsWalking;
-    public bool RouteVisible => ShowRoute && !IsWalking;
-    public bool MarkersVisible => ShowMarkers && !IsWalking;
-    public bool ScannerVisible => !IsWalking;
+    public bool RouteVisible => IsSimulation && ShowRoute && !IsWalking;
+    public bool MarkersVisible => IsSimulation && ShowMarkers && !IsWalking;
+    public bool ScannerVisible => IsSimulation && !IsWalking;
     public bool MouseCaptured
     {
         get => _mouseCaptured;
@@ -225,11 +229,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ? "WASD — полёт · Q / E — вниз / вверх · Shift — быстрее · колесо — скорость · Tab — курсор · Esc — обзор"
         : IsWalking ? "WASD — идти · мышь — осмотр · Shift — быстрее · Tab — курсор · Esc — обзор"
         : "ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб · Home — общий вид";
-    public WalkNavigator CreateNavigator() => new(_dataset!.Scene, WalkCoverage.End, WalkCoverage.Start)
+    public WalkNavigator CreateNavigator() => new(_dataset!.Scene!, WalkCoverage.End, WalkCoverage.Start)
         { Speed = (float)WalkSpeed, FastMultiplier = (float)FastMultiplier };
     public FlyNavigator CreateFlyNavigator() => new(SelectedScenario.Id,
         new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
-        new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), _flightSpeed)
+        new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), EffectiveFlightSpeed,
+        .5f * FlightSpeedScale)
         { FastMultiplier = (float)FastMultiplier };
     public bool IsSurface
     {
@@ -238,15 +243,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             if (!Set(ref _isSurface, value)) return;
             Raise(nameof(IsPoints)); Raise(nameof(IsCave)); Raise(nameof(RenderLabel)); Raise(nameof(ShadowsVisible));
+            Raise(nameof(IsPointMode)); Raise(nameof(IsSurfaceMode));
             Raise(nameof(ExploreText)); Raise(nameof(CanFly));
         }
     }
     private void SetView(bool surface, bool height)
     {
+        if (surface && !CanShowSurface && !height) return;
         if (IsNavigating) ReturnToOverview();
         _isHeight = height;
-        IsSurface = surface;
+        IsSurface = surface && CanShowSurface;
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
+        Raise(nameof(IsPointMode)); Raise(nameof(IsSurfaceMode));
         Raise(nameof(ShadowsVisible));
         Raise(nameof(ExploreText));
         Raise(nameof(CanFly));
@@ -255,7 +263,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         RefreshGeometry();
         UpdateAnnotations();
     }
-    public string RenderLabel => IsPoints ? "ОБЛАКО ТОЧЕК" : IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
+    public string RenderLabel => IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : IsPoints ? "ОБЛАКО ТОЧЕК" : IsImported ? "ПОВЕРХНОСТЬ СКАНА" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
     public bool ShowGrid { get => _showGrid; set { if (Set(ref _showGrid, value)) Raise(nameof(GridVisible)); } }
     public bool ShowRoute { get => _showRoute; set { if (Set(ref _showRoute, value)) Raise(nameof(RouteVisible)); } }
     public bool ShowMarkers { get => _showMarkers; set { if (Set(ref _showMarkers, value)) Raise(nameof(MarkersVisible)); } }
@@ -362,24 +370,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private float SessionStart => _dataset?.Session.Settings.StartProgress ?? 0;
     private float RouteProgress => _dataset is null || _viewFrames == 0 ? SessionStart :
         ScannerPlan.PositionAt(_dataset.Session.Settings, _adjustments, _viewFrames - 1);
-    public double Progress => _dataset is null ? 0 : _viewFrames * 100d / _dataset.Session.Settings.FrameCount;
-    public double CaptureProgress => _dataset is null ? 0 : CapturedFrameCount * 100d / _dataset.Session.Settings.FrameCount;
+    public double Progress => IsImported ? 100 : _dataset is null ? 0 : _viewFrames * 100d / _dataset.Session.Settings.FrameCount;
+    public double CaptureProgress => IsImported ? 100 : _dataset is null ? 0 : CapturedFrameCount * 100d / _dataset.Session.Settings.FrameCount;
     public double CoveragePercent => Math.Clamp(VisibleCoverage.Sum(range => (double)range.End - range.Start) * 100, 0, 100);
     public string PointCountText => (_viewFrames == 0 ? 0 : _pointOffsets[_viewFrames - 1]).ToString("N0");
-    public string DistanceText => $"{(_dataset?.Scene.LengthMeters ?? 0) * VisibleCoverage.Sum(r => r.End - r.Start):F1}";
-    public string DurationText => FormatDuration(_viewFrames);
-    public string FrameCountText => $"{_capturedFrames} / {_dataset?.Session.Settings.FrameCount ?? 180}";
+    public string DistanceText => IsImported ? $"{(_importedBounds.Maximum.X - _importedBounds.Minimum.X):F3}" : $"{(_dataset?.Scene?.LengthMeters ?? 0) * VisibleCoverage.Sum(r => r.End - r.Start):F1}";
+    public string DurationText => IsImported ? $"{(_importedBounds.Maximum.Y - _importedBounds.Minimum.Y):F3} м" : FormatDuration(_viewFrames);
+    public string FrameCountText => IsImported ? "Статический скан" : $"{_capturedFrames} / {_dataset?.Session.Settings.FrameCount ?? 180}";
     public int CapturedFrameCount => Math.Max(0, _capturedFrames);
     public double PlaybackFrame { get => _viewFrames; set => Seek((int)Math.Round(value)); }
     public bool IsReviewing => _viewFrames < _capturedFrames;
     public string TimelineText => $"Кадр {_viewFrames} / {CapturedFrameCount} · {FormatDuration(_viewFrames)}";
-    public string RecordingText => $"В сеансе {(_capturedFrames > 0 ? _pointOffsets[_capturedFrames - 1] : 0):N0} точек · {FormatDuration(CapturedFrameCount)}";
+    public string RecordingText => IsImported ? ImportDetails : $"В сеансе {(_capturedFrames > 0 ? _pointOffsets[_capturedFrames - 1] : 0):N0} точек · {FormatDuration(CapturedFrameCount)}";
     public string ViewStateText => IsReviewing ? "Просмотр истории" : IsRunning ? "Текущий кадр" : "Последний кадр";
     private string FormatDuration(int count) => TimeSpan.FromMilliseconds(count *
         (double)(_dataset?.Session.Settings.FrameIntervalMilliseconds ?? FrameIntervalMilliseconds)).ToString(@"mm\:ss\.f");
-    public string HeightMinText => $"{_dataset?.Scene.MinimumHeight ?? -3:F1} м";
-    public string HeightMaxText => $"{_dataset?.Scene.MaximumHeight ?? 4:F1} м";
-    public string TotalLengthText => $"{(_dataset?.Scene.LengthMeters ?? 0) * (1 - SessionStart):F0} м";
+    public string HeightMinText => $"{(IsImported ? _importedBounds.Minimum.Z : _dataset?.Scene?.MinimumHeight ?? -3):F3} м";
+    public string HeightMaxText => $"{(IsImported ? _importedBounds.Maximum.Z : _dataset?.Scene?.MaximumHeight ?? 4):F3} м";
+    public string TotalLengthText => IsImported ? "Реальный скан" : $"{(_dataset?.Scene?.LengthMeters ?? 0) * (1 - SessionStart):F0} м";
     public string MarkerCountText => $"{VisibleMarkers.Count:00}";
     private ScanSettings Settings => (_baselineSettings ?? new ScanSettings()) with
     {
@@ -388,7 +396,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ? _baselineSettings.RaysPerFrame : DensityIndex switch { 0 => 360, 2 => 1280, _ => 720 },
         StartProgress = (float)(StartPosition / 100), FrameIntervalMilliseconds = FrameIntervalMilliseconds
     };
-    private bool CanResume => _dataset is not null && _capturedFrames > 0 &&
+    private bool CanResume => IsSimulation && _dataset is not null && _capturedFrames > 0 &&
         _capturedFrames < _dataset.Session.Settings.FrameCount && Settings == _dataset.Session.Settings &&
         SelectedScenario.Id == _dataset.Session.ScenarioId;
     public string StartText => IsGuest ? "Нужен вход администратора" : IsRunning ? "Сканирование идёт" : CanResume ? "Продолжить сканирование" :
@@ -397,7 +405,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task LoadDemoAsync(ScenarioDefinition? scenario = null)
     {
         if (_disposed || !CanInteract || !await ConfirmReplacementAsync("сменить демонстрационную сцену")) return;
-        scenario ??= SelectedScenario;
+        scenario ??= IsImported ? ScenarioDefinition.All[0] : SelectedScenario;
         ExitWalking();
         StopCapture();
         var token = BeginOperation("Генерация виртуальной сцены");
@@ -454,7 +462,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var settings = Settings;
                 settings.Validate();
                 var scenario = SelectedScenario;
-                var scene = _dataset?.Scene.Scenario.Id == scenario.Id && _dataset.Scene.SceneVersion == SceneVersions.Current ? _dataset.Scene :
+                var scene = _dataset?.Scene?.Scenario.Id == scenario.Id && _dataset.Scene.SceneVersion == SceneVersions.Current ? _dataset.Scene :
                     await Task.Run(() => CaveFactory.Create(scenario), token).WaitAsync(token);
                 token.ThrowIfCancellationRequested();
                 if (_disposed || !IsAdministrator) return;
@@ -506,6 +514,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task ClearAsync()
     {
         if (!CanSave || !await ConfirmReplacementAsync("очистить карту") || !IsAdministrator) return;
+        if (IsImported) { await LoadDemoAsync(ScenarioDefinition.All[0]); return; }
         if (IsNavigating) Home();
         StopCapture();
         if (_dataset is not null)
@@ -581,6 +590,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         ++_sessionEpoch;
         _editVersion = 0; _recoveredVersion = -1;
+        _clipEnabled = false; _clipOffset = 0; ClipPlaneGuide = null;
+        Raise(nameof(ClipEnabled)); Raise(nameof(ClipOffset)); Raise(nameof(ClipGuideVisible));
         AssignAnnotations(dataset.Session);
         // Release previous display buffers, including the currently hidden mode.
         Cloud = null;
@@ -589,8 +600,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DampSurface = null;
         _dataset = dataset;
         _adjustments = dataset.Session.Adjustments.ToList();
+        if (dataset.Session.ImportedScan is not null)
+        {
+            AssignImported(dataset);
+            NotifySourceProperties();
+            NotifyState();
+            return;
+        }
+        _importedGeometry = null;
         _map = new(dataset.Session.ScenarioId, dataset.Session.Settings, dataset.Session.SceneVersion);
-        _geometry = new SceneGeometry(dataset.Scene);
+        _geometry = new SceneGeometry(dataset.Scene!);
         _pointOffsets = new int[dataset.Session.Settings.FrameCount];
         var total = 0;
         for (var i = 0; i < dataset.Session.Frames.Length; i++)
@@ -602,13 +621,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         _baselineSettings = dataset.Session.Settings;
         _baselineDensityIndex = DensityIndex;
-        Grid = SceneGeometry.Grid(dataset.Scene.MinimumHeight - .5f);
+        Grid = SceneGeometry.Grid(dataset.Scene!.MinimumHeight - .5f);
         _capturedFrames = -1;
         SetCapture(capturedFrames);
         Raise(nameof(HeightMinText)); Raise(nameof(HeightMaxText)); Raise(nameof(TotalLengthText));
         SettingsChanged();
         Raise(nameof(PlannedDurationText));
         ResetScannerPreview();
+        NotifySourceProperties();
     }
 
     private void SetCapture(int count)
@@ -635,6 +655,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         RefreshGeometry();
         Raise(nameof(Progress)); Raise(nameof(PointCountText)); Raise(nameof(DistanceText));
         Raise(nameof(CoveragePercent));
+        Raise(nameof(CoverageMetricText));
         Raise(nameof(CaptureProgress));
         Raise(nameof(DurationText)); Raise(nameof(PlaybackFrame)); Raise(nameof(TimelineText));
         Raise(nameof(IsReviewing)); Raise(nameof(ViewStateText));
@@ -658,6 +679,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     private void RefreshGeometry()
     {
+        if (IsImported && _importedGeometry is not null) { RefreshImportedGeometry(); return; }
         if (_dataset is null || _geometry is null || _viewFrames < 0) return;
         var clock = Stopwatch.StartNew();
         var coverage = VisibleCoverage;
@@ -675,7 +697,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Route = _geometry.Route(coverage);
         UpdateScanner();
         var markerCoverage = IsWalking ? new[] { WalkCoverage } : coverage;
-        var visible = _dataset.Scene.Markers.Where(m => markerCoverage.Any(r => m.Progress >= r.Start && m.Progress <= r.End)).ToArray();
+        var visible = _dataset.Scene!.Markers.Where(m => markerCoverage.Any(r => m.Progress >= r.Start && m.Progress <= r.End)).ToArray();
         Markers = SceneGeometry.Points(visible.Select(m => m.Position));
         if (!VisibleMarkers.SequenceEqual(visible))
         {
@@ -689,13 +711,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     private void UpdateScanner()
     {
-        if (_dataset is null || _viewFrames < 0) return;
+        if (_dataset is null || _viewFrames < 0 || IsImported) return;
         var preview = !IsRunning && Math.Abs(StartPosition / 100 - SessionStart) > .0001;
         var pose = preview ? CaveFactory.Pose(SelectedScenario.Id, (float)StartPosition / 100 + .002f) :
             _viewFrames > 0 ? _dataset.Session.Frames[_viewFrames - 1].Pose : CaveFactory.Pose(SelectedScenario.Id, SessionStart + .002f);
         if (_previewScanner && !HasPendingSettings && !IsRunning && IsAdministrator && !IsReviewing)
         {
-            pose = ScannerPlan.Pose(_dataset.Scene.Scenario.Id, ProposedAdjustment.RoutePosition, ProposedAdjustment);
+            pose = ScannerPlan.Pose(_dataset.Scene!.Scenario.Id, ProposedAdjustment.RoutePosition, ProposedAdjustment);
         }
         Scanner = SceneGeometry.Points([pose.Position]);
         ScannerHeading = SceneGeometry.Lines([pose.Position, pose.Position + Vector3.Transform(Vector3.UnitY, pose.Orientation) * 2]);
@@ -717,6 +739,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ExitWalking();
         FollowScanner = false;
         Camera.FieldOfView = 47;
+        if (IsImported) { FitImported(); return; }
+        Camera.NearPlaneDistance = .05; Camera.FarPlaneDistance = 1200;
         var center = new Vector3(0, 1, -1);
         MoveCamera(center + new Vector3(12, -47, 35), center, "Общий вид");
     }
@@ -738,6 +762,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ExitWalking();
         Camera.FieldOfView = 47;
         FollowScanner = false;
+        if (IsImported) { FitImported(true); return; }
         var center = SelectedScenario.Id == "aurora" ? new Vector3(3, -1, 0) : Vector3.Zero;
         Camera.UpDirection = new Vector3D(0, 1, 0);
         Camera.Position = new Point3D(center.X, center.Y, 83);
@@ -766,7 +791,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (!CanFly) return;
         EndInspection();
         ExitWalking();
-        _navigationOrbitDistance = Math.Clamp(Camera.LookDirection.Length, 2, 15);
+        _navigationOrbitDistance = IsImported ? Math.Max(.001, Camera.LookDirection.Length) : Math.Clamp(Camera.LookDirection.Length, 2, 15);
         Pause();
         FollowScanner = false;
         _isFlying = true;
@@ -807,7 +832,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         if (navigator is FlyNavigator flight)
         {
-            if (_flightSpeed != flight.Speed) FlightSpeed = flight.Speed;
+            if (Math.Abs(EffectiveFlightSpeed - flight.Speed) > .000001f) FlightSpeed = flight.Speed / FlightSpeedScale;
             CameraLabel = $"Полёт · {navigator.DistanceTravelled:F1} м";
         }
         else CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
@@ -861,8 +886,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Status = "Экспорт облака точек";
         try
         {
-            var points = _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points);
-            await _storage.ExportPlyAsync(path, points, token, OperationProgress(token));
+            if (_dataset.Session.ImportedScan is { } imported)
+                await _storage.ExportImportedPlyAsync(path, imported, token, OperationProgress(token));
+            else
+                await _storage.ExportPlyAsync(path, _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points), token, OperationProgress(token));
             Status = "Облако точек экспортировано";
             AddEvent("Облако точек экспортировано в PLY");
         }

@@ -1,0 +1,43 @@
+<Window x:Class="SubTerra.Views.ScanImportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Импорт 3D-скана" Width="580" Height="650" MinHeight="480" ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="#111B26" Foreground="#E4ECF4">
+    <Grid Margin="26">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,18">
+            <TextBlock Text="Импорт реального скана" FontSize="23" FontWeight="SemiBold"/>
+            <TextBlock x:Name="FileLabel" TextTrimming="CharacterEllipsis" Foreground="#A4BDC9" Margin="0,8,0,0"/>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,12,0">
+            <Border Background="#1D302B" Padding="14" CornerRadius="8" Margin="0,0,0,18"><StackPanel>
+                <TextBlock Text="3DeVOK MQ → Studio → SubTerra" FontWeight="SemiBold" Foreground="#CCE7BB"/>
+                <TextBlock Text="В 3DeVOK Studio завершите сканирование и сшивку, удалите лишние точки. Экспортируйте облако в ASC или цветную сетку в PLY. Затем откройте файл здесь." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
+            </StackPanel></Border>
+            <TextBlock Text="Единицы исходного файла" FontWeight="SemiBold"/>
+            <ComboBox x:Name="Units" SelectedIndex="2" Margin="0,8,0,5" AutomationProperties.Name="Единицы исходного скана">
+                <ComboBoxItem Content="Метры (m)"/><ComboBoxItem Content="Сантиметры (cm)"/><ComboBoxItem Content="Миллиметры (mm)"/>
+            </ComboBox>
+            <TextBlock Text="Укажите единицы из настроек экспорта Studio. PLY и ASC не гарантируют единицы в самом файле. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+            <TextBlock Text="Какая ось направлена вверх?" FontWeight="SemiBold" Margin="0,18,0,8"/>
+            <ComboBox x:Name="UpAxis" SelectedIndex="0" AutomationProperties.Name="Ось высоты скана">
+                <ComboBoxItem Content="Z вверх"/><ComboBoxItem Content="Y вверх → повернуть в Z вверх"/>
+            </ComboBox>
+            <StackPanel x:Name="TextOptions" Margin="0,18,0,0">
+                <TextBlock Text="Столбцы ASC / XYZ / TXT" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <ComboBox x:Name="Columns" SelectedIndex="0" AutomationProperties.Name="Столбцы текстового облака">
+                    <ComboBoxItem Content="X Y Z · остальные столбцы пропустить"/><ComboBoxItem Content="X Y Z R G B · RGB от 0 до 255"/>
+                    <ComboBoxItem Content="3DeVOK: X Y Z Nx Ny Nz R G B · RGB от 0 до 1"/>
+                </ComboBox>
+                <TextBlock Text="Нормали Nx Ny Nz не являются цветом. По умолчанию читаются только XYZ. Разделители: пробел, табуляция, запятая или ;. Десятичная точка — точка." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" Margin="0,7,0,0" LineHeight="17"/>
+            </StackPanel>
+            <CheckBox x:Name="LocalOrigin" Content="Локальное начало у первой точки" IsChecked="True" Margin="0,20,0,7"/>
+            <TextBlock Text="Помогает сохранять точность при больших координатах. Исходное смещение, единицы и ось сохранятся в сеансе .subterra. После импорта проверьте масштаб по известному размеру." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+            <TextBlock Text="До 5 млн точек и 5 млн треугольников. PLY: ASCII и binary, RGB и геометрия. Захват через USB и сшивка выполняются в Studio; подключения MQ напрямую в SubTerra пока нет." TextWrapping="Wrap" Foreground="#D3BF9D" FontSize="12" Margin="0,18,0,10" LineHeight="17"/>
+        </StackPanel></ScrollViewer>
+        <Grid Grid.Row="2" Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Content="Импортировать" Style="{StaticResource Primary}" IsDefault="True" Click="Import_Click" Margin="0,0,10,0"/>
+            <Button Grid.Column="1" Content="Отмена" IsCancel="True"/>
+        </Grid>
+    </Grid>
+</Window>

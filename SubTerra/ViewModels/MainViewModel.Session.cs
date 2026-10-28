@@ -25,7 +25,7 @@ public sealed partial class MainViewModel
     public bool IsGuest => !IsAdministrator;
     public string AccessLabel => IsAdministrator ? "Администратор · admin" : "Гость · просмотр";
     public string AccessButtonText => IsAdministrator ? "Выйти" : "Вход администратора";
-    public bool CanStart => IsAdministrator && CanInteract && !IsRunning && !HasRecovery;
+    public bool CanStart => IsSimulation && IsAdministrator && CanInteract && !IsRunning && !HasRecovery;
     public bool CanChangeScenario => CanInteract && !IsRunning;
     public bool HasUnsavedChanges
     {
@@ -35,10 +35,10 @@ public sealed partial class MainViewModel
     public string SessionSaveLabel => HasUnsavedChanges ? "● Есть несохранённые изменения" :
         _sessionPath is null ? "Демонстрационная карта" : "Сохранено · " + Path.GetFileName(_sessionPath);
     public string SessionTitle => _sessionPath is not null ? Path.GetFileName(_sessionPath) :
-        HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
+        IsImported ? _dataset!.Session.ImportedScan!.Metadata.FileName : HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
     public string SaveStateText => HasUnsavedChanges ? "● Не сохранено" : _sessionPath is not null ? "Сохранено" : "Без изменений";
     public string SessionStateText => IsBusy ? "Обработка" : IsRunning ? "Запись" : IsReviewing ? "История" :
-        _dataset is null || _capturedFrames == 0 ? "Готово" : _capturedFrames < _dataset.Session.Settings.FrameCount ? "Пауза" :
+        IsImported ? "Скан · просмотр" : _dataset is null || _capturedFrames == 0 ? "Готово" : _capturedFrames < _dataset.Session.Settings.FrameCount ? "Пауза" :
         _sessionPath is null && !HasUnsavedChanges ? "Демо" : "Просмотр";
     private void NotifySessionProperties()
     {
@@ -104,7 +104,7 @@ public sealed partial class MainViewModel
         return true;
     }
 
-    public bool CanRepositionScanner => IsAdministrator && CanInteract && !HasRecovery && !IsRunning && IsOverview && !IsReviewing &&
+    public bool CanRepositionScanner => IsSimulation && IsAdministrator && CanInteract && !HasRecovery && !IsRunning && IsOverview && !IsReviewing &&
         _dataset is not null && _capturedFrames > 0 && _capturedFrames < _dataset.Session.Settings.FrameCount && !HasPendingSettings;
     public string ScannerControlHint => IsGuest ? "Управление датчиком доступно администратору." : IsRunning ?
         "Поставьте проход на паузу для перестановки." : IsReviewing ? "Вернитесь к последнему кадру для перестановки." : CanRepositionScanner ?
@@ -157,7 +157,7 @@ public sealed partial class MainViewModel
         try
         {
             await _captureTask.WaitAsync(TimeSpan.FromSeconds(2));
-            if (!await Task.Run(() => ScannerPlan.IsClear(_dataset!.Scene, adjustment)))
+            if (!await Task.Run(() => ScannerPlan.IsClear(_dataset!.Scene!, adjustment)))
                 throw new InvalidOperationException("Датчик слишком близко к стене или внутри выступа. Уменьшите смещение.");
             if (!IsAdministrator || _disposed) return;
             _adjustments.RemoveAll(a => a.FirstFrame >= _capturedFrames);
@@ -173,7 +173,7 @@ public sealed partial class MainViewModel
         finally { IsBusy = false; UpdateScanner(); }
     }
 
-    private ScanCoverage[] VisibleCoverage => _dataset is null ? [] : ScannerPlan.Coverage(_dataset.Session.Settings, _adjustments, _viewFrames);
+    private ScanCoverage[] VisibleCoverage => _dataset is null || IsImported ? [] : ScannerPlan.Coverage(_dataset.Session.Settings, _adjustments, _viewFrames);
     private ScanCoverage WalkCoverage => VisibleCoverage.FirstOrDefault(r => RouteProgress >= r.Start && RouteProgress <= r.End);
     public HelixToolkit.SharpDX.LineGeometry3D? ScannerHeading { get; private set; }
 }

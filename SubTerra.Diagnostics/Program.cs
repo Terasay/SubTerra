@@ -72,7 +72,7 @@ internal static class Program
         var data = new SimulatedScanSource().GenerateAsync(scenario, settings, null, cancellationToken).GetAwaiter().GetResult();
         var generation = clock.Elapsed.TotalMilliseconds;
         clock.Restart();
-        var geometry = new SceneGeometry(data.Scene, data.Session);
+        var geometry = new SceneGeometry(data.Scene!, data.Session);
         var preparation = clock.Elapsed.TotalMilliseconds;
         var count = 0;
         var prefixes = data.Session.Frames.Select(f => count += f.Points.Length).ToArray();

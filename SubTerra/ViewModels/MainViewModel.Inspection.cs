@@ -26,9 +26,23 @@ public sealed partial class MainViewModel
     public bool CloudQualityVisible => IsPoints && !IsPicking && !HasRecovery;
     public string InspectionHint => _inspectionMode == 2 ? _measurementStart is null ? "Щёлкните первую точку расстояния" :
         "Щёлкните вторую точку · следующее нажатие начнёт новое измерение" : "Щёлкните поверхность или точку облака";
-    public string PickedCoordinates => _pickedPoint is { } point ? $"X {point.X:F3} · Y {point.Y:F3} · Z {point.Z:F3} м" : "Точка не выбрана";
+    public string PickedCoordinates => _pickedPoint is { } point ? IsImported ? $"X {point.X:F5} · Y {point.Y:F5} · Z {point.Z:F5} м" : $"X {point.X:F3} · Y {point.Y:F3} · Z {point.Z:F3} м" : "Точка не выбрана";
+    public string SourceCoordinates
+    {
+        get
+        {
+            if (!IsImported || _pickedPoint is not { } p) return "";
+            var m = _dataset!.Session.ImportedScan!.Metadata;
+            var scale = new ScanImportOptions(m.Unit).Scale;
+            var x = p.X / scale + m.OriginX;
+            var y = (m.UpAxis == ScanUpAxis.Y ? p.Z : p.Y) / scale + m.OriginY;
+            var z = (m.UpAxis == ScanUpAxis.Y ? -p.Y : p.Z) / scale + m.OriginZ;
+            return $"В исходном файле: X {x:G12} · Y {y:G12} · Z {z:G12}";
+        }
+    }
     public string MeasurementText => _measurementStart is { } start && _measurementEnd is { } end
-        ? $"Расстояние: {Vector3.Distance(start.Position, end.Position):F3} м" : "Выберите две точки";
+        ? IsImported ? $"Расстояние: {Vector3.Distance(start.Position, end.Position):F5} м · {Vector3.Distance(start.Position, end.Position) * 1000:F2} мм" :
+            $"Расстояние: {Vector3.Distance(start.Position, end.Position):F3} м" : "Выберите две точки";
     public string AnnotationName { get => _annotationName; set => Set(ref _annotationName, value); }
     public bool CanAddAnnotation => IsAdministrator && CanInteract && !HasRecovery && _pickedPoint is not null && _capturedFrames > 0 && UserAnnotations.Count < 256;
     public PointGeometry3D? InspectionPoints { get => _inspectionPoints; private set => Set(ref _inspectionPoints, value); }
@@ -38,7 +52,10 @@ public sealed partial class MainViewModel
     public bool ClipEnabled { get => _clipEnabled; set { if (Set(ref _clipEnabled, value)) UpdateClip(); } }
     public double ClipYaw { get => _clipYaw; set { if (double.IsFinite(value) && Set(ref _clipYaw, Math.Clamp(value, -180, 180))) UpdateClip(); } }
     public double ClipPitch { get => _clipPitch; set { if (double.IsFinite(value) && Set(ref _clipPitch, Math.Clamp(value, -90, 90))) UpdateClip(); } }
-    public double ClipOffset { get => _clipOffset; set { if (double.IsFinite(value) && Set(ref _clipOffset, Math.Clamp(value, -1000, 1000))) UpdateClip(); } }
+    public double ClipOffset { get => _clipOffset; set { if (double.IsFinite(value) && Set(ref _clipOffset, Math.Clamp(value, -100_000, 100_000))) UpdateClip(); } }
+    public double ClipMaximum => IsImported ? Math.Max(.001, Math.Max(_importedBounds.Minimum.Length(), _importedBounds.Maximum.Length())) : 1000;
+    public double ClipMinimum => -ClipMaximum;
+    public double ClipStep => IsImported ? ClipMaximum / 500 : .5;
     public bool ClipGuideVisible => ClipEnabled && IsPoints;
     private PointClipPlane? ActiveClipPlane => ClipEnabled && IsPoints ? PointClipPlane.FromAngles(ClipYaw, ClipPitch, ClipOffset) : null;
 
@@ -71,6 +88,7 @@ public sealed partial class MainViewModel
         InspectionPoints = SceneGeometry.Points(points);
         MeasurementLine = _measurementStart is { } a && _measurementEnd is { } b ? SceneGeometry.Lines([a.Position, b.Position]) : null;
         Raise(nameof(PickedCoordinates)); Raise(nameof(MeasurementText)); Raise(nameof(InspectionHint)); Raise(nameof(CanAddAnnotation));
+        Raise(nameof(SourceCoordinates));
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
     private void AddAnnotation()
@@ -92,7 +110,8 @@ public sealed partial class MainViewModel
         if (!CanInteract || !UserAnnotations.Contains(annotation)) return;
         ReturnToOverview();
         var point = annotation.Point.Position;
-        MoveCamera(point + new Vector3(3, -4, 2), point, annotation.Name);
+        var scale = IsImported ? Math.Clamp((_importedBounds.Maximum - _importedBounds.Minimum).Length() / 10, .001f, 10) : 1;
+        MoveCamera(point + new Vector3(3, -4, 2) * scale, point, annotation.Name);
     }
     private void AssignAnnotations(ScanSession session)
     {
@@ -103,12 +122,13 @@ public sealed partial class MainViewModel
         foreach (var annotation in session.Annotations) UserAnnotations.Add(annotation);
         UpdateAnnotations();
         Raise(nameof(PickedCoordinates)); Raise(nameof(MeasurementText));
+        Raise(nameof(SourceCoordinates));
     }
     private void UpdateAnnotations() => AnnotationGeometry = SceneGeometry.Points(UserAnnotations.Select(annotation => annotation.Point.Position)
         .Where(point => ActiveClipPlane is not { } plane || plane.Contains(point)));
     private ScanSession SnapshotWithAnnotations() => new()
     {
-        ScenarioId = _dataset!.Session.ScenarioId, SceneVersion = _dataset.Session.SceneVersion,
+        ScenarioId = _dataset!.Session.ScenarioId, SceneVersion = _dataset.Session.SceneVersion, ImportedScan = _dataset.Session.ImportedScan,
         Settings = _dataset.Session.Settings, Frames = _dataset.Session.Frames,
         Adjustments = _adjustments.ToArray(), Annotations = UserAnnotations.ToArray()
     };
@@ -117,9 +137,11 @@ public sealed partial class MainViewModel
         Raise(nameof(ClipGuideVisible));
         var plane = PointClipPlane.FromAngles(ClipYaw, ClipPitch, ClipOffset);
         var helper = Math.Abs(plane.Normal.Z) < .9f ? Vector3.UnitZ : Vector3.UnitY;
-        var right = Vector3.Normalize(Vector3.Cross(plane.Normal, helper)) * 15;
-        var up = Vector3.Normalize(Vector3.Cross(plane.Normal, right)) * 15;
-        var center = plane.Normal * plane.Offset;
+        var size = IsImported ? Math.Max(.005f, (_importedBounds.Maximum - _importedBounds.Minimum).Length() * .6f) : 15;
+        var right = Vector3.Normalize(Vector3.Cross(plane.Normal, helper)) * size;
+        var up = Vector3.Normalize(Vector3.Cross(plane.Normal, right)) * size;
+        var origin = IsImported ? (_importedBounds.Minimum + _importedBounds.Maximum) * .5f : Vector3.Zero;
+        var center = origin + plane.Normal * (plane.Offset - Vector3.Dot(plane.Normal, origin));
         var corners = new[] { center - right - up, center + right - up, center + right + up, center - right + up };
         ClipPlaneGuide = SceneGeometry.Lines([corners[0], corners[1], corners[1], corners[2], corners[2], corners[3], corners[3], corners[0]]);
         UpdateAnnotations();

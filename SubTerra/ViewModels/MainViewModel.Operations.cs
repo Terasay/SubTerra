@@ -84,18 +84,18 @@ public sealed partial class MainViewModel
             var session = await _storage.LoadAsync(path, token, OperationProgress(token, .8)).WaitAsync(token);
             var originalPath = recovery && _workspaceStore is not null
                 ? await Task.Run(_workspaceStore.RecoveryOriginalPath, token).WaitAsync(token) : path;
-            var scenario = Scenarios.First(s => s.Id == session.ScenarioId);
-            var scene = await Task.Run(() => Simulation.CaveFactory.Create(scenario, session.SceneVersion), token).WaitAsync(token);
+            var scenario = session.ImportedScan is null ? Scenarios.First(s => s.Id == session.ScenarioId) : null;
+            var scene = scenario is null ? null : await Task.Run(() => Simulation.CaveFactory.Create(scenario, session.SceneVersion), token).WaitAsync(token);
             token.ThrowIfCancellationRequested();
             if (_disposed) return;
-            SelectedScenario = scenario;
+            if (scenario is not null) SelectedScenario = scenario;
             _loadingSettings = true;
             Range = session.Settings.RangeMeters;
             DensityIndex = session.Settings.RaysPerFrame <= 360 ? 0 : session.Settings.RaysPerFrame >= 1280 ? 2 : 1;
             StartPosition = session.Settings.StartProgress * 100d;
             FrameIntervalMilliseconds = session.Settings.FrameIntervalMilliseconds;
             _loadingSettings = false;
-            Assign(new(scene, session), session.Frames.Length);
+            Assign(new(scene, session), session.ImportedScan is null ? session.Frames.Length : 1);
             _sessionPath = originalPath;
             HasUnsavedChanges = recovery;
             if (recovery) { ++_editVersion; HasRecovery = false; }

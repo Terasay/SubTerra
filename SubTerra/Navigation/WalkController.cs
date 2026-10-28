@@ -99,7 +99,7 @@ public sealed class WalkController : IDisposable
     {
         if (_navigator is not FlyNavigator flight || !_captured) return;
         flight.ChangeSpeed(e.Delta / 120f);
-        _viewModel.FlightSpeed = flight.Speed;
+        _viewModel.FlightSpeed = flight.Speed / _viewModel.FlightSpeedScale;
         _viewModel.UpdateWalkPosition(flight);
         e.Handled = true;
     }
@@ -165,7 +165,7 @@ public sealed class WalkController : IDisposable
         var right = (Down(Key.D, Key.Right) ? 1 : 0) - (Down(Key.A, Key.Left) ? 1 : 0);
         var up = (Down(Key.E, Key.Space) ? 1 : 0) - (Down(Key.Q, Key.C) || Keyboard.IsKeyDown(Key.Z) ? 1 : 0);
         var previousPosition = _navigator.Position;
-        if (_navigator is FlyNavigator flight) { flight.SetSpeed((float)_viewModel.FlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier; }
+        if (_navigator is FlyNavigator flight) { flight.SetSpeed(_viewModel.EffectiveFlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if (_navigator is WalkNavigator walk) { walk.Speed = (float)_viewModel.WalkSpeed; walk.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
             _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift), up);
