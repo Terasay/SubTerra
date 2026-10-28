@@ -25,6 +25,12 @@ public sealed class ScanProjectHistory
         void IncludeAnalysis(StructureAnalysisDocument? document, bool count)
         {
             if (document is null) return;
+            if (document.Room is { } room)
+            {
+                if (arrays.Add(room.FloorContour) && count) bytes += room.FloorContour.LongLength * 12;
+                if (arrays.Add(room.CeilingContour) && count) bytes += room.CeilingContour.LongLength * 12;
+                if (arrays.Add(room.Gaps) && count) bytes += room.Gaps.LongLength * 32;
+            }
             foreach (var surface in document.Result.Surfaces)
             {
                 if (arrays.Add(surface.Samples) && count) bytes += surface.Samples.LongLength * 32;

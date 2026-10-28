@@ -152,7 +152,7 @@ public sealed class ThemeRenderingTests
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(root, i))) yield return child;
     }
-    private static void CheckReadableText(DependencyObject root)
+    internal static void CheckReadableText(DependencyObject root)
     {
         var inspected = 0;
         foreach (var element in Descendants(root).OfType<FrameworkElement>())

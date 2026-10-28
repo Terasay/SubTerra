@@ -57,7 +57,7 @@ public static class StructureProvenance
         static bool Hash(string? value) => value?.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F');
         static bool Point(Vector3 value) => InspectionPoint.From(value).IsValid;
         [DoesNotReturn] static void Invalid() => throw new System.IO.InvalidDataException("Некорректные данные анализа структуры.");
-        if (document.Version != 1 || document.Algorithm != StructureAnalysisResult.Algorithm || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
+        if (document.Version is not (1 or 2) || (document.Version == 2) != (document.Room is not null) || document.Algorithm != StructureAnalysisResult.Algorithm || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
             document.Inputs is null || document.Inputs.Length > ScanProject.MaximumObjects || document.Inputs.Any(i => i is null) ||
             document.Inputs.Select(i => i.ObjectId).Distinct().Count() != document.Inputs.Length ||
             document.Inputs.Any(i => i.ObjectId == Guid.Empty || i.PointCount is < 1 or > ImportedScan.MaximumPoints ||
@@ -107,5 +107,6 @@ public static class StructureProvenance
                 }
             }
         }
+        RoomPlanValidation.Validate(document, token);
     }
 }

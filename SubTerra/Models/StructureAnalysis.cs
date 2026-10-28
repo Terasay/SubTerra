@@ -49,4 +49,4 @@ public sealed record StructureInputStamp(Guid ObjectId, int PointCount, int Incl
     string MaskHash, ScanTransform Transform, bool IsVisible);
 
 public sealed record StructureAnalysisDocument(int Version, string Algorithm, DateTimeOffset CreatedAtUtc,
-    StructureInputStamp[] Inputs, StructureAnalysisResult Result, bool IsStale = false);
+    StructureInputStamp[] Inputs, StructureAnalysisResult Result, bool IsStale = false, RoomPlan? Room = null);

@@ -79,6 +79,7 @@ public sealed partial class MainViewModel
 
     private void InitializeStructureCommands()
     {
+        InitializeRoomCommands();
         AnalyzeStructureCommand = new(AnalyzeStructureAsync, () => CanAnalyzeStructure,
             ex => ReportError("Не удалось проанализировать структуру", ex));
         ClearStructureCommand = new(() => CommitStructureDocument(null, "удаление анализа"), () => CanManageProject && !IsScreenSelecting && HasStructureAnalysis);
@@ -139,12 +140,14 @@ public sealed partial class MainViewModel
         _structureDocument = document;
         if (document is null) return;
         foreach (var surface in document.Result.Surfaces) StructureSurfaces.Add(surface);
+        RefreshRoomDocument();
         UpdateStructureDisplay();
         SelectedStructureSurface = StructureSurfaces.FirstOrDefault(s => s.Id == selectedId) ?? StructureSurfaces.FirstOrDefault();
         NotifyStructureState();
     }
     private void UpdateStructureDisplay()
     {
+        UpdateRoomDisplay();
         if (_structureAnalysis is null || StructureIsStale) { StructureGeometry = null; StructureOutline = null; return; }
         var positions = new Vector3Collection(); var colors = new Color4Collection();
         foreach (var surface in StructureSurfaces)
@@ -190,10 +193,12 @@ public sealed partial class MainViewModel
         _structureDocument = null;
         SelectedStructureSurface = null;
         StructureSurfaces.Clear(); StructureGeometry = null; StructureOutline = null;
+        RefreshRoomDocument();
         NotifyStructureState();
     }
     private void NotifyStructureState()
     {
+        NotifyRoomState();
         Raise(nameof(CanAnalyzeStructure)); Raise(nameof(HasStructureAnalysis));
         Raise(nameof(StructureVisible)); Raise(nameof(StructureSummary));
         Raise(nameof(StructureCountsText)); Raise(nameof(StructureDataText));
