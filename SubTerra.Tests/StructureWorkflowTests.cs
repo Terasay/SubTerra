@@ -115,8 +115,8 @@ public sealed class StructureWorkflowTests
     public Task PopulatedStructurePanelResolvesBindingsWithoutOpeningAWindow() => ScanControlTests.OnSta(async () =>
     {
         using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync(); Assert.NotEmpty(vm.StructureSurfaces);
-        var panel = new ScanProjectPanel { DataContext = vm, Width = 216, Height = 900 };
-        panel.Measure(new Size(216, 900)); panel.Arrange(new Rect(0, 0, 216, 900)); panel.UpdateLayout();
+        var panel = new StructureAnalysisPanel { DataContext = vm, Width = 268, Height = 900 };
+        panel.Measure(new Size(268, 900)); panel.Arrange(new Rect(0, 0, 268, 900)); panel.UpdateLayout();
         await Dispatcher.Yield(DispatcherPriority.DataBind);
         void Check(DependencyObject element)
         {

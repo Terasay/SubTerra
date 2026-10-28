@@ -14,5 +14,6 @@
     <ProjectReference Include="..\SubTerra\SubTerra.csproj" />
     <None Include="..\samples\scan-import\*.ply;..\samples\scan-import\*.asc" Link="ScanExamples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\samples\indoor-analysis\*.ply" Link="ScanExamples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\SubTerra\MainWindow.xaml" Link="ThemeExamples\MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

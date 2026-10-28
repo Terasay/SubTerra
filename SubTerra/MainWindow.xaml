@@ -14,29 +14,27 @@
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <Style x:Key="Panel" TargetType="Border">
-            <Setter Property="Background" Value="#121D25"/><Setter Property="BorderBrush" Value="#2A3B46"/>
+            <Setter Property="Background" Value="#121E28"/><Setter Property="BorderBrush" Value="#2A3B46"/>
             <Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/>
         </Style>
         <Style x:Key="Divider" TargetType="Border"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2A3A45"/><Setter Property="Margin" Value="0,18"/></Style>
         <Style x:Key="Metric" TargetType="Border" BasedOn="{StaticResource Panel}"><Setter Property="Padding" Value="13,8"/><Setter Property="Margin" Value="0,0,8,0"/><Setter Property="CornerRadius" Value="9"/></Style>
-        <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="#A0B3C1"/><Setter Property="FontSize" Value="11"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-        <Style x:Key="MarkerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="12"/><Setter Property="Margin" Value="0,0,0,8"/>
-        </Style>
+        <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="#ACBFCD"/><Setter Property="FontSize" Value="11"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+
     </Window.Resources>
     <Border x:Name="ShellFrame" BorderBrush="#293945" BorderThickness="1">
         <Grid>
-            <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="*"/><RowDefinition Height="27"/></Grid.RowDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="68"/><RowDefinition Height="*"/><RowDefinition Height="30"/></Grid.RowDefinitions>
             <Border BorderBrush="#263641" BorderThickness="0,0,0,1" Background="#101A22">
                 <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Margin="16,0,6,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="182"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Grid Width="27" Height="32" Margin="0,0,11,0"><Path Data="M2,22 L14,3 L26,22 L21,29 L7,29 Z M7,22 L14,11 L21,22" Stroke="#B5DDA1" StrokeThickness="1.6" Fill="#17291F"/></Grid>
+                        <Grid Width="27" Height="32" Margin="0,0,11,0"><Path Data="M2,22 L14,3 L26,22 L21,29 L7,29 Z M7,22 L14,11 L21,22" Stroke="#A1E3C5" StrokeThickness="1.6" Fill="#17291F"/></Grid>
                         <StackPanel><TextBlock Text="SUBTERRA" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Исследование пространства" FontSize="10" Foreground="#9BB0BE"/></StackPanel>
                     </StackPanel>
                     <Grid Grid.Column="1" Margin="16,0" VerticalAlignment="Center">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                        <Border Background="#23392E" CornerRadius="6" Padding="10,6" Margin="0,0,12,0"><TextBlock Text="{Binding SessionStateText}" Foreground="#C7E6B8" FontSize="12" FontWeight="SemiBold"/></Border>
+                        <Border Background="#223D34" CornerRadius="6" Padding="10,6" Margin="0,0,12,0"><TextBlock Text="{Binding SessionStateText}" Foreground="#D5F8E7" FontSize="12" FontWeight="SemiBold"/></Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding SessionTitle}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding SaveStateText}" Foreground="#B9CEA7" FontSize="11" Margin="0,3,0,0"/></StackPanel>
                     </Grid>
@@ -55,12 +53,12 @@
             </Border>
 
             <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="248"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="RightColumn" Width="0"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="312"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="RightColumn" Width="0"/></Grid.ColumnDefinitions>
                 <Border x:Name="LeftPanel" Panel.ZIndex="20" Style="{StaticResource Panel}" Margin="12,14,0,14">
                     <Grid Margin="16">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <StackPanel Margin="0,0,0,16">
-                            <DockPanel Margin="0,0,0,10"><Button DockPanel.Dock="Right" Click="CloseSidebar_Click" Content="×" Style="{StaticResource Ghost}" Padding="7,0" ToolTip="Скрыть панель инструментов" AutomationProperties.Name="Скрыть панель инструментов"/><TextBlock Text="ДЕМОНСТРАЦИИ" Style="{StaticResource Label}" VerticalAlignment="Center"/></DockPanel>
+                            <DockPanel Margin="0,0,0,10"><Button DockPanel.Dock="Right" Click="CloseSidebar_Click" Content="×" Style="{StaticResource Ghost}" Padding="7,0" ToolTip="Скрыть панель инструментов" AutomationProperties.Name="Скрыть панель инструментов"/><TextBlock Text="ПРОСТРАНСТВО" Style="{StaticResource Label}" VerticalAlignment="Center"/></DockPanel>
                             <ComboBox x:Name="ScenarioPicker" ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario, Mode=OneWay}" DisplayMemberPath="Name"
                                       SelectionChanged="Scenario_SelectionChanged" IsEnabled="{Binding CanChangeScenario}" AutomationProperties.Name="Пространство"/>
                             <TextBlock Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Text="{Binding SelectedScenario.Description}" Style="{StaticResource Muted}" LineHeight="17" Margin="0,10,0,0"/>
@@ -68,17 +66,17 @@
                         <TabControl x:Name="SidebarTabs" Grid.Row="1" Style="{StaticResource SideTabs}">
                             <TabItem Header="Вид" Style="{StaticResource SideTab}">
                                 <ScrollViewer Padding="0,18,4,0"><StackPanel>
-                                    <Border Background="#1B302C" CornerRadius="8" Padding="12" Margin="0,0,0,16"><StackPanel>
-                                        <TextBlock Text="3DeVOK MQ" FontWeight="SemiBold" Foreground="#CCE6BB"/>
-                                        <TextBlock Text="{Binding ImportDetails}" Style="{StaticResource Muted}" Margin="0,7,0,0" LineHeight="17"/>
+                                    <Border Background="#142A29" CornerRadius="8" Padding="12" Margin="0,0,0,16"><StackPanel>
+                                        <TextBlock Text="Источник данных" FontWeight="SemiBold" Foreground="#CBF1DF"/>
+                                        <TextBlock Text="{Binding DataSourceText}" Style="{StaticResource Muted}" Margin="0,7,0,0" LineHeight="17"/><TextBlock Text="{Binding ImportDetails}" Style="{StaticResource Muted}" Margin="0,7,0,0" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/>
                                         <Button Click="Import_Click" Content="Импорт ASC / PLY" IsEnabled="{Binding CanInteract}" FontSize="11" Margin="0,10,0,0"/>
                                     </StackPanel></Border>
                                     <TextBlock Text="Слои карты" Style="{StaticResource Section}" Margin="0,0,0,14"/>
-                                    <CheckBox Content="Координатная сетка" IsChecked="{Binding ShowGrid}" Margin="0,0,0,13"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Маршрут сканера" IsChecked="{Binding ShowRoute}" Margin="0,0,0,13"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Метки на карте" IsChecked="{Binding ShowMarkers}" Margin="0,0,0,13"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Скрыть потолок" IsChecked="{Binding CutRoof}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,13"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Следовать за сканером" IsChecked="{Binding FollowScanner}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,13"/>
+                                    <CheckBox Content="Координатная сетка" IsChecked="{Binding ShowGrid}" Margin="0,0,0,8"/>
+                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Маршрут сканера" IsChecked="{Binding ShowRoute}" Margin="0,0,0,8"/>
+                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Метки на карте" IsChecked="{Binding ShowMarkers}" Margin="0,0,0,8"/>
+                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Скрыть потолок" IsChecked="{Binding CutRoof}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,8"/>
+                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Следовать за сканером" IsChecked="{Binding FollowScanner}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,8"/>
                                     <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Тени" IsChecked="{Binding ShowShadows}" IsEnabled="{Binding IsCave}" ToolTip="Отключите для снижения нагрузки на видеокарту. Доступно в режиме «Пещера»."/>
                                     <Border Style="{StaticResource Divider}"/>
                                     <TextBlock Text="Навигация" Style="{StaticResource Section}" Margin="0,0,0,9"/>
@@ -88,28 +86,12 @@
                                     </Border>
                                     <Button Command="{Binding HomeCommand}" Content="Вернуть общий вид · Home" Margin="0,14,0,0" FontSize="11"/>
                                     <Button Command="{Binding PresentationCommand}" Content="Презентация · F11" Style="{StaticResource Ghost}" Margin="0,8,0,0" FontSize="11"/>
-                                    <Expander Header="Управление и качество" Margin="0,15,0,0"><StackPanel Margin="0,10,0,0">
-                                        <Grid><TextBlock Text="Чувствительность"/><TextBlock Text="{Binding MouseSensitivity, StringFormat={}{0:F1}×}" HorizontalAlignment="Right"/></Grid>
-                                        <Slider Value="{Binding MouseSensitivity}" Minimum=".2" Maximum="3" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Чувствительность мыши"/>
-                                        <CheckBox Content="Инверсия мыши по вертикали" IsChecked="{Binding InvertMouseY}" FontSize="11" Margin="0,5,0,12"/>
-                                        <Grid><TextBlock Text="Скорость ходьбы"/><TextBlock Text="{Binding WalkSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right"/></Grid>
-                                        <Slider Value="{Binding WalkSpeed}" Minimum=".5" Maximum="8" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость ходьбы"/>
-                                        <Grid><TextBlock Text="Скорость полёта"/><TextBlock Text="{Binding FlightSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right"/></Grid>
-                                        <Slider Value="{Binding FlightSpeed}" Minimum=".5" Maximum="40" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость полёта"/>
-                                        <Grid><TextBlock Text="Ускорение Shift"/><TextBlock Text="{Binding FastMultiplier, StringFormat={}{0:F1}×}" HorizontalAlignment="Right"/></Grid>
-                                        <Slider Value="{Binding FastMultiplier}" Minimum="1" Maximum="5" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Множитель ускорения"/>
-                                        <CheckBox Content="Адаптивное качество" IsChecked="{Binding AdaptiveQuality}" Margin="0,10,0,0"/>
-                                        <TextBlock Text="Во время движения меньше точек и теней. Детализация возвращается после остановки." Style="{StaticResource Muted}" Margin="0,7,0,0"/>
-                                        <CheckBox Content="Автосохранение каждые 20 с" IsChecked="{Binding AutoSaveEnabled}" FontSize="11" Margin="0,13,0,0"/>
-                                        <TextBlock Text="{Binding AutoSaveText}" Style="{StaticResource Muted}" Margin="0,7,0,0"/>
-                                    </StackPanel></Expander>
-                                    <Expander Header="Недавние файлы" Margin="0,12,0,0"><ItemsControl ItemsSource="{Binding RecentSessions}" Margin="0,9,0,0"><ItemsControl.ItemTemplate><DataTemplate>
-                                        <Button Content="{Binding Name}" ToolTip="{Binding Path}" FontSize="11" Padding="8" HorizontalContentAlignment="Left" Margin="0,0,0,6"
-                                                Command="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}"/>
-                                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+
+
                                 </StackPanel></ScrollViewer>
                             </TabItem>
-                            <TabItem Header="Объекты" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:ScanProjectPanel/></TabItem>
+                            <TabItem Header="Сканы" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:ScanProjectPanel/></TabItem>
+                            <TabItem Header="Анализ" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:StructureAnalysisPanel/></TabItem>
                             <TabItem Header="Сканер" Style="{StaticResource SideTab}" Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}">
                                 <ScrollViewer Padding="0,18,4,0"><StackPanel>
                                     <Border Background="#26352B" CornerRadius="8" Padding="10" Margin="0,0,0,14" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}">
@@ -120,7 +102,7 @@
                                         <TextBlock Text="Дальность" VerticalAlignment="Center"/>
                                         <TextBox x:Name="RangeInput" Grid.Column="1" Width="56" Text="{Binding Range, StringFormat={}{0:0.#}, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding CanEditSettings}"
                                                  KeyDown="NumericInput_KeyDown" AutomationProperties.Name="Дальность в метрах"/>
-                                        <TextBlock Grid.Column="2" Text="м" VerticalAlignment="Center" Margin="7,0,0,0" Foreground="#A0B3C1"/>
+                                        <TextBlock Grid.Column="2" Text="м" VerticalAlignment="Center" Margin="7,0,0,0" Foreground="#ACBFCD"/>
                                     </Grid>
                                     <Slider Minimum="1" Maximum="100" Value="{Binding Range}" TickFrequency="1" IsSnapToTickEnabled="True" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Дальность"/>
                                     <TextBlock Text="Плотность измерений" Margin="0,12,0,8"/>
@@ -155,18 +137,19 @@
                                     </Expander>
                                 </StackPanel></ScrollViewer>
                             </TabItem>
+                            <TabItem Header="Настройки" Style="{StaticResource SideTab}"><views:ViewSettingsPanel/></TabItem>
                         </TabControl>
                     </Grid>
                 </Border>
 
                 <Grid Grid.Column="1" Margin="14,14,14,14">
-                    <Grid.RowDefinitions><RowDefinition Height="54"/><RowDefinition Height="78"/><RowDefinition Height="*"/><RowDefinition Height="132"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <ToggleButton Style="{StaticResource PanelToggle}" IsChecked="{Binding IsSidebarOpen}" VerticalAlignment="Top" Margin="0,0,13,0" Padding="10" ToolTip="Панель вида и сканера" AutomationProperties.Name="Панель инструментов"><TextBlock Style="{StaticResource Icon}" Text="&#xE700;"/></ToggleButton>
                         <StackPanel Grid.Column="1" Margin="0,0,12,0"><TextBlock Text="{Binding SelectedScenario.Name}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding SelectedScenario.Subtitle}" FontSize="11" Foreground="#9CB0BE" Margin="0,4,0,0"/></StackPanel>
-                        <ToggleButton Grid.Column="2" Style="{StaticResource PanelToggle}" IsChecked="{Binding IsInspectorOpen}" VerticalAlignment="Top" Content="Сведения" ToolTip="Сеанс, метки и экспорт"/>
+                        <ToggleButton Grid.Column="2" Style="{StaticResource PanelToggle}" IsChecked="{Binding IsInspectorOpen}" VerticalAlignment="Top" Content="Инструменты" ToolTip="Измерения, метки, срез и экспорт"/>
                     </Grid>
                     <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,-8,12">
                         <Border Style="{StaticResource Metric}"><StackPanel><TextBlock Text="ТОЧКИ" Style="{StaticResource Label}"/><TextBlock Text="{Binding PointCountText}" FontSize="19" FontWeight="SemiBold" Margin="0,4,0,0"/></StackPanel></Border>
@@ -257,7 +240,7 @@
                     <Border Grid.Row="3" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Panel}" Padding="16,12" Margin="0,12,0,0"><Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="Скан готов к осмотру" FontWeight="SemiBold"/>
-                            <TextBlock Text="Проверьте масштаб инструментом расстояния. Метки, срез, сетка и исходные цвета доступны в панели «Сведения». Для сохранения и экспорта войдите администратором." Style="{StaticResource Muted}" Margin="0,6,0,0" LineHeight="17"/>
+                            <TextBlock Text="Проверьте масштаб инструментом расстояния. Измерения, метки и срез — в панели «Инструменты». Скан и анализ сохраняются вместе с проектом." Style="{StaticResource Muted}" Margin="0,6,0,0" LineHeight="17"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center"><Button Command="{Binding HomeCommand}" Content="Весь скан · Home" FontSize="11"/>
                             <Button Command="{Binding FlyCommand}" Content="Полёт по скану" FontSize="11" Margin="0,7,0,0"/>
@@ -288,58 +271,8 @@
 
                 <Border x:Name="RightPanel" Panel.ZIndex="21" Visibility="Collapsed" Grid.Column="2" Style="{StaticResource Panel}" Margin="0,14,12,14">
                     <Grid><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition/></Grid.RowDefinitions>
-                        <DockPanel Margin="16,0,10,0"><Button DockPanel.Dock="Right" Click="CloseInspector_Click" Style="{StaticResource Ghost}" Content="×" Padding="9,4" VerticalAlignment="Center" ToolTip="Закрыть сведения"/><TextBlock Text="Сведения о сеансе" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/></DockPanel>
-                        <ScrollViewer Grid.Row="1" Padding="16,0,16,16"><StackPanel>
-                            <TextBlock Text="{Binding SessionTitle}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding SessionSaveLabel}" Foreground="#BCD6AB" Margin="0,6,0,14" TextWrapping="Wrap" FontSize="11"/>
-                            <TextBlock Text="{Binding ImportTransformText}" Style="{StaticResource Muted}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12"/>
-                            <Grid Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10"><TextBlock Text="Длина маршрута" Foreground="#A4B9C8"/><TextBlock Text="{Binding TotalLengthText}" HorizontalAlignment="Right"/></Grid>
-                            <Grid Margin="0,0,0,10"><TextBlock Text="Кадры" Foreground="#A4B9C8"/><TextBlock Text="{Binding FrameCountText}" HorizontalAlignment="Right"/></Grid>
-                            <TextBlock Text="{Binding RecordingText}" Style="{StaticResource Muted}"/>
-                            <Expander Header="Измерения и свои метки" IsExpanded="True" Margin="0,15,0,0"><StackPanel Margin="0,10,0,0">
-                                <TextBlock Text="{Binding PickedCoordinates}" Style="{StaticResource Muted}"/>
-                                <TextBlock Text="{Binding SourceCoordinates}" Style="{StaticResource Muted}" Margin="0,5,0,0" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/>
-                                <TextBlock Text="{Binding MeasurementText}" TextWrapping="Wrap" Foreground="#A9E6F3" Margin="0,7,0,10"/>
-                                <TextBox Text="{Binding AnnotationName, UpdateSourceTrigger=PropertyChanged}" MaxLength="120" AutomationProperties.Name="Название своей метки"/>
-                                <Button Command="{Binding AddAnnotationCommand}" Content="Добавить метку в выбранной точке" FontSize="11" Margin="0,7,0,0"/>
-                                <TextBlock Text="Свои метки сохраняются в сеансе. Для добавления нужен администратор." Style="{StaticResource Muted}" Margin="0,7,0,10"/>
-                                <ItemsControl ItemsSource="{Binding UserAnnotations}"><ItemsControl.ItemTemplate><DataTemplate><DockPanel Margin="0,0,0,6">
-                                    <Button DockPanel.Dock="Right" Content="×" Padding="8" Command="{Binding DataContext.RemoveAnnotationCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" ToolTip="Удалить свою метку"/>
-                                    <Button HorizontalContentAlignment="Left" Padding="8" Command="{Binding DataContext.NavigateAnnotationCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}"><TextBlock Text="{Binding Name}" TextWrapping="Wrap"/></Button>
-                                </DockPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                            </StackPanel></Expander>
-                            <Expander Header="Срез облака плоскостью" Margin="0,13,0,0" IsEnabled="{Binding IsPoints}"><StackPanel Margin="0,10,0,0">
-                                <CheckBox Content="Включить срез" IsChecked="{Binding ClipEnabled}"/>
-                                <Grid Margin="0,10,0,0"><TextBlock Text="Азимут"/><TextBlock Text="{Binding ClipYaw, StringFormat={}{0:F0}°}" HorizontalAlignment="Right"/></Grid>
-                                <Slider Value="{Binding ClipYaw, Delay=100}" Minimum="-180" Maximum="180" TickFrequency="5" IsSnapToTickEnabled="True" AutomationProperties.Name="Азимут среза"/>
-                                <Grid><TextBlock Text="Наклон"/><TextBlock Text="{Binding ClipPitch, StringFormat={}{0:F0}°}" HorizontalAlignment="Right"/></Grid>
-                                <Slider Value="{Binding ClipPitch, Delay=100}" Minimum="-90" Maximum="90" TickFrequency="5" IsSnapToTickEnabled="True" AutomationProperties.Name="Наклон среза"/>
-                                <Grid><TextBlock Text="Смещение, м" VerticalAlignment="Center"/><TextBox Width="70" HorizontalAlignment="Right" Text="{Binding ClipOffset, UpdateSourceTrigger=LostFocus}" KeyDown="NumericInput_KeyDown" AutomationProperties.Name="Смещение плоскости"/></Grid>
-                                <Slider Value="{Binding ClipOffset, Delay=100}" Minimum="{Binding ClipMinimum}" Maximum="{Binding ClipMaximum}" TickFrequency="{Binding ClipStep}" IsSnapToTickEnabled="True" AutomationProperties.Name="Смещение среза"/>
-                                <TextBlock Text="Срез влияет только на просмотр. Сохранение и PLY включают все измерения." Style="{StaticResource Muted}"/>
-                            </StackPanel></Expander>
-                            <Border Style="{StaticResource Divider}"/>
-                            <TextBlock Text="Метки на маршруте" Style="{StaticResource Section}"/>
-                            <TextBlock Text="Нажмите, чтобы перейти к месту. Метки заданы сценарием." Style="{StaticResource Muted}" Margin="0,7,0,12"/>
-                            <ItemsControl ItemsSource="{Binding VisibleMarkers}"><ItemsControl.ItemTemplate><DataTemplate>
-                                <Button Style="{StaticResource MarkerButton}" Command="{Binding DataContext.NavigateMarkerCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}">
-                                    <StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11" LineHeight="17" Foreground="#A9BECD" Margin="0,5,0,0"/></StackPanel>
-                                </Button>
-                            </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                            <Border Style="{StaticResource Divider}"/>
-                            <StackPanel Visibility="{Binding IsHeight, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,16">
-                                <TextBlock Text="Высота" Style="{StaticResource Section}" Margin="0,0,0,10"/>
-                                <Border Height="8" CornerRadius="4"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#1B5186" Offset="0"/><GradientStop Color="#12BACA" Offset=".2"/><GradientStop Color="#27D48A" Offset=".4"/><GradientStop Color="#90E845" Offset=".6"/><GradientStop Color="#EADD38" Offset=".8"/><GradientStop Color="#F78C2E" Offset="1"/></LinearGradientBrush></Border.Background></Border>
-                                <Grid Margin="0,7,0,0"><TextBlock Text="{Binding HeightMinText}" FontSize="11"/><TextBlock Text="{Binding HeightMaxText}" FontSize="11" HorizontalAlignment="Right"/></Grid>
-                            </StackPanel>
-                            <Button Click="SaveAs_Click" IsEnabled="{Binding CanSave}" Content="Сохранить как…" ToolTip="Создать отдельный файл · Ctrl+Shift+S" Margin="0,0,0,8"/>
-                            <Button Click="Export_Click" IsEnabled="{Binding CanExport}" Content="{Binding ExportButtonText}" ToolTip="Весь результат видимых объектов после очистки; детализация просмотра не влияет"/>
-                            <TextBlock Text="Для сохранения и экспорта нужен вход администратора." Style="{StaticResource Muted}" Margin="0,9,0,0" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}"/>
-                            <Expander Header="Журнал событий" Margin="0,18,0,0"><ItemsControl ItemsSource="{Binding Events}" Margin="0,10,0,0"><ItemsControl.ItemTemplate><DataTemplate>
-                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock Text="{Binding Time}" FontSize="11" Foreground="#A0B5C5"/><TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" FontSize="11" Foreground="#B7CAD7"/></Grid>
-                            </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
-                        </StackPanel></ScrollViewer>
+                        <DockPanel Margin="16,0,10,0"><Button DockPanel.Dock="Right" Click="CloseInspector_Click" Style="{StaticResource Ghost}" Content="×" Padding="9,4" VerticalAlignment="Center" ToolTip="Закрыть инструменты"/><TextBlock Text="Инструменты карты" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/></DockPanel>
+                        <views:SessionInspectorPanel Grid.Row="1" SaveAsRequested="SaveAs_Click" ExportRequested="Export_Click"/>
                     </Grid>
                 </Border>
             </Grid>

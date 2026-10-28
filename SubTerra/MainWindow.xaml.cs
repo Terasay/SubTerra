@@ -218,7 +218,7 @@ public partial class MainWindow : Window
             return;
         }
         if (e.PropertyName is not (nameof(MainViewModel.IsPresentationMode) or nameof(MainViewModel.IsInspectorOpen) or nameof(MainViewModel.IsSidebarOpen))) return;
-        if (ActualWidth < 1200)
+        if (ActualWidth < 1320)
         {
             if (e.PropertyName == nameof(MainViewModel.IsInspectorOpen) && _viewModel.IsInspectorOpen) _viewModel.IsSidebarOpen = false;
             if (e.PropertyName == nameof(MainViewModel.IsSidebarOpen) && _viewModel.IsSidebarOpen) _viewModel.IsInspectorOpen = false;
@@ -232,19 +232,21 @@ public partial class MainWindow : Window
     private void UpdatePanelLayout()
     {
         if (LeftPanel is null || RightPanel is null) return;
+        if (!_viewModel.IsPresentationMode && ActualWidth < 1320 && _viewModel.IsInspectorOpen && _viewModel.IsSidebarOpen)
+            _viewModel.IsSidebarOpen = false;
         var presentation = _viewModel.IsPresentationMode;
         var inspector = !presentation && _viewModel.IsInspectorOpen;
         var sidebar = !presentation && _viewModel.IsSidebarOpen;
-        var floatingLeft = ActualWidth < 1200;
-        var floatingRight = ActualWidth < 1440;
+        var floatingLeft = ActualWidth < 1280;
+        var floatingRight = ActualWidth < 1400;
         LeftPanel.Visibility = sidebar ? Visibility.Visible : Visibility.Collapsed;
         RightPanel.Visibility = inspector ? Visibility.Visible : Visibility.Collapsed;
-        LeftColumn.Width = new GridLength(sidebar && !floatingLeft ? 248 : 0);
-        RightColumn.Width = new GridLength(inspector && !floatingRight ? 288 : 0);
+        LeftColumn.Width = new GridLength(sidebar && !floatingLeft ? 312 : 0);
+        RightColumn.Width = new GridLength(inspector && !floatingRight ? 336 : 0);
         Grid.SetColumn(LeftPanel, floatingLeft ? 1 : 0);
         Grid.SetColumn(RightPanel, floatingRight ? 1 : 2);
-        LeftPanel.Width = floatingLeft ? 232 : double.NaN;
-        RightPanel.Width = floatingRight ? 280 : double.NaN;
+        LeftPanel.Width = floatingLeft ? 304 : double.NaN;
+        RightPanel.Width = floatingRight ? 328 : double.NaN;
         LeftPanel.HorizontalAlignment = floatingLeft ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
         RightPanel.HorizontalAlignment = floatingRight ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
     }

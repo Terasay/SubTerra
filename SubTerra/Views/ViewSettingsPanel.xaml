@@ -1,0 +1,35 @@
+<UserControl x:Class="SubTerra.Views.ViewSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+    <ScrollViewer Padding="0,16,4,8"><StackPanel>
+        <TextBlock Text="Управление и отображение" Style="{StaticResource Section}"/>
+        <TextBlock Text="Настройки сохраняются на этом компьютере." Style="{StaticResource Muted}" Margin="0,6,0,16"/>
+        <Expander Header="Навигация" IsExpanded="True"><StackPanel Margin="0,8,0,0">
+            <Grid><TextBlock Text="Чувствительность мыши"/><TextBlock Text="{Binding MouseSensitivity, StringFormat={}{0:F1}×}" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/></Grid>
+            <Slider Value="{Binding MouseSensitivity}" Minimum=".2" Maximum="3" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Чувствительность мыши"/>
+            <CheckBox Content="Инверсия мыши по вертикали" IsChecked="{Binding InvertMouseY}" FontSize="11" Margin="0,4,0,16"/>
+            <Grid><TextBlock Text="Скорость ходьбы"/><TextBlock Text="{Binding WalkSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/></Grid>
+            <Slider Value="{Binding WalkSpeed}" Minimum=".5" Maximum="8" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость ходьбы"/>
+            <Grid Margin="0,8,0,0"><TextBlock Text="Скорость полёта"/><TextBlock Text="{Binding FlightSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/></Grid>
+            <Slider Value="{Binding FlightSpeed}" Minimum=".5" Maximum="40" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость полёта"/>
+            <Grid Margin="0,8,0,0"><TextBlock Text="Ускорение с Shift"/><TextBlock Text="{Binding FastMultiplier, StringFormat={}{0:F1}×}" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/></Grid>
+            <Slider Value="{Binding FastMultiplier}" Minimum="1" Maximum="5" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Множитель ускорения"/>
+        </StackPanel></Expander>
+        <Expander Header="Качество и сохранение" IsExpanded="True" Margin="0,12,0,0"><StackPanel Margin="0,8,0,0">
+            <CheckBox Content="Адаптивное качество" IsChecked="{Binding AdaptiveQuality}"/>
+            <TextBlock Text="При движении детализация снижается, после остановки — возвращается." Style="{StaticResource Muted}" Margin="0,7,0,16"/>
+            <CheckBox Content="Копия восстановления каждые 20 с" IsChecked="{Binding AutoSaveEnabled}"/>
+            <TextBlock Text="{Binding AutoSaveText}" Style="{StaticResource Muted}" Margin="0,7,0,0"/>
+        </StackPanel></Expander>
+        <Border Style="{StaticResource InsetCard}" Margin="0,14,0,0"><StackPanel>
+            <TextBlock Text="Клавиши навигации" FontWeight="SemiBold" Margin="0,0,0,10"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="94"/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="W A S D" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,7"/><TextBlock Grid.Column="1" Text="Движение" Style="{StaticResource Muted}"/>
+                <TextBlock Grid.Row="1" Text="Q / E" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,7"/><TextBlock Grid.Row="1" Grid.Column="1" Text="Вниз / вверх в полёте" Style="{StaticResource Muted}"/>
+                <TextBlock Grid.Row="2" Text="Esc" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,7"/><TextBlock Grid.Row="2" Grid.Column="1" Text="Выход из режима" Style="{StaticResource Muted}"/>
+                <TextBlock Grid.Row="3" Text="Home / F11" Foreground="{StaticResource AccentBrush}"/><TextBlock Grid.Row="3" Grid.Column="1" Text="Общий вид / презентация" Style="{StaticResource Muted}"/>
+            </Grid>
+        </StackPanel></Border>
+    </StackPanel></ScrollViewer>
+</UserControl>

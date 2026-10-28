@@ -97,7 +97,7 @@ public sealed partial class MainViewModel
     }
     private void NotifySourceProperties()
     {
-        foreach (var name in new[] { nameof(IsImported), nameof(IsSimulation), nameof(CanShowSurface), nameof(SurfaceModeText),
+        foreach (var name in new[] { nameof(IsImported), nameof(IsSimulation), nameof(Scenarios), nameof(CanShowSurface), nameof(SurfaceModeText),
             nameof(DataSourceText), nameof(DistanceMetricTitle), nameof(DurationMetricTitle), nameof(CoverageMetricTitle),
             nameof(CoverageMetricText), nameof(ImportDetails), nameof(ExportButtonText), nameof(HeightMinText), nameof(HeightMaxText),
             nameof(TotalLengthText), nameof(ScannerVisible), nameof(RouteVisible), nameof(MarkersVisible), nameof(ExploreText),

@@ -41,6 +41,12 @@ public sealed partial class MainViewModel
     public bool StructureIsStale => _structureDocument?.IsStale == true;
     public bool CanReviewStructure => CanManageProject && !IsScreenSelecting && !StructureIsStale && SelectedStructureSurface is not null;
     public bool StructureVisible => HasStructureAnalysis && !StructureIsStale && ShowStructure && IsImported;
+    public string StructureCountsText => _structureAnalysis is { } result ?
+        $"Поверхностей: {result.Surfaces.Length} · подтверждено: {result.Surfaces.Count(s => s.Review == StructureReviewState.Confirmed)} · отклонено: {result.Surfaces.Count(s => s.Review == StructureReviewState.Rejected)}" :
+        "Пол, стены и потолок одного помещения";
+    public string StructureDataText => _structureAnalysis is { } result ?
+        $"Выборка {result.SampleCount:N0} из {result.SourcePointCount:N0} точек · допуск {result.Options.DistanceTolerance:F3} м" :
+        "Анализ видимых сканов. Вертикаль — Z. Классы проверяет оператор.";
     public bool ShowStructure { get => _showStructure; set { if (Set(ref _showStructure, value)) Raise(nameof(StructureVisible)); } }
     public double StructureTolerance
     {
@@ -190,6 +196,7 @@ public sealed partial class MainViewModel
     {
         Raise(nameof(CanAnalyzeStructure)); Raise(nameof(HasStructureAnalysis));
         Raise(nameof(StructureVisible)); Raise(nameof(StructureSummary));
+        Raise(nameof(StructureCountsText)); Raise(nameof(StructureDataText));
         Raise(nameof(StructureIsStale)); Raise(nameof(CanReviewStructure));
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }

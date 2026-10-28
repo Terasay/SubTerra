@@ -131,7 +131,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         set { if (Set(ref _showShadows, value)) Raise(nameof(ShadowsVisible)); }
     }
     public bool ShadowsVisible => ShowShadows && IsCave && (!AdaptiveQuality || !IsCameraMoving);
-    public IReadOnlyList<ScenarioDefinition> Scenarios => ScenarioDefinition.All;
+    public IReadOnlyList<ScenarioDefinition> Scenarios => IsImported ? [SelectedScenario, .. ScenarioDefinition.All] : ScenarioDefinition.All;
     public IReadOnlyList<string> DensityOptions { get; } = ["Лёгкая · 65 тыс.", "Стандарт · 130 тыс.", "Детальная · 230 тыс."];
     public ObservableCollection<int> FrameIntervals { get; } = [200, 100, 50];
     public IReadOnlyList<PointCloudQuality> PointQualities => PointCloudQuality.All;
