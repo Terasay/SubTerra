@@ -25,7 +25,7 @@ public sealed partial class MainViewModel
     public bool IsGuest => !IsAdministrator;
     public string AccessLabel => IsAdministrator ? "Администратор · admin" : "Гость · просмотр";
     public string AccessButtonText => IsAdministrator ? "Выйти" : "Вход администратора";
-    public bool CanStart => IsAdministrator && CanInteract && !IsRunning;
+    public bool CanStart => IsAdministrator && CanInteract && !IsRunning && !HasRecovery;
     public bool CanChangeScenario => CanInteract && !IsRunning;
     public bool HasUnsavedChanges
     {
@@ -82,8 +82,18 @@ public sealed partial class MainViewModel
 
     public async Task<bool> RequestCloseAsync()
     {
+        if (CanCancelOperation)
+        {
+            CancelOperation();
+            try { await _operationFinished.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
+            catch (TimeoutException) { return false; }
+        }
         if (!CanInteract) return false;
-        return await ConfirmReplacementAsync("закрыть приложение");
+        if (!await ConfirmReplacementAsync("закрыть приложение")) return false;
+        try { await FlushPreferencesAsync(); }
+        catch (Exception ex) { AutoSaveText = "Не удалось сохранить настройки: " + ex.Message; }
+        await ClearRecoveryAsync();
+        return true;
     }
 
     public async Task<bool> LogoutAsync()
@@ -94,7 +104,7 @@ public sealed partial class MainViewModel
         return true;
     }
 
-    public bool CanRepositionScanner => IsAdministrator && CanInteract && !IsRunning && IsOverview && !IsReviewing &&
+    public bool CanRepositionScanner => IsAdministrator && CanInteract && !HasRecovery && !IsRunning && IsOverview && !IsReviewing &&
         _dataset is not null && _capturedFrames > 0 && _capturedFrames < _dataset.Session.Settings.FrameCount && !HasPendingSettings;
     public string ScannerControlHint => IsGuest ? "Управление датчиком доступно администратору." : IsRunning ?
         "Поставьте проход на паузу для перестановки." : IsReviewing ? "Вернитесь к последнему кадру для перестановки." : CanRepositionScanner ?
@@ -153,7 +163,7 @@ public sealed partial class MainViewModel
             _adjustments.RemoveAll(a => a.FirstFrame >= _capturedFrames);
             _adjustments.Add(adjustment);
             _dataset = new(_dataset!.Scene, _map!.Snapshot(_adjustments.ToArray()));
-            HasUnsavedChanges = true;
+            MarkSessionDirty();
             _previewScanner = true;
             Notification = "";
             Status = "Позиция применена · продолжите сканирование";

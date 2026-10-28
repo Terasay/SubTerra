@@ -43,6 +43,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isWalking;
     private bool _isFlying;
     private float _flightSpeed = 6;
+    private double _navigationOrbitDistance = 6;
     private bool _mouseCaptured;
     private float _walkTargetProgress;
     private bool _showGrid = true;
@@ -79,13 +80,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private LineGeometry3D? _grid;
 
     public MainViewModel(IScanSource source, SessionStorage storage, IScanFrameSource? frameSource = null,
-        IAccessSession? access = null, ISessionInteraction? interaction = null)
+        IAccessSession? access = null, ISessionInteraction? interaction = null, WorkspaceStateStore? workspaceStore = null)
     {
         _source = source;
         _frameSource = frameSource ?? source;
         _storage = storage;
         _access = access ?? new AdminAccessService();
         _interaction = interaction ?? new CancelSessionInteraction();
+        _workspaceStore = workspaceStore;
+        InitializeWorkspace();
         _access.AccessChanged += AccessChanged;
         PauseCommand = new RelayCommand(Pause, () => IsAdministrator && IsRunning && CanInteract);
         StopCommand = new RelayCommand(Stop, () => IsAdministrator && CanInteract && (IsRunning || CanResume));
@@ -93,6 +96,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ApplyScannerCommand = new AsyncRelayCommand(ApplyScannerAdjustmentAsync, () => CanRepositionScanner,
             ex => ReportError("Не удалось переставить датчик", ex));
         HomeCommand = new RelayCommand(Home);
+        ReturnOverviewCommand = new RelayCommand(ReturnToOverview);
         TopCommand = new RelayCommand(Top);
         InsideCommand = new RelayCommand(Inside, () => CanWalk);
         FlyCommand = new RelayCommand(Fly, () => CanFly);
@@ -105,6 +109,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         PreviewScannerCommand = new RelayCommand(PreviewScanner, () => CanEditSettings && IsOverview);
         DismissNotificationCommand = new RelayCommand(() => Notification = "");
         PresentationCommand = new RelayCommand(() => IsPresentationMode = !IsPresentationMode);
+        InitializeNewCommands();
         Home();
     }
 
@@ -123,7 +128,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         get => _showShadows;
         set { if (Set(ref _showShadows, value)) Raise(nameof(ShadowsVisible)); }
     }
-    public bool ShadowsVisible => ShowShadows && IsCave;
+    public bool ShadowsVisible => ShowShadows && IsCave && (!AdaptiveQuality || !IsCameraMoving);
     public IReadOnlyList<ScenarioDefinition> Scenarios => ScenarioDefinition.All;
     public IReadOnlyList<string> DensityOptions { get; } = ["Лёгкая · 65 тыс.", "Стандарт · 130 тыс.", "Детальная · 230 тыс."];
     public ObservableCollection<int> FrameIntervals { get; } = [200, 100, 50];
@@ -154,6 +159,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand ClearCommand { get; }
     public AsyncRelayCommand ApplyScannerCommand { get; }
     public RelayCommand HomeCommand { get; }
+    public RelayCommand ReturnOverviewCommand { get; }
     public RelayCommand TopCommand { get; }
     public RelayCommand InsideCommand { get; }
     public RelayCommand FlyCommand { get; }
@@ -219,10 +225,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ? "WASD — полёт · Q / E — вниз / вверх · Shift — быстрее · колесо — скорость · Tab — курсор · Esc — обзор"
         : IsWalking ? "WASD — идти · мышь — осмотр · Shift — быстрее · Tab — курсор · Esc — обзор"
         : "ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб · Home — общий вид";
-    public WalkNavigator CreateNavigator() => new(_dataset!.Scene, WalkCoverage.End, WalkCoverage.Start);
+    public WalkNavigator CreateNavigator() => new(_dataset!.Scene, WalkCoverage.End, WalkCoverage.Start)
+        { Speed = (float)WalkSpeed, FastMultiplier = (float)FastMultiplier };
     public FlyNavigator CreateFlyNavigator() => new(SelectedScenario.Id,
         new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
-        new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), _flightSpeed);
+        new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), _flightSpeed)
+        { FastMultiplier = (float)FastMultiplier };
     public bool IsSurface
     {
         get => _isSurface;
@@ -235,14 +243,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     private void SetView(bool surface, bool height)
     {
-        if (IsNavigating) Home();
+        if (IsNavigating) ReturnToOverview();
         _isHeight = height;
         IsSurface = surface;
         Raise(nameof(IsHeight)); Raise(nameof(IsCave)); Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel));
         Raise(nameof(ShadowsVisible));
         Raise(nameof(ExploreText));
         Raise(nameof(CanFly));
+        Raise(nameof(SsaoEnabled));
+        Raise(nameof(CloudQualityVisible)); Raise(nameof(ClipGuideVisible));
         RefreshGeometry();
+        UpdateAnnotations();
     }
     public string RenderLabel => IsPoints ? "ОБЛАКО ТОЧЕК" : IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
     public bool ShowGrid { get => _showGrid; set { if (Set(ref _showGrid, value)) Raise(nameof(GridVisible)); } }
@@ -310,7 +321,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         get => _busyProgress;
         private set { if (Set(ref _busyProgress, value)) Raise(nameof(BusyIsIndeterminate)); }
     }
-    public bool BusyIsIndeterminate => BusyProgress <= 0;
+    public bool BusyIsIndeterminate => IsBusy && BusyProgress <= 0;
     public string Status { get => _status; private set => Set(ref _status, value); }
     public string Notification
     {
@@ -389,20 +400,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         scenario ??= SelectedScenario;
         ExitWalking();
         StopCapture();
-        IsBusy = true;
+        var token = BeginOperation("Генерация виртуальной сцены");
         Notification = "";
         Raise(nameof(HasNotification));
         BusyProgress = 0;
         Status = "Генерация виртуальной сцены";
         _generation?.Cancel();
         _generation?.Dispose();
-        _generation = new CancellationTokenSource();
+        _generation = CancellationTokenSource.CreateLinkedTokenSource(token);
         try
         {
-            await _captureTask.WaitAsync(TimeSpan.FromSeconds(2));
-            var progress = new Progress<double>(value => BusyProgress = value);
+            await _captureTask.WaitAsync(TimeSpan.FromSeconds(2), token);
+            var progress = OperationProgress(token);
             var generationClock = Stopwatch.StartNew();
-            var dataset = await _source.GenerateAsync(scenario, Settings, progress, _generation.Token);
+            var dataset = await _source.GenerateAsync(scenario, Settings, progress, _generation.Token).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
             if (_disposed) return;
             _generationMilliseconds = generationClock.Elapsed.TotalMilliseconds;
             Raise(nameof(GenerationMilliseconds));
@@ -411,14 +423,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             _sessionPath = null;
             HasUnsavedChanges = false;
             NotifySessionProperties();
+            if (!HasRecovery) await ClearRecoveryAsync();
             Status = "Демонстрационная карта готова";
             Home();
             AddEvent("Виртуальная пещера построена");
             AddEvent($"Получено {dataset.Session.PointCount:N0} точек");
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось создать сцену", ex); }
-        finally { IsBusy = false; }
+        finally { EndOperation(); }
     }
 
     public async Task StartAsync()
@@ -428,13 +441,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var resume = CanResume;
         if (!resume && !await ConfirmReplacementAsync("начать новый проход")) return;
         if (!IsAdministrator) return;
-        IsBusy = true;
+        var token = BeginOperation(resume ? "Подготовка продолжения прохода" : "Подготовка виртуального датчика");
         BusyProgress = 0;
         Notification = "";
         Status = resume ? "Подготовка продолжения прохода" : "Подготовка виртуального датчика";
         try
         {
-            await _captureTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await _captureTask.WaitAsync(TimeSpan.FromSeconds(2), token);
             if (_disposed || !IsAdministrator) return;
             if (!resume)
             {
@@ -442,12 +455,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 settings.Validate();
                 var scenario = SelectedScenario;
                 var scene = _dataset?.Scene.Scenario.Id == scenario.Id && _dataset.Scene.SceneVersion == SceneVersions.Current ? _dataset.Scene :
-                    await Task.Run(() => CaveFactory.Create(scenario));
+                    await Task.Run(() => CaveFactory.Create(scenario), token).WaitAsync(token);
+                token.ThrowIfCancellationRequested();
                 if (_disposed || !IsAdministrator) return;
                 Assign(new(scene, new() { ScenarioId = scenario.Id, Settings = settings, Frames = [] }), 0);
                 _sessionPath = null;
                 HasUnsavedChanges = false;
                 NotifySessionProperties();
+                await ClearRecoveryAsync();
             }
             _viewFrames = _capturedFrames;
             NotifyView();
@@ -463,8 +478,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             _captureTask = CaptureAsync(request, ++_runId, _captureCancellation.Token);
             AddEvent(resume ? "Сканирование продолжено с сохранённого кадра" : "Начат новый поток измерений");
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось запустить сканирование", ex); }
-        finally { IsBusy = false; }
+        finally { EndOperation(); }
     }
 
     public void Pause()
@@ -500,6 +516,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         HasUnsavedChanges = false;
         NotifySessionProperties();
         AddEvent("Карта очищена");
+        await ClearRecoveryAsync();
     }
 
     private void StopCapture()
@@ -524,7 +541,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 _pointOffsets[_map.FrameCount - 1] = _map.PointCount;
                 _capturedFrames = _map.FrameCount;
                 _viewFrames = _capturedFrames;
-                HasUnsavedChanges = true;
+                MarkSessionDirty();
                 if (renderClock.ElapsedMilliseconds >= 100 || _capturedFrames == request.Settings.FrameCount)
                 {
                     SynchronizeCaptureView();
@@ -562,6 +579,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void Assign(ScanDataset dataset, int capturedFrames)
     {
+        ++_sessionEpoch;
+        _editVersion = 0; _recoveredVersion = -1;
+        AssignAnnotations(dataset.Session);
         // Release previous display buffers, including the currently hidden mode.
         Cloud = null;
         Surface = null;
@@ -604,7 +624,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (IsBusy || _dataset is null) return;
         count = Math.Clamp(count, 0, CapturedFrameCount);
         if (_viewFrames == count) return;
-        if (IsNavigating) Home();
+        if (IsNavigating) ReturnToOverview();
         Pause();
         _viewFrames = count;
         NotifyView();
@@ -629,6 +649,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(CanWalk));
         Raise(nameof(CanFly));
         Raise(nameof(SessionStateText));
+        Raise(nameof(IsPicking)); Raise(nameof(CanAddAnnotation)); Raise(nameof(CanCancelOperation));
+        Raise(nameof(CloudQualityVisible));
+        Raise(nameof(BusyIsIndeterminate));
         Raise(nameof(ViewStateText));
         UpdateScanner();
         CommandManager.InvalidateRequerySuggested();
@@ -638,7 +661,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (_dataset is null || _geometry is null || _viewFrames < 0) return;
         var clock = Stopwatch.StartNew();
         var coverage = VisibleCoverage;
-        if (!IsSurface) Cloud = _geometry.Cloud(_viewFrames == 0 ? 0 : _pointOffsets[_viewFrames - 1], CutRoof, PointQuality.PointLimit);
+        if (!IsSurface) Cloud = _geometry.Cloud(_viewFrames == 0 ? 0 : _pointOffsets[_viewFrames - 1], CutRoof, EffectivePointLimit, ActiveClipPlane);
         else if (IsHeight)
         {
             Surface = _geometry.Surface(coverage, CutRoof && !IsWalking, true);
@@ -697,6 +720,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var center = new Vector3(0, 1, -1);
         MoveCamera(center + new Vector3(12, -47, 35), center, "Общий вид");
     }
+    public void ReturnToOverview()
+    {
+        if (!IsNavigating) return;
+        var position = Camera.Position;
+        var direction = Camera.LookDirection;
+        var fieldOfView = Camera.FieldOfView;
+        ExitWalking();
+        Camera.Position = position;
+        direction.Normalize();
+        Camera.LookDirection = direction * _navigationOrbitDistance;
+        Camera.FieldOfView = fieldOfView;
+        CameraLabel = "Обзор места осмотра";
+    }
     private void Top()
     {
         ExitWalking();
@@ -711,7 +747,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void Inside()
     {
         if (!CanWalk) return;
+        EndInspection();
         ExitWalking();
+        _navigationOrbitDistance = Math.Clamp(Camera.LookDirection.Length, 2, 15);
         Pause();
         FollowScanner = false;
         _isHeight = false;
@@ -726,7 +764,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void Fly()
     {
         if (!CanFly) return;
+        EndInspection();
         ExitWalking();
+        _navigationOrbitDistance = Math.Clamp(Camera.LookDirection.Length, 2, 15);
         Pause();
         FollowScanner = false;
         _isFlying = true;
@@ -747,6 +787,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(IsWalking)); Raise(nameof(IsFlying)); Raise(nameof(IsNavigating)); Raise(nameof(IsOverview));
         Raise(nameof(NavigationTitle)); Raise(nameof(NavigationSpeedText)); Raise(nameof(WalkPrompt));
         Raise(nameof(ShadowCamera)); Raise(nameof(ShadowsVisible));
+        Raise(nameof(SsaoEnabled)); Raise(nameof(ClipGuideVisible)); Raise(nameof(IsPicking)); Raise(nameof(CloudQualityVisible));
         Raise(nameof(GridVisible)); Raise(nameof(RouteVisible)); Raise(nameof(MarkersVisible)); Raise(nameof(ScannerVisible));
         Raise(nameof(ControlsHint)); Raise(nameof(WalkPromptVisible));
         Raise(nameof(CanRepositionScanner)); Raise(nameof(ScannerControlHint));
@@ -766,7 +807,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         if (navigator is FlyNavigator flight)
         {
-            if (_flightSpeed != flight.Speed) { _flightSpeed = flight.Speed; Raise(nameof(NavigationSpeedText)); }
+            if (_flightSpeed != flight.Speed) FlightSpeed = flight.Speed;
             CameraLabel = $"Полёт · {navigator.DistanceTravelled:F1} м";
         }
         else CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
@@ -792,70 +833,42 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (_dataset is null || !IsAdministrator || IsBusy || _capturedFrames == 0) return false;
         Pause();
-        IsBusy = true;
+        var token = BeginOperation("Сохранение сеанса");
         BusyProgress = 0;
         Status = "Сохранение сеанса";
         try
         {
-            await _storage.SaveAsync(path, _dataset.Session, _capturedFrames);
+            await _storage.SaveAsync(path, SnapshotWithAnnotations(), _capturedFrames, token, OperationProgress(token));
             _sessionPath = path;
             HasUnsavedChanges = false;
             NotifySessionProperties();
+            RememberFile(path);
+            await ClearRecoveryAsync();
             Status = "Сеанс сохранён"; AddEvent("Сеанс сохранён");
             return true;
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); return false; }
         catch (Exception ex) { ReportError("Не удалось сохранить сеанс", ex); return false; }
-        finally { IsBusy = false; }
+        finally { EndOperation(); }
     }
-    public async Task OpenAsync(string path)
-    {
-        if (!CanInteract || !await ConfirmReplacementAsync("открыть другой сеанс")) return;
-        ExitWalking();
-        Pause();
-        IsBusy = true;
-        BusyProgress = 0;
-        Status = "Открытие сеанса";
-        try
-        {
-            var session = await _storage.LoadAsync(path);
-            var scenario = Scenarios.First(s => s.Id == session.ScenarioId);
-            var scene = await Task.Run(() => CaveFactory.Create(scenario, session.SceneVersion));
-            if (_disposed) return;
-            SelectedScenario = scenario;
-            _loadingSettings = true;
-            Range = session.Settings.RangeMeters;
-            DensityIndex = session.Settings.RaysPerFrame <= 360 ? 0 : session.Settings.RaysPerFrame >= 1280 ? 2 : 1;
-            StartPosition = session.Settings.StartProgress * 100d;
-            FrameIntervalMilliseconds = session.Settings.FrameIntervalMilliseconds;
-            _loadingSettings = false;
-            Assign(new(scene, session), session.Frames.Length);
-            _sessionPath = path;
-            HasUnsavedChanges = false;
-            NotifySessionProperties();
-            Status = "Сохранённый сеанс открыт";
-            Notification = ""; Raise(nameof(HasNotification));
-            Home();
-            AddEvent("Из файла восстановлены все измерения");
-        }
-        catch (Exception ex) { ReportError("Не удалось открыть сеанс", ex); }
-        finally { _loadingSettings = false; IsBusy = false; }
-    }
+    public Task OpenAsync(string path) => OpenSessionAsync(path);
     public async Task ExportAsync(string path)
     {
         if (_dataset is null || !CanSave) return;
         Pause();
-        IsBusy = true;
+        var token = BeginOperation("Экспорт облака точек");
         BusyProgress = 0;
         Status = "Экспорт облака точек";
         try
         {
             var points = _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points);
-            await _storage.ExportPlyAsync(path, points);
+            await _storage.ExportPlyAsync(path, points, token, OperationProgress(token));
             Status = "Облако точек экспортировано";
             AddEvent("Облако точек экспортировано в PLY");
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось экспортировать точки", ex); }
-        finally { IsBusy = false; }
+        finally { EndOperation(); }
     }
     public void ReportError(string context, Exception ex)
     {
@@ -878,5 +891,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _generation?.Cancel();
         _generation?.Dispose();
         _captureCancellation?.Dispose();
+        _operationCancellation?.Cancel();
+        _preferenceSave?.Cancel();
+        _preferenceSave?.Dispose();
     }
 }

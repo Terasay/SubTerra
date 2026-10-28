@@ -81,6 +81,25 @@
                                     </Border>
                                     <Button Command="{Binding HomeCommand}" Content="Вернуть общий вид · Home" Margin="0,14,0,0" FontSize="11"/>
                                     <Button Command="{Binding PresentationCommand}" Content="Презентация · F11" Style="{StaticResource Ghost}" Margin="0,8,0,0" FontSize="11"/>
+                                    <Expander Header="Управление и качество" Margin="0,15,0,0"><StackPanel Margin="0,10,0,0">
+                                        <Grid><TextBlock Text="Чувствительность"/><TextBlock Text="{Binding MouseSensitivity, StringFormat={}{0:F1}×}" HorizontalAlignment="Right"/></Grid>
+                                        <Slider Value="{Binding MouseSensitivity}" Minimum=".2" Maximum="3" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Чувствительность мыши"/>
+                                        <CheckBox Content="Инверсия мыши по вертикали" IsChecked="{Binding InvertMouseY}" FontSize="11" Margin="0,5,0,12"/>
+                                        <Grid><TextBlock Text="Скорость ходьбы"/><TextBlock Text="{Binding WalkSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right"/></Grid>
+                                        <Slider Value="{Binding WalkSpeed}" Minimum=".5" Maximum="8" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость ходьбы"/>
+                                        <Grid><TextBlock Text="Скорость полёта"/><TextBlock Text="{Binding FlightSpeed, StringFormat={}{0:F1} м/с}" HorizontalAlignment="Right"/></Grid>
+                                        <Slider Value="{Binding FlightSpeed}" Minimum=".5" Maximum="40" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Скорость полёта"/>
+                                        <Grid><TextBlock Text="Ускорение Shift"/><TextBlock Text="{Binding FastMultiplier, StringFormat={}{0:F1}×}" HorizontalAlignment="Right"/></Grid>
+                                        <Slider Value="{Binding FastMultiplier}" Minimum="1" Maximum="5" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Множитель ускорения"/>
+                                        <CheckBox Content="Адаптивное качество" IsChecked="{Binding AdaptiveQuality}" Margin="0,10,0,0"/>
+                                        <TextBlock Text="Во время движения меньше точек и теней. Детализация возвращается после остановки." Style="{StaticResource Muted}" Margin="0,7,0,0"/>
+                                        <CheckBox Content="Автосохранение каждые 20 с" IsChecked="{Binding AutoSaveEnabled}" FontSize="11" Margin="0,13,0,0"/>
+                                        <TextBlock Text="{Binding AutoSaveText}" Style="{StaticResource Muted}" Margin="0,7,0,0"/>
+                                    </StackPanel></Expander>
+                                    <Expander Header="Недавние файлы" Margin="0,12,0,0"><ItemsControl ItemsSource="{Binding RecentSessions}" Margin="0,9,0,0"><ItemsControl.ItemTemplate><DataTemplate>
+                                        <Button Content="{Binding Name}" ToolTip="{Binding Path}" FontSize="11" Padding="8" HorizontalContentAlignment="Left" Margin="0,0,0,6"
+                                                Command="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}"/>
+                                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
                                 </StackPanel></ScrollViewer>
                             </TabItem>
                             <TabItem Header="Сканер" Style="{StaticResource SideTab}">
@@ -150,7 +169,7 @@
                     <Border Grid.Row="2" Style="{StaticResource Panel}" ClipToBounds="True"><Grid>
                         <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
                                        BackgroundColor="#0B131B" ShowViewCube="False" ShowCoordinateSystem="False" ModelUpDirection="0,0,1"
-                                       EnableSwapChainRendering="False" EnableSSAO="True" SSAOIntensity=".80" SSAOSamplingRadius=".45"
+                                       EnableSwapChainRendering="False" EnableSSAO="{Binding SsaoEnabled}" SSAOIntensity=".80" SSAOSamplingRadius=".45"
                                        IsShadowMappingEnabled="{Binding ShadowsVisible}" CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7"
                                        IsInertiaEnabled="False" UseDefaultGestures="False" Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
                             <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding IsOverview}"/>
@@ -161,14 +180,18 @@
                             <h:PointLight3D Position="{Binding Camera.Position}" Color="#475667" Attenuation="1,.20,.09" Range="10" IsRendering="{Binding IsWalking}"/>
                             <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Grid}" Color="#253B48" Thickness=".5" IsRendering="{Binding GridVisible}" IsHitTestVisible="False"/>
-                            <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="False"/>
-                            <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
-                            <h:MeshGeometryModel3D Geometry="{Binding FloorSurface}" Material="{Binding FloorMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
-                            <h:MeshGeometryModel3D Geometry="{Binding DampSurface}" Material="{Binding DampMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding FloorSurface}" Material="{Binding FloorMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding DampSurface}" Material="{Binding DampMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Route}" Color="#81C7B4" Thickness="1.4" IsRendering="{Binding RouteVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Markers}" Color="#FFCF67" Size="9,9" Figure="Ellipse" IsRendering="{Binding MarkersVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Scanner}" Color="#E1FFB3" Size="12,12" Figure="Ellipse" IsRendering="{Binding ScannerVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding ScannerHeading}" Color="#E1FFB3" Thickness="2" IsRendering="{Binding ScannerVisible}" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding InspectionPoints}" Color="#9DEAFF" Size="9,9" Figure="Ellipse" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding MeasurementLine}" Color="#9DEAFF" Thickness="2" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding AnnotationGeometry}" Color="#FFAA62" Size="10,10" Figure="Ellipse" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding ClipPlaneGuide}" Color="#8DABD2" Thickness="1" IsRendering="{Binding ClipGuideVisible}" IsHitTestVisible="False"/>
                         </h:Viewport3DX>
                         <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="#EC14212B" CornerRadius="6" Padding="9,6" Margin="12" IsHitTestVisible="False" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionStateText}" FontSize="11" Foreground="#C2DCAE"/></Border>
                         <Border HorizontalAlignment="Center" VerticalAlignment="Top" Background="#EF14212B" BorderBrush="#344652" BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,10,0,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
@@ -178,15 +201,27 @@
                                 <RadioButton Content="Точки" Style="{StaticResource Segment}" IsChecked="{Binding IsPoints, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/>
                             </StackPanel>
                         </Border>
-                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" Visibility="{Binding IsPoints, Converter={StaticResource BoolVisibility}}">
+                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" Visibility="{Binding CloudQualityVisible, Converter={StaticResource BoolVisibility}}">
                             <StackPanel><ComboBox Width="205" ItemsSource="{Binding PointQualities}" SelectedItem="{Binding PointQuality}" DisplayMemberPath="Name" IsEnabled="{Binding IsOverview}" AutomationProperties.Name="Качество облака" ToolTip="Лимит просмотра. Сохранение включает все точки."/>
-                                <TextBlock Text="{Binding CloudDisplayText}" FontSize="11" Foreground="#B9CFAB" Margin="0,7,0,0"/></StackPanel>
+                                <TextBlock Text="{Binding CloudDisplayText}" FontSize="11" Foreground="#B9CFAB" Margin="0,7,0,0"/><TextBlock Text="{Binding QualityStateText}" FontSize="10" Foreground="#A6BECE" Margin="0,4,0,0"/></StackPanel>
                         </Border>
                         <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
                             <Border Background="#EA14212B" CornerRadius="7" Padding="10,7"><StackPanel><TextBlock Text="{Binding NavigationTitle}" FontWeight="SemiBold"/>
                                 <TextBlock Text="{Binding NavigationSpeedText}" FontSize="11" Foreground="#BCD5AB" Margin="0,4,0,0" Visibility="{Binding IsFlying, Converter={StaticResource BoolVisibility}}"/></StackPanel></Border>
                         </StackPanel>
-                        <Button Command="{Binding HomeCommand}" Content="В обзор · Esc" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Background="#EF1C2C36" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}"/>
+                        <Button Command="{Binding ReturnOverviewCommand}" Content="В обзор · Esc" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Background="#EF1C2C36" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}"/>
+                        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,64,0,0" Background="#EE14212B" CornerRadius="7" Padding="4" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
+                            <StackPanel Orientation="Horizontal"><Button Command="{Binding CoordinatesCommand}" Content="Точка" Padding="9,6" FontSize="11" ToolTip="Выбрать точку и увидеть координаты"/>
+                                <Button Command="{Binding MeasureCommand}" Content="Расстояние" Padding="9,6" FontSize="11" Margin="5,0,0,0" ToolTip="Измерить расстояние между двумя точками"/></StackPanel>
+                        </Border>
+                        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" MaxWidth="360" Margin="12,0,12,42" Padding="10" CornerRadius="8" Background="#E61D323B" Visibility="{Binding IsPicking, Converter={StaticResource BoolVisibility}}"><DockPanel>
+                            <Button DockPanel.Dock="Right" Command="{Binding EndInspectionCommand}" Content="Готово · Esc" Padding="9,6"/>
+                            <StackPanel><TextBlock Text="{Binding InspectionHint}" TextWrapping="Wrap"/><TextBlock Text="{Binding PickedCoordinates}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/><TextBlock Text="{Binding MeasurementText}" FontSize="11" Foreground="#A9E6F3" Margin="0,4,0,0"/></StackPanel>
+                        </DockPanel></Border>
+                        <Border VerticalAlignment="Top" Margin="12,64,12,0" Padding="12" CornerRadius="8" Background="#F02B392C" Visibility="{Binding HasRecovery, Converter={StaticResource BoolVisibility}}"><StackPanel>
+                            <TextBlock Text="Найден несохранённый сеанс. Восстановить работу?" TextWrapping="Wrap"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0"><Button Command="{Binding RestoreRecoveryCommand}" Content="Восстановить" Style="{StaticResource Primary}"/><Button Command="{Binding DismissRecoveryCommand}" Content="Удалить копию" Margin="8,0,0,0"/></StackPanel>
+                        </StackPanel></Border>
                         <TextBlock Text="+" FontSize="23" Foreground="#BFFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="{Binding MouseCaptured, Converter={StaticResource BoolVisibility}}"/>
                         <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="12,92,12,0" Background="#EE15252E" CornerRadius="8" Padding="14,10" IsHitTestVisible="False" Visibility="{Binding WalkPromptVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding WalkPrompt}" TextWrapping="Wrap" TextAlignment="Center"/></Border>
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
@@ -197,7 +232,7 @@
                         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#DD101D27" Padding="10,6" CornerRadius="6" Margin="12,0,12,53" IsHitTestVisible="False"><TextBlock Text="{Binding CameraLabel}" FontSize="11" Foreground="#A6BECE"/></Border>
                         <Border VerticalAlignment="Bottom" Background="#E6101D27" Padding="12,8" IsHitTestVisible="False"><TextBlock Text="{Binding ControlsHint}" TextWrapping="Wrap" TextAlignment="Center" Foreground="#B9CCD9" FontSize="11"/></Border>
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False"><TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="{Binding EmptyHint}" Foreground="#A1B7C7" Margin="0,9,0,0" TextWrapping="Wrap" TextAlignment="Center"/></StackPanel>
-                        <Border Background="#F20D1721" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="300"><TextBlock Text="{Binding Status}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,18"/><ProgressBar Value="{Binding BusyProgress, Mode=OneWay}" IsIndeterminate="{Binding BusyIsIndeterminate}"/></StackPanel></Border>
+                        <Border Background="#F20D1721" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="300"><TextBlock Text="{Binding Status}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,18"/><ProgressBar Value="{Binding BusyProgress, Mode=OneWay}" IsIndeterminate="{Binding BusyIsIndeterminate}"/><Button Command="{Binding CancelOperationCommand}" Content="Отменить · Esc" Margin="0,18,0,0"/></StackPanel></Border>
                         <Border Background="#F2322526" BorderBrush="#97665C" BorderThickness="1" CornerRadius="8" VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="12" Visibility="{Binding HasNotification, Converter={StaticResource BoolVisibility}}"><DockPanel><Button DockPanel.Dock="Right" Command="{Binding DismissNotificationCommand}" Style="{StaticResource Ghost}" Content="×" Padding="6,0" Margin="10,0,0,0" AutomationProperties.Name="Закрыть уведомление"/><TextBlock Text="{Binding Notification}" Foreground="#F4C8BA" TextWrapping="Wrap"/></DockPanel></Border>
                     </Grid></Border>
 
@@ -233,6 +268,26 @@
                             <Grid Margin="0,0,0,10"><TextBlock Text="Длина маршрута" Foreground="#A4B9C8"/><TextBlock Text="{Binding TotalLengthText}" HorizontalAlignment="Right"/></Grid>
                             <Grid Margin="0,0,0,10"><TextBlock Text="Кадры" Foreground="#A4B9C8"/><TextBlock Text="{Binding FrameCountText}" HorizontalAlignment="Right"/></Grid>
                             <TextBlock Text="{Binding RecordingText}" Style="{StaticResource Muted}"/>
+                            <Expander Header="Измерения и свои метки" IsExpanded="True" Margin="0,15,0,0"><StackPanel Margin="0,10,0,0">
+                                <TextBlock Text="{Binding PickedCoordinates}" Style="{StaticResource Muted}"/><TextBlock Text="{Binding MeasurementText}" Foreground="#A9E6F3" Margin="0,7,0,10"/>
+                                <TextBox Text="{Binding AnnotationName, UpdateSourceTrigger=PropertyChanged}" MaxLength="120" AutomationProperties.Name="Название своей метки"/>
+                                <Button Command="{Binding AddAnnotationCommand}" Content="Добавить метку в выбранной точке" FontSize="11" Margin="0,7,0,0"/>
+                                <TextBlock Text="Свои метки сохраняются в сеансе. Для добавления нужен администратор." Style="{StaticResource Muted}" Margin="0,7,0,10"/>
+                                <ItemsControl ItemsSource="{Binding UserAnnotations}"><ItemsControl.ItemTemplate><DataTemplate><DockPanel Margin="0,0,0,6">
+                                    <Button DockPanel.Dock="Right" Content="×" Padding="8" Command="{Binding DataContext.RemoveAnnotationCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" ToolTip="Удалить свою метку"/>
+                                    <Button HorizontalContentAlignment="Left" Padding="8" Command="{Binding DataContext.NavigateAnnotationCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}"><TextBlock Text="{Binding Name}" TextWrapping="Wrap"/></Button>
+                                </DockPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                            </StackPanel></Expander>
+                            <Expander Header="Срез облака плоскостью" Margin="0,13,0,0" IsEnabled="{Binding IsPoints}"><StackPanel Margin="0,10,0,0">
+                                <CheckBox Content="Включить срез" IsChecked="{Binding ClipEnabled}"/>
+                                <Grid Margin="0,10,0,0"><TextBlock Text="Азимут"/><TextBlock Text="{Binding ClipYaw, StringFormat={}{0:F0}°}" HorizontalAlignment="Right"/></Grid>
+                                <Slider Value="{Binding ClipYaw, Delay=100}" Minimum="-180" Maximum="180" TickFrequency="5" IsSnapToTickEnabled="True" AutomationProperties.Name="Азимут среза"/>
+                                <Grid><TextBlock Text="Наклон"/><TextBlock Text="{Binding ClipPitch, StringFormat={}{0:F0}°}" HorizontalAlignment="Right"/></Grid>
+                                <Slider Value="{Binding ClipPitch, Delay=100}" Minimum="-90" Maximum="90" TickFrequency="5" IsSnapToTickEnabled="True" AutomationProperties.Name="Наклон среза"/>
+                                <Grid><TextBlock Text="Смещение, м" VerticalAlignment="Center"/><TextBox Width="70" HorizontalAlignment="Right" Text="{Binding ClipOffset, UpdateSourceTrigger=LostFocus}" KeyDown="NumericInput_KeyDown" AutomationProperties.Name="Смещение плоскости"/></Grid>
+                                <Slider Value="{Binding ClipOffset, Delay=100}" Minimum="-1000" Maximum="1000" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Смещение среза"/>
+                                <TextBlock Text="Срез влияет только на просмотр. Сохранение и PLY включают все измерения." Style="{StaticResource Muted}"/>
+                            </StackPanel></Expander>
                             <Border Style="{StaticResource Divider}"/>
                             <TextBlock Text="Метки на маршруте" Style="{StaticResource Section}"/>
                             <TextBlock Text="Нажмите, чтобы перейти к месту. Метки заданы сценарием." Style="{StaticResource Muted}" Margin="0,7,0,12"/>
@@ -260,7 +315,7 @@
             </Grid>
             <Border Grid.Row="2" Background="#101A22" BorderBrush="#263641" BorderThickness="0,1,0,0"><Grid Margin="16,0">
                 <TextBlock Text="Симуляция LiDAR · данные на этом компьютере" FontSize="10" Foreground="#9CB1BF" VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding PerformanceText}" FontSize="10" Foreground="#9CB1BF" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="CPU-подготовка геометрии и private bytes процесса. Это не FPS видеокарты."/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><TextBlock Text="{Binding FrameRateText}" FontSize="10" Foreground="#B8D6AD" Margin="0,0,14,0" ToolTip="Частота завершённых кадров и средний интервал между ними; не время выполнения команд GPU."/><TextBlock Text="{Binding PerformanceText}" FontSize="10" Foreground="#9CB1BF" ToolTip="CPU-подготовка геометрии и private bytes процесса."/></StackPanel>
             </Grid></Border>
         </Grid>
     </Border>

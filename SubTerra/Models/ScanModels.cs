@@ -50,6 +50,7 @@ public sealed class ScanSession
     public required ScanSettings Settings { get; init; }
     public required ScanFrame[] Frames { get; init; }
     public ScannerAdjustment[] Adjustments { get; init; } = [];
+    public UserAnnotation[] Annotations { get; init; } = [];
     public int PointCount => Frames.Sum(frame => frame.Points.Length);
 }
 

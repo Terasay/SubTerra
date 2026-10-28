@@ -69,7 +69,7 @@ public sealed class WalkController : IDisposable
         if (_navigator is null) return false;
         if (e.Key is Key.Escape or Key.Home)
         {
-            if (!e.IsRepeat) _viewModel.Home();
+            if (!e.IsRepeat) { if (e.Key == Key.Home) _viewModel.Home(); else _viewModel.ReturnToOverview(); }
             return true;
         }
         if (e.Key == Key.Tab && (_captured || _viewport.IsKeyboardFocusWithin))
@@ -99,6 +99,7 @@ public sealed class WalkController : IDisposable
     {
         if (_navigator is not FlyNavigator flight || !_captured) return;
         flight.ChangeSpeed(e.Delta / 120f);
+        _viewModel.FlightSpeed = flight.Speed;
         _viewModel.UpdateWalkPosition(flight);
         e.Handled = true;
     }
@@ -156,17 +157,23 @@ public sealed class WalkController : IDisposable
         if (!GetCursorPos(out var mouse)) { ReleaseMouse(); return; }
         var delta = _mouseLook.Read(mouse.X, mouse.Y);
         if (Math.Abs(delta.X) < _viewport.ActualWidth / 2 && Math.Abs(delta.Y) < _viewport.ActualHeight / 2)
-            _navigator.Look(-delta.X * .0025f, -delta.Y * .0025f);
+            _navigator.Look(-delta.X * .0025f * (float)_viewModel.MouseSensitivity,
+                delta.Y * .0025f * (float)_viewModel.MouseSensitivity * (_viewModel.InvertMouseY ? 1 : -1));
         if (delta.LengthSquared() > 0 && !CenterCursor()) { ReleaseMouse(); return; }
         // Poll actual key state: autorepeat and a missed KeyUp must not leave movement stuck.
         var forward = (Down(Key.W, Key.Up) ? 1 : 0) - (Down(Key.S, Key.Down) ? 1 : 0);
         var right = (Down(Key.D, Key.Right) ? 1 : 0) - (Down(Key.A, Key.Left) ? 1 : 0);
         var up = (Down(Key.E, Key.Space) ? 1 : 0) - (Down(Key.Q, Key.C) || Keyboard.IsKeyDown(Key.Z) ? 1 : 0);
         var previousPosition = _navigator.Position;
+        if (_navigator is FlyNavigator flight) { flight.SetSpeed((float)_viewModel.FlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier; }
+        if (_navigator is WalkNavigator walk) { walk.Speed = (float)_viewModel.WalkSpeed; walk.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
             _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift), up);
         if (delta.LengthSquared() > 0 || _navigator.Position != previousPosition)
+        {
+            _viewModel.NotifyCameraInteraction();
             _viewModel.UpdateWalkPosition(_navigator);
+        }
     }
 
     private static bool Down(Key first, Key second) => Keyboard.IsKeyDown(first) || Keyboard.IsKeyDown(second);

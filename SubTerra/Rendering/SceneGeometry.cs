@@ -15,7 +15,9 @@ public sealed class SceneGeometry
     private readonly PointCloudSampler? _sampler;
     private readonly StreamingPointCloudSampler? _streamSampler;
     private PointGeometry3D? _cachedCloud;
-    private (int Count, bool CutRoof, int Limit) _cloudKey;
+    private (int Count, bool CutRoof, int Limit, PointClipPlane? Clip) _cloudKey;
+    private PointGeometry3D? _previousCloud;
+    private (int Count, bool CutRoof, int Limit, PointClipPlane? Clip) _previousCloudKey;
     private readonly Color4Collection _surfaceColors;
     private readonly Color4Collection _rockColors;
     private readonly Vector3Collection _positions;
@@ -92,6 +94,7 @@ public sealed class SceneGeometry
         foreach (var point in frame.Points) _pointColors.Add(HeightColor(point.Z, point.Intensity));
         _streamSampler!.Append(frame.Points);
         _cachedCloud = null;
+        _previousCloud = null;
     }
 
     private Color4 HeightColor(float height, float intensity)
@@ -102,13 +105,30 @@ public sealed class SceneGeometry
         return new(color.X, color.Y, color.Z, 1);
     }
 
-    public PointGeometry3D Cloud(int count, bool cutRoof, int pointLimit = 60_000)
+    public PointGeometry3D Cloud(int count, bool cutRoof, int pointLimit = 60_000, PointClipPlane? clip = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pointLimit, 1);
         count = Math.Clamp(count, 0, _points.Count);
-        var key = (count, cutRoof, pointLimit);
+        var key = (count, cutRoof, pointLimit, clip);
         if (_cachedCloud is not null && _cloudKey == key) return _cachedCloud;
-        ReadOnlySpan<int> indices = _sampler is null ? _streamSampler!.Select(count, cutRoof, pointLimit) :
-            _sampler.Select(count, cutRoof, pointLimit).Span;
+        if (_previousCloud is not null && _previousCloudKey == key)
+        {
+            (_cachedCloud, _previousCloud) = (_previousCloud, _cachedCloud);
+            (_cloudKey, _previousCloudKey) = (_previousCloudKey, _cloudKey);
+            return _cachedCloud;
+        }
+        var selectionLimit = clip is null ? pointLimit : int.MaxValue;
+        ReadOnlySpan<int> indices = _sampler is null ? _streamSampler!.Select(count, cutRoof, selectionLimit) :
+            _sampler.Select(count, cutRoof, selectionLimit).Span;
+        if (clip is { } plane)
+        {
+            var eligible = new List<int>();
+            foreach (var index in indices) if (plane.Contains(_points[index].Position)) eligible.Add(index);
+            var size = Math.Min(pointLimit, eligible.Count);
+            var clipped = new int[size];
+            for (var i = 0; i < size; i++) clipped[i] = eligible[size < 2 ? 0 : (int)((long)i * (eligible.Count - 1) / (size - 1))];
+            indices = clipped;
+        }
         var positions = new Vector3Collection(indices.Length);
         var colors = new Color4Collection(indices.Length);
         foreach (var i in indices)
@@ -116,6 +136,7 @@ public sealed class SceneGeometry
             positions.Add(_points[i].Position);
             colors.Add(_pointColors[i]);
         }
+        _previousCloud = _cachedCloud; _previousCloudKey = _cloudKey;
         _cloudKey = key;
         return _cachedCloud = new() { Positions = positions, Colors = colors };
     }

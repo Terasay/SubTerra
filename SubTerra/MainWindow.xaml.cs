@@ -14,6 +14,7 @@ using HelixToolkit.Wpf.SharpDX;
 using SubTerra.Simulation;
 using SubTerra.ViewModels;
 using SubTerra.Views;
+using SubTerra.Rendering;
 
 namespace SubTerra;
 
@@ -27,6 +28,9 @@ public partial class MainWindow : Window
     private bool _checkingClose;
     private readonly WalkController _walk;
     private readonly DispatcherTimer _diagnosticsTimer;
+    private readonly DispatcherTimer _interactionTimer;
+    private readonly DispatcherTimer _autosaveTimer;
+    private readonly FrameTiming _frameTiming = new();
     private readonly Process _process = Process.GetCurrentProcess();
     private bool _ready;
     private WindowState _previousWindowState;
@@ -39,13 +43,22 @@ public partial class MainWindow : Window
         _access = access;
         EffectsManager = new DefaultEffectsManager();
         _interaction = new WpfSessionInteraction(() => this);
-        _viewModel = new MainViewModel(new SimulatedScanSource(), new SessionStorage(), access: _access, interaction: _interaction);
+        _viewModel = new MainViewModel(new SimulatedScanSource(), new SessionStorage(), access: _access, interaction: _interaction,
+            workspaceStore: new WorkspaceStateStore());
         InitializeComponent();
         DataContext = _viewModel;
         _walk = new WalkController(this, Viewport, _viewModel);
         _diagnosticsTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
             Diagnostics_Tick, Dispatcher);
         _diagnosticsTimer.Stop();
+        _interactionTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background,
+            (_, _) => _viewModel.SettleCameraInteraction(), Dispatcher);
+        _autosaveTimer = new DispatcherTimer(TimeSpan.FromSeconds(20), DispatcherPriority.Background,
+            async (_, _) => await _viewModel.AutoSaveAsync(), Dispatcher);
+        _interactionTimer.Stop(); _autosaveTimer.Stop();
+        Viewport.OnRendered += Viewport_OnRendered;
+        Viewport.PreviewMouseLeftButtonDown += InspectPoint_Click;
+        _viewModel.Camera.Changed += Camera_Changed;
         Viewport.InputBindings.Clear();
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Rotate, new MouseGesture(MouseAction.LeftClick)));
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.RightClick)));
@@ -57,12 +70,23 @@ public partial class MainWindow : Window
         if (_ready) return;
         _ready = true;
         _diagnosticsTimer.Start();
+        _interactionTimer.Start(); _autosaveTimer.Start();
         await _viewModel.LoadDemoAsync();
     }
     private void Diagnostics_Tick(object? sender, EventArgs e)
     {
         _process.Refresh();
         _viewModel.UpdateMemory(_process.PrivateMemorySize64);
+        _viewModel.UpdateFrameTiming(_frameTiming.Snapshot(Stopwatch.GetTimestamp()));
+    }
+    private void Viewport_OnRendered(object? sender, EventArgs e) => _frameTiming.Frame(Stopwatch.GetTimestamp());
+    private void Camera_Changed(object? sender, EventArgs e) => _viewModel.NotifyCameraInteraction();
+    private void InspectPoint_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (!_viewModel.IsPicking) return;
+        var hit = Viewport.FindHits(e.GetPosition(Viewport)).FirstOrDefault(result => result.IsValid);
+        if (hit is not null) _viewModel.SelectInspectionPoint(hit.PointHit);
+        e.Handled = true;
     }
     private async void Start_Click(object sender, RoutedEventArgs e) => await _viewModel.StartAsync();
     private async void Scenario_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -97,6 +121,15 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _viewModel.CanCancelOperation)
+        {
+            if (!e.IsRepeat) _viewModel.CancelOperation();
+            e.Handled = true; return;
+        }
+        if (e.Key == Key.Escape && _viewModel.IsPicking)
+        {
+            _viewModel.EndInspection(); e.Handled = true; return;
+        }
         // These shortcuts remain global, including while a slider or numeric field has focus.
         if (e.Key == Key.F11)
         {
@@ -120,7 +153,7 @@ public partial class MainWindow : Window
         }
         if (e.Key == Key.Escape && _viewModel.IsNavigating && Keyboard.FocusedElement is not ComboBox { IsDropDownOpen: true })
         {
-            if (!e.IsRepeat) _viewModel.Home();
+            if (!e.IsRepeat) _viewModel.ReturnToOverview();
             e.Handled = true; return;
         }
         if (!_viewModel.MouseCaptured && (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase
@@ -229,6 +262,10 @@ public partial class MainWindow : Window
     {
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _diagnosticsTimer.Stop();
+        _interactionTimer.Stop(); _autosaveTimer.Stop();
+        Viewport.OnRendered -= Viewport_OnRendered;
+        Viewport.PreviewMouseLeftButtonDown -= InspectPoint_Click;
+        _viewModel.Camera.Changed -= Camera_Changed;
         _process.Dispose();
         _walk.Dispose();
         _viewModel.Dispose();

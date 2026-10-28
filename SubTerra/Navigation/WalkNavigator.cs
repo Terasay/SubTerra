@@ -17,6 +17,8 @@ public sealed class WalkNavigator : ICameraNavigator
     public float Yaw { get; private set; }
     public float Pitch { get; private set; }
     public float DistanceTravelled { get; private set; }
+    public float Speed { get; set; } = 2.5f;
+    public float FastMultiplier { get; set; } = 1.92f;
     public Vector3 Forward => new(MathF.Cos(Yaw) * MathF.Cos(Pitch), MathF.Sin(Yaw) * MathF.Cos(Pitch), MathF.Sin(Pitch));
 
     public WalkNavigator(CaveScene scene, float availableProgress = 1, float startProgress = 0)
@@ -61,7 +63,7 @@ public sealed class WalkNavigator : ICameraNavigator
         var direction = new Vector2(MathF.Cos(Yaw), MathF.Sin(Yaw));
         var movement = direction * forward + new Vector2(direction.Y, -direction.X) * right;
         if (movement.LengthSquared() > 1) movement = Vector2.Normalize(movement);
-        var requested = movement * (fast ? 4.8f : 2.5f) * Math.Min(deltaSeconds, .05f);
+        var requested = movement * Speed * (fast ? FastMultiplier : 1) * Math.Min(deltaSeconds, .05f);
         var old = Position;
         // Separate axes allow the camera to slide along a wall instead of stopping abruptly.
         TryMove(new Vector3(requested.X, 0, 0));
