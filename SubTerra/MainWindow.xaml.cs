@@ -67,14 +67,15 @@ public partial class MainWindow : Window
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.LeftClick, ModifierKeys.Shift)));
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         if (_ready) return;
         _ready = true;
         _diagnosticsTimer.Start();
         _interactionTimer.Start(); _autosaveTimer.Start();
-        await _viewModel.LoadDemoAsync();
+        UpdatePanelLayout();
     }
+    private async void Demo_Click(object sender, RoutedEventArgs e) => await _viewModel.LoadDemoAsync();
     private void Diagnostics_Tick(object? sender, EventArgs e)
     {
         _process.Refresh();
@@ -136,6 +137,11 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _viewModel.IsSettingsOpen && !_viewModel.IsBusy)
+        {
+            _viewModel.IsSettingsOpen = false; e.Handled = true; return;
+        }
+        if (_viewModel.IsWelcomeVisible && e.Key is Key.Home or Key.Space) return;
         if (e.Key == Key.Escape && _viewModel.CanCancelOperation)
         {
             if (!e.IsRepeat) _viewModel.CancelOperation();
@@ -167,6 +173,7 @@ public partial class MainWindow : Window
             if (!e.IsRepeat) { if (e.Key == Key.S) Save_Click(this, new()); else Open_Click(this, new()); }
             e.Handled = true; return;
         }
+        if (_viewModel.IsWelcomeVisible) return;
         if (e.Key == Key.Escape && _viewModel.IsPresentationMode && !_viewModel.IsNavigating)
         {
             if (!e.IsRepeat) _viewModel.IsPresentationMode = false;
@@ -200,6 +207,7 @@ public partial class MainWindow : Window
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.WorkspaceView)) UpdateWorkspaceViews();
         if (e.PropertyName == nameof(MainViewModel.IsScreenSelecting))
         {
             if (_viewModel.IsScreenSelecting) Viewport.Cursor = Cursors.Cross;
@@ -217,46 +225,16 @@ public partial class MainWindow : Window
             return;
         }
         if (e.PropertyName is not (nameof(MainViewModel.IsPresentationMode) or nameof(MainViewModel.IsInspectorOpen) or nameof(MainViewModel.IsSidebarOpen))) return;
-        if (ActualWidth < 1320)
-        {
-            if (e.PropertyName == nameof(MainViewModel.IsInspectorOpen) && _viewModel.IsInspectorOpen) _viewModel.IsSidebarOpen = false;
-            if (e.PropertyName == nameof(MainViewModel.IsSidebarOpen) && _viewModel.IsSidebarOpen) _viewModel.IsInspectorOpen = false;
-        }
         UpdatePanelLayout();
         if (e.PropertyName != nameof(MainViewModel.IsPresentationMode)) return;
         if (_viewModel.IsPresentationMode) { _previousWindowState = WindowState; WindowState = WindowState.Maximized; }
         else WindowState = _previousWindowState;
     }
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePanelLayout();
-    private void UpdatePanelLayout()
-    {
-        if (LeftPanel is null || RightPanel is null) return;
-        if (!_viewModel.IsPresentationMode && ActualWidth < 1320 && _viewModel.IsInspectorOpen && _viewModel.IsSidebarOpen)
-            _viewModel.IsSidebarOpen = false;
-        var presentation = _viewModel.IsPresentationMode;
-        var inspector = !presentation && _viewModel.IsInspectorOpen;
-        var sidebar = !presentation && _viewModel.IsSidebarOpen;
-        var floatingLeft = ActualWidth < 1280;
-        var floatingRight = ActualWidth < 1400;
-        LeftPanel.Visibility = sidebar ? Visibility.Visible : Visibility.Collapsed;
-        RightPanel.Visibility = inspector ? Visibility.Visible : Visibility.Collapsed;
-        LeftColumn.Width = new GridLength(sidebar && !floatingLeft ? 312 : 0);
-        RightColumn.Width = new GridLength(inspector && !floatingRight ? 336 : 0);
-        Grid.SetColumn(LeftPanel, floatingLeft ? 1 : 0);
-        Grid.SetColumn(RightPanel, floatingRight ? 1 : 2);
-        LeftPanel.Width = floatingLeft ? 304 : double.NaN;
-        RightPanel.Width = floatingRight ? 328 : double.NaN;
-        LeftPanel.HorizontalAlignment = floatingLeft ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
-        RightPanel.HorizontalAlignment = floatingRight ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
-    }
+    private void UpdatePanelLayout() => WorkspaceLayout.Apply(this, _viewModel, ActualWidth);
+    private void UpdateWorkspaceViews() => UpdatePanelLayout();
     private void CloseInspector_Click(object sender, RoutedEventArgs e) => _viewModel.IsInspectorOpen = false;
     private void CloseSidebar_Click(object sender, RoutedEventArgs e) => _viewModel.IsSidebarOpen = false;
-    private void NumericInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || sender is not TextBox input) return;
-        input.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
-        e.Handled = true;
-    }
     private void Viewport_RenderExceptionOccurred(object? sender, RelayExceptionEventArgs e)
     {
         _viewModel.ReportError("Не удалось отобразить 3D-сцену", e.Exception);

@@ -153,9 +153,11 @@ public sealed partial class MainViewModel
         InvalidateIndoorPreview(document);
         var selectedId = SelectedStructureSurface?.Id;
         var selectedObjectId = _selectedObjectCandidate?.Id;
+        var selectedVertex = _roomVertexIndex;
         ClearStructureAnalysis(true);
         _structureDocument = document;
         if (document is null) return;
+        _roomVertexIndex = selectedVertex;
         UseNeuralClasses = document.Result.Options.UseNeuralClasses; Raise(nameof(UseNeuralClasses));
         StructureTolerance = document.Result.Options.DistanceTolerance;
         foreach (var surface in document.Result.Surfaces) StructureSurfaces.Add(surface);

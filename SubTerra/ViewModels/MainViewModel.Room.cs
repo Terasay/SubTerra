@@ -81,11 +81,12 @@ public sealed partial class MainViewModel
         max - min < .02 ? $"≈ {(min + max) / 2:F2} м" : $"≈ {min:F2}–{max:F2} м" : "Неизвестна · нет потолка";
     public string RoomSummary => !HasRoom ? "Подтвердите один пол, стены и, при наличии, потолок. Стены должны замыкать выпуклый контур одной комнаты." :
         RoomIsStale ? "ПЛАН УСТАРЕЛ · изменились сканы или подтверждённые поверхности. Постройте план заново или отмените изменение." :
-        $"{_structureDocument!.Room!.Name} · границы по {_structureDocument.Room.WallSurfaceIds.Length} опорным плоскостям. Это геометрическая гипотеза, требующая проверки.";
+        $"{_structureDocument!.Room!.Name} · границы по {_structureDocument.Room.WallSurfaceIds.Distinct().Count()} опорным плоскостям. Это геометрическая гипотеза, требующая проверки.";
     public string RoomWarnings => _structureDocument?.Room is not { } r ? "" :
         (r.IsManuallyEdited ? "Контур исправлен оператором; автоматический результат сохранён отдельно.\n" : "") +
         (!r.HasHeight ? "Потолок не подтверждён: высота неизвестна.\n" : "") +
-        (r.Gaps.Length > 0 ? $"Пропусков в нижней части стен: {r.Gaps.Length}. Возможны проёмы или недостаточное сканирование (оранжевые участки).\n" : "") +
+        (r.Gaps.Any(g => !g.IsConfirmedOpening) ? $"Предполагаемых проёмов / пропусков: {r.Gaps.Count(g => !g.IsConfirmedOpening)} (оранжевые участки).\n" : "") +
+        (r.Gaps.Any(g => g.IsConfirmedOpening) ? $"Проёмов от оператора: {r.Gaps.Count(g => g.IsConfirmedOpening)} (голубые участки на плане).\n" : "") +
         (r.IncompleteWallIds.Length > 0 ? $"Неполные данные по высоте стен: {r.IncompleteWallIds.Length}.\n" : "") +
         "Пересечения плоскостей не подтверждают непрерывность стен. Площадь и периметр приблизительные.";
 

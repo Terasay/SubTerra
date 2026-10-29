@@ -7,24 +7,24 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#ACBFCD"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#A1E3C5"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#354A59"/>
-    <Style x:Key="ControlBase" TargetType="Control"><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{StaticResource TextBrush}"/></Style>
+    <Style x:Key="ControlBase" TargetType="Control"><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="13"/><Setter Property="Foreground" Value="{StaticResource TextBrush}"/></Style>
     <Style TargetType="Window" BasedOn="{StaticResource ControlBase}"><Setter Property="Background" Value="{StaticResource CanvasBrush}"/></Style>
     <Style TargetType="UserControl" BasedOn="{StaticResource ControlBase}"/>
-    <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Setter Property="FontSize" Value="11"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="LineHeight" Value="17"/></Style>
+    <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Setter Property="FontSize" Value="12"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="LineHeight" Value="19"/></Style>
     <Style x:Key="Card" TargetType="Border"><Setter Property="Background" Value="{StaticResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/></Style>
     <Style x:Key="InsetCard" TargetType="Border" BasedOn="{StaticResource Card}"><Setter Property="Background" Value="{StaticResource InputBrush}"/><Setter Property="Padding" Value="12"/><Setter Property="CornerRadius" Value="9"/></Style>
     <Style x:Key="Divider" TargetType="Border"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2B404D"/><Setter Property="Margin" Value="0,16"/></Style>
     <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
-    <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="12"/></Style>
-    <Style x:Key="Label" TargetType="TextBlock"><Setter Property="Foreground" Value="#A3B8C7"/><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
-    <Style x:Key="Section" TargetType="TextBlock"><Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="13"/></Style>
+    <Style x:Key="Label" TargetType="TextBlock"><Setter Property="Foreground" Value="#A3B8C7"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style x:Key="Section" TargetType="TextBlock"><Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
     <Style x:Key="Icon" TargetType="TextBlock"><Setter Property="FontFamily" Value="Segoe MDL2 Assets"/><Setter Property="FontSize" Value="15"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="HorizontalAlignment" Value="Center"/></Style>
     <Style TargetType="ToolTip"><Setter Property="Background" Value="#22303D"/><Setter Property="Foreground" Value="#EDF3F8"/><Setter Property="BorderBrush" Value="#3B4E60"/><Setter Property="Padding" Value="10,7"/></Style>
     <Style TargetType="Button">
         <Setter Property="MinHeight" Value="36"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
-        <Setter Property="Foreground" Value="#DAE5EF"/><Setter Property="Background" Value="#1B2B37"/><Setter Property="BorderBrush" Value="#354A59"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="13,9"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FontSize" Value="12"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Foreground" Value="#DAE5EF"/><Setter Property="Background" Value="#1B2B37"/><Setter Property="BorderBrush" Value="#354A59"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="13,9"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FontSize" Value="13"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
             <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/></Border>
             <ControlTemplate.Triggers>
@@ -48,7 +48,7 @@
     <Style TargetType="CheckBox">
         <Setter Property="MinHeight" Value="24"/>
         <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="18"/></DataTemplate></Setter.Value></Setter>
-        <Setter Property="Foreground" Value="#A7B5C3"/><Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Foreground" Value="#A7B5C3"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
             <Grid Background="Transparent"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition/></Grid.ColumnDefinitions><Border x:Name="Box" Width="18" Height="18" CornerRadius="5" BorderBrush="#607887" BorderThickness="1" Background="#121D28" VerticalAlignment="Top" Margin="0,2,0,0">
                 <TextBlock x:Name="Tick" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="#122019" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
@@ -63,7 +63,7 @@
         </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="ComboBox">
-        <Setter Property="Foreground" Value="#E4ECF4"/><Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="#E4ECF4"/><Setter Property="FontSize" Value="13"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid>
             <ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                 <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="#182431" BorderBrush="#2C3B49" BorderThickness="1" CornerRadius="7">
@@ -91,7 +91,7 @@
     <Style TargetType="TextBox">
         <Setter Property="MinHeight" Value="36"/>
         <Setter Property="Background" Value="#192A36"/><Setter Property="Foreground" Value="#E8F0F5"/><Setter Property="BorderBrush" Value="#476170"/>
-        <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="7,5"/><Setter Property="FontSize" Value="12"/>
+        <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="7,5"/><Setter Property="FontSize" Value="13"/>
         <Setter Property="CaretBrush" Value="#D1F3E3"/><Setter Property="SelectionBrush" Value="#547A65"/>
         <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox"><Border x:Name="Chrome" CornerRadius="7" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"><ScrollViewer x:Name="PART_ContentHost"/></Border>
@@ -172,7 +172,7 @@
         </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="SideTab" TargetType="TabItem">
-        <Setter Property="Foreground" Value="#ACBFCD"/><Setter Property="FontSize" Value="11"/><Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Foreground" Value="#ACBFCD"/><Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
             <Border x:Name="Chrome" CornerRadius="7" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" Padding="6,10">
                 <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"/>
@@ -206,5 +206,22 @@
             </StackPanel></Border>
             <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Body" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
         </ControlTemplate></Setter.Value></Setter>
+    </Style>
+
+    <Style x:Key="WelcomeAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="VerticalContentAlignment" Value="Top"/><Setter Property="Padding" Value="24"/><Setter Property="MinHeight" Value="204"/><Setter Property="Background" Value="#12232D"/><Setter Property="BorderBrush" Value="#34505C"/></Style>
+    <Style TargetType="TreeView" BasedOn="{StaticResource ControlBase}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/></Style>
+    <Style TargetType="TreeViewItem" BasedOn="{StaticResource ControlBase}">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="6,9"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TreeViewItem"><StackPanel>
+            <Border x:Name="Node" Background="Transparent" CornerRadius="6" BorderBrush="Transparent" BorderThickness="1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <ToggleButton x:Name="Expand" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Focusable="False" Width="20" Height="28" VerticalAlignment="Top" Margin="0,3,0,0"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"><TextBlock x:Name="Arrow" Text="›" FontSize="20" Foreground="#ACBFCD" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin=".5,.5"/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton>
+                <ContentPresenter x:Name="PART_Header" Grid.Column="1" ContentSource="Header" Margin="{TemplateBinding Padding}" HorizontalAlignment="Stretch" TextElement.Foreground="{TemplateBinding Foreground}"/>
+            </Grid></Border><ItemsPresenter x:Name="ItemsHost" Margin="14,2,0,0"/>
+        </StackPanel><ControlTemplate.Triggers>
+            <Trigger Property="IsExpanded" Value="False"><Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/></Trigger>
+            <Trigger Property="HasItems" Value="False"><Setter TargetName="Expand" Property="Visibility" Value="Hidden"/></Trigger>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Node" Property="Background" Value="#244238"/><Setter TargetName="Node" Property="BorderBrush" Value="#659D86"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Node" Property="BorderBrush" Value="#A1E3C5"/></Trigger>
+        </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
     </Style>
 </ResourceDictionary>

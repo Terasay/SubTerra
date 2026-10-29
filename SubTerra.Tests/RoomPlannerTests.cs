@@ -166,6 +166,23 @@ public sealed class RoomPlannerTests
         Assert.Same(room, removed.AutomaticPlan);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task EveryRoomEdgeCanBeSplitWithoutChangingItsShape(int edge)
+    {
+        var project = await PlannedRoom(); var doc = project.Structure!; var original = doc.Room!;
+        var error = Record.Exception(() => RoomPlanEditor.InsertVertex(doc, edge));
+        Assert.True(error is null, $"Edge {edge}: {error?.Message}; contour {string.Join("; ", original.FloorContour.Select(p => $"{p.X:R},{p.Y:R}"))}");
+        var inserted = RoomPlanEditor.InsertVertex(doc, edge);
+        Assert.Equal(5, inserted.FloorContour.Length); Assert.Equal(original.AreaSquareMeters, inserted.AreaSquareMeters, 4);
+        RoomPlanValidation.Validate(doc with { Version = 3, Room = inserted }, CancellationToken.None);
+        var restored = RoomPlanEditor.RemoveVertex(doc with { Version = 3, Room = inserted }, edge + 1);
+        Assert.Equal(original.FloorContour, restored.FloorContour);
+    }
+
     [Fact]
     public async Task SplittingAnEdgePreservesOpeningLengthsAndRejectsDestructiveMerges()
     {

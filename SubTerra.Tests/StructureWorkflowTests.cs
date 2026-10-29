@@ -96,13 +96,12 @@ public sealed class StructureWorkflowTests
         await guest.AnalyzeObjectsAsync(); Assert.Equal(before, guest.ObjectCandidates.ToArray()); Assert.False(guest.HasUnsavedChanges);
         var panel = new StructureAnalysisPanel { DataContext = guest, Width = 268, Height = 1400 };
         panel.Measure(new Size(268, 1400)); panel.Arrange(new Rect(0, 0, 268, 1400)); panel.UpdateLayout();
-        T? Find<T>(DependencyObject element) where T : DependencyObject
+        void Expand(DependencyObject element)
         {
-            if (element is T match) return match;
-            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) if (Find<T>(VisualTreeHelper.GetChild(element, i)) is { } child) return child;
-            return null;
+            if (element is System.Windows.Controls.Expander expander) { expander.IsExpanded = true; expander.UpdateLayout(); }
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) Expand(VisualTreeHelper.GetChild(element, i));
         }
-        Find<System.Windows.Controls.TabControl>(panel)!.SelectedIndex = 2;
+        Expand(panel);
         panel.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.DataBind);
         void Check(DependencyObject element)
         {
@@ -114,7 +113,10 @@ public sealed class StructureWorkflowTests
             }
             for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) Check(VisualTreeHelper.GetChild(element, i));
         }
-        Check(panel); Assert.False(guest.HasNotification, guest.Notification);
+        Check(panel);
+        var inspector = new ObjectPropertiesPanel { DataContext = guest };
+        ThemeRenderingTests.Layout(inspector, 280, 1000); await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Check(inspector); Assert.False(guest.HasNotification, guest.Notification);
     });
 
     [Fact]

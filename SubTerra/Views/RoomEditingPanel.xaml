@@ -1,0 +1,45 @@
+<UserControl Foreground="{DynamicResource TextBrush}" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="SubTerra.Views.RoomEditingPanel">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Expander Header="Вершины и проёмы" Margin="0,0,0,12" IsExpanded="{Binding IsRoomEditing}">
+        <StackPanel Margin="0,10,0,0">
+            <StackPanel IsEnabled="{Binding CanEditRoom}">
+                <ComboBox ItemsSource="{Binding RoomVertices}" SelectedValuePath="Index" SelectedValue="{Binding RoomVertexIndex, Mode=TwoWay}" DisplayMemberPath="Label" AutomationProperties.Name="Вершина комнаты" />
+                <TextBlock Text="Координаты X и Y, м" Style="{StaticResource Muted}" Margin="0,8,0,5" />
+                <UniformGrid Columns="2">
+                    <TextBox Text="{Binding RoomVertexX, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Координата X вершины" Margin="0,0,4,0" />
+                    <TextBox Text="{Binding RoomVertexY, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Координата Y вершины" />
+                </UniformGrid>
+                <Button Content="Применить координаты" Command="{Binding ApplyRoomVertexCommand}" FontSize="12" Margin="0,6,0,0" />
+                <UniformGrid Columns="2" Margin="0,6,0,0">
+                    <Button Content="Добавить после" Command="{Binding InsertRoomVertexCommand}" FontSize="12" Margin="0,0,4,0" />
+                    <Button Content="Удалить вершину" Command="{Binding RemoveRoomVertexCommand}" FontSize="12" />
+                </UniformGrid>
+                <TextBlock Text="Новая вершина вставляется в середину следующего ребра. Контур должен оставаться выпуклым, без пересечений." Style="{StaticResource Muted}" Margin="0,6,0,10" />
+                <TextBlock Text="Проём на ребре от выбранной вершины: начало и конец, м" Style="{StaticResource Muted}" Margin="0,0,0,5" />
+                <UniformGrid Columns="2">
+                    <TextBox Text="{Binding RoomOpeningStart, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Начало проёма в метрах" Margin="0,0,4,0" />
+                    <TextBox Text="{Binding RoomOpeningEnd, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Конец проёма в метрах" />
+                </UniformGrid>
+                <Button Content="Добавить проём" Command="{Binding AddRoomOpeningCommand}" FontSize="12" Margin="0,6,0,8" />
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding RoomOpenings}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="×" Padding="7,3" Command="{Binding DataContext.RemoveRoomOpeningCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" ToolTip="Удалить проём или разрыв" />
+                            <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Вернуть автоматический контур" Command="{Binding ResetRoomEditsCommand}" FontSize="12" Margin="0,6,0,0" />
+            <TextBlock Text="Все правки сохраняются и поддерживают отмену. Пересчёт не заменит ручной контур без явного возврата к автоматическому." Style="{StaticResource Muted}" Margin="0,6,0,0" />
+        </StackPanel>
+    </Expander>
+</UserControl>

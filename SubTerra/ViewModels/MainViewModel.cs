@@ -54,7 +54,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isPresentationMode;
     private bool _isInspectorOpen;
     private bool _isSidebarOpen = true;
-    private int _sidebarTabIndex;
     private bool _showShadows = true;
     private double _range = 20;
     private double _speed = 1;
@@ -66,7 +65,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private double _startPosition;
     private int _frameIntervalMilliseconds = 100;
     private double _busyProgress;
-    private string _status = "Подготовка сцены";
+    private string _status = "Откройте проект, импортируйте скан или выберите демонстрацию";
     private string _notification = "";
     private string _cameraLabel = "Общий вид";
     private ScenarioDefinition _selectedScenario = ScenarioDefinition.All[0];
@@ -113,16 +112,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DismissNotificationCommand = new RelayCommand(() => Notification = "");
         PresentationCommand = new RelayCommand(() => IsPresentationMode = !IsPresentationMode);
         InitializeNewCommands();
+        InitializePresentationCommands();
         Home();
     }
 
     public PerspectiveCamera Camera { get; } = new()
     { FieldOfView = 47, NearPlaneDistance = .05, FarPlaneDistance = 1200 };
-    public int SidebarTabIndex
-    {
-        get => _sidebarTabIndex;
-        set { if (value is >= 0 and <= 4) Set(ref _sidebarTabIndex, value); }
-    }
     // A separate light camera keeps shadows aligned with the lamp without altering
     // the user's view. The small offset reveals shadows alongside nearby rocks.
     public PerspectiveCamera LampCamera { get; } = new()
@@ -400,7 +395,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         (double)(_dataset?.Session.Settings.FrameIntervalMilliseconds ?? FrameIntervalMilliseconds)).ToString(@"mm\:ss\.f");
     public string HeightMinText => $"{(IsImported ? _importedBounds.Minimum.Z : _dataset?.Scene?.MinimumHeight ?? -3):F3} м";
     public string HeightMaxText => $"{(IsImported ? _importedBounds.Maximum.Z : _dataset?.Scene?.MaximumHeight ?? 4):F3} м";
-    public string TotalLengthText => IsImported ? "Реальный скан" : $"{(_dataset?.Scene?.LengthMeters ?? 0) * (1 - SessionStart):F0} м";
+    public string TotalLengthText => IsImported ? "Импортированный скан" : $"{(_dataset?.Scene?.LengthMeters ?? 0) * (1 - SessionStart):F0} м";
     public string MarkerCountText => $"{VisibleMarkers.Count:00}";
     private ScanSettings Settings => (_baselineSettings ?? new ScanSettings()) with
     {
@@ -612,13 +607,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         FloorSurface = null;
         DampSurface = null;
         _dataset = dataset;
+        EnterWorkspace();
         _adjustments = dataset.Session.Adjustments.ToList();
         if (dataset.Session.ImportedScan is not null || dataset.Session.Project is not null)
         {
             AssignImported(dataset, preparedProject);
             NotifySourceProperties();
             NotifyState();
-            SidebarTabIndex = 1;
             return;
         }
         _importedGeometry = null;
@@ -645,7 +640,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(PlannedDurationText));
         ResetScannerPreview();
         NotifySourceProperties();
-        SidebarTabIndex = 0;
     }
 
     private void SetCapture(int count)

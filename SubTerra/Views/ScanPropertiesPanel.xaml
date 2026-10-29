@@ -1,0 +1,45 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="SubTerra.Views.ScanPropertiesPanel">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolVisibility" />
+            <Style x:Key="Hint" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="#ACBFCD" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="LineHeight" Value="17" />
+            </Style>
+            <Style x:Key="Field" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="MinWidth" Value="40" />
+                <Setter Property="Padding" Value="7" />
+                <Setter Property="Margin" Value="0,3,4,5" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock Text="{Binding SelectedScanObject.Name}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+        <TextBlock Text="{Binding SelectedScanObject.Details}" Style="{StaticResource Muted}" Margin="0,0,0,16" />
+        <StackPanel Margin="0" IsEnabled="{Binding CanEditObject}">
+            <TextBox Text="{Binding ObjectName, UpdateSourceTrigger=LostFocus}" MaxLength="120" AutomationProperties.Name="Имя объекта" />
+            <ComboBox ItemsSource="{Binding ObjectColors}" SelectedItem="{Binding ObjectColor}" DisplayMemberPath="Name" Margin="0,8,0,8" AutomationProperties.Name="Цвет объекта" />
+            <TextBlock Text="Сдвиг XYZ, м" Style="{StaticResource Hint}" />
+            <UniformGrid Columns="3">
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectX, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Сдвиг X" />
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectY, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Сдвиг Y" />
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectZ, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Сдвиг Z" />
+            </UniformGrid>
+            <TextBlock Text="Поворот XYZ, градусы" Style="{StaticResource Hint}" />
+            <UniformGrid Columns="3">
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateX, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот X" />
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateY, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот Y" />
+                <TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateZ, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот Z" />
+            </UniformGrid>
+            <Button Command="{Binding ApplyObjectCommand}" Content="Применить свойства" FontSize="12" />
+        </StackPanel>
+        <TextBlock Text="{Binding ImportTransformText}" Style="{StaticResource Muted}" Margin="0,14,0,0" />
+        <Button Content="Показать весь объект" Command="{Binding FocusObjectCommand}" Margin="0,16,0,0" />
+        <Button Content="Удалить скан из проекта" Command="{Binding RemoveObjectCommand}" Style="{StaticResource Danger}" Margin="0,8,0,0" />
+    </StackPanel>
+</UserControl>

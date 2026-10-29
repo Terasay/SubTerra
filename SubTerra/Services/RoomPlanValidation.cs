@@ -33,9 +33,13 @@ public static class RoomPlanValidation
         {
             var a = room.FloorContour[i]; var b = room.FloorContour[(i + 1) % room.FloorContour.Length]; var c = room.FloorContour[(i + 2) % room.FloorContour.Length];
             var cross = (b.X - (double)a.X) * (c.Y - (double)b.Y) - (b.Y - (double)a.Y) * (c.X - (double)b.X);
-            if (cross < -1e-7 || (!room.IsManuallyEdited && cross <= 1e-7) || Vector2.Distance(new(a.X, a.Y), new(b.X, b.Y)) < .01) Invalid();
+            var edgeLength = Vector2.Distance(new(a.X, a.Y), new(b.X, b.Y));
+            // A float midpoint can fall fractions of a micrometre outside its original edge.
+            // Operator contours allow that distance, while automatic corners remain strictly convex.
+            var turnTolerance = room.IsManuallyEdited ? Math.Max(1e-7, edgeLength * 1e-6) : 1e-7;
+            if (cross < -turnTolerance || (!room.IsManuallyEdited && cross <= 1e-7) || edgeLength < .01) Invalid();
             // Global convexity also rejects self-intersecting star contours with positive local turns.
-            if (room.FloorContour.Any(p => (b.X - (double)a.X) * (p.Y - (double)a.Y) - (b.Y - (double)a.Y) * (p.X - (double)a.X) < -1e-7)) Invalid();
+            if (room.FloorContour.Any(p => (b.X - (double)a.X) * (p.Y - (double)a.Y) - (b.Y - (double)a.Y) * (p.X - (double)a.X) < -turnTolerance)) Invalid();
             if (room.HasHeight && Vector2.DistanceSquared(new(a.X, a.Y), new(room.CeilingContour[i].X, room.CeilingContour[i].Y)) > 1e-8f) Invalid();
             crossSign += cross;
         }

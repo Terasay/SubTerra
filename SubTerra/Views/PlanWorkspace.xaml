@@ -1,0 +1,13 @@
+<UserControl Foreground="{DynamicResource TextBrush}" x:Class="SubTerra.Views.PlanWorkspace" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:views="clr-namespace:SubTerra.Views">
+    <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+    <Grid Background="#0C161F"><Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <DockPanel Margin="12,6"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button Content="−" Click="ZoomOut_Click" Padding="12,4" ToolTip="Отдалить план"/><Button Content="+" Click="ZoomIn_Click" Padding="12,4" Margin="5,0" ToolTip="Приблизить план"/><Button Content="Вписать" Click="Fit_Click" Padding="10,4"/></StackPanel><TextBlock Text="ПЛАН ПОМЕЩЕНИЯ" Style="{StaticResource Label}" VerticalAlignment="Center"/></DockPanel>
+        <views:RoomPlanCanvas x:Name="PlanCanvas" Grid.Row="1" Plan="{Binding CurrentRoomPlan}" SelectedVertexIndex="{Binding RoomVertexIndex, Mode=TwoWay}" SelectionChosen="Plan_SelectionChosen" AutomationProperties.Name="Метрический план комнаты"/>
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="340" Margin="24"><StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding RoomPlanVisible}" Value="False"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+            <TextBlock Text="Здесь появится план комнаты" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center"/>
+            <TextBlock Text="Подтвердите поверхности в анализе, затем постройте план в результатах. Устаревший план скрывается до обновления." Style="{StaticResource Muted}" TextAlignment="Center" Margin="0,12,0,16"/>
+            <Button Content="К результатам" Command="{Binding SelectSectionCommand}" CommandParameter="Результаты"/>
+        </StackPanel>
+        <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="#293E4A" Padding="14,9"><StackPanel><TextBlock Text="{Binding SelectionText, ElementName=PlanCanvas}" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="Колесо — масштаб · ПКМ — перемещение. Голубой — проём оператора, оранжевый — возможный проём / пропуск." Style="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel></Border>
+    </Grid>
+</UserControl>

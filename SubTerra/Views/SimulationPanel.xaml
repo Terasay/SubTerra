@@ -1,0 +1,77 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="SubTerra.Views.SimulationPanel">
+    <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+    <ScrollViewer Padding="0,18,4,0">
+        <StackPanel>
+            <Border Background="#26352B" CornerRadius="8" Padding="10" Margin="0,0,0,14" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}">
+                <TextBlock Text="Вы в режиме просмотра. Войдите администратором, чтобы записывать и сохранять измерения." Style="{StaticResource Muted}" Foreground="#C3D6B7" />
+            </Border>
+            <TextBlock Text="Параметры прохода" Style="{StaticResource Section}" Margin="0,0,0,12" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Дальность" VerticalAlignment="Center" />
+                <TextBox x:Name="RangeInput" KeyDown="NumericInput_KeyDown" Grid.Column="1" Width="56" Text="{Binding Range, StringFormat={}{0:0.#}, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Дальность в метрах" />
+                <TextBlock Grid.Column="2" Text="м" VerticalAlignment="Center" Margin="7,0,0,0" Foreground="#ACBFCD" />
+            </Grid>
+            <Slider Minimum="1" Maximum="100" Value="{Binding Range}" TickFrequency="1" IsSnapToTickEnabled="True" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Дальность" />
+            <TextBlock Text="Плотность измерений" Margin="0,12,0,8" />
+            <ComboBox ItemsSource="{Binding DensityOptions}" SelectedIndex="{Binding DensityIndex}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Плотность измерений" />
+            <Grid Margin="0,16,0,8">
+                <TextBlock Text="Частота кадров" />
+                <TextBlock Text="{Binding FrequencyText}" HorizontalAlignment="Right" Foreground="#BCD8AB" />
+            </Grid>
+            <ComboBox ItemsSource="{Binding FrameIntervals}" SelectedItem="{Binding FrameIntervalMilliseconds}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Частота кадров">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding StringFormat={}{0} мс между кадрами}" FontSize="12" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="{Binding PlannedDurationText}" Style="{StaticResource Muted}" Margin="0,7,0,0" />
+            <Grid Margin="0,16,0,0">
+                <TextBlock Text="Старт на маршруте" />
+                <TextBlock Text="{Binding StartPosition, StringFormat={}{0:F0}%}" HorizontalAlignment="Right" Foreground="#BCD8AB" />
+            </Grid>
+            <Slider Minimum="0" Maximum="85" Value="{Binding StartPosition}" TickFrequency="5" IsSnapToTickEnabled="True" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Старт на маршруте" />
+            <Button Command="{Binding PreviewScannerCommand}" Content="Показать старт на карте" FontSize="12" Margin="0,3,0,0" />
+            <TextBlock Text="{Binding SettingsHint}" Style="{StaticResource Muted}" Margin="0,10,0,0" />
+            <Border Style="{StaticResource Divider}" />
+            <Grid>
+                <TextBlock Text="Скорость симуляции" />
+                <TextBlock Text="{Binding Speed, StringFormat={}{0:F1}×}" HorizontalAlignment="Right" Foreground="#BCD8AB" />
+            </Grid>
+            <Slider Minimum=".5" Maximum="3" Value="{Binding Speed}" TickFrequency=".5" IsSnapToTickEnabled="True" IsEnabled="{Binding IsAdministrator}" AutomationProperties.Name="Скорость симуляции" />
+            <Expander Header="Переставить датчик" Margin="0,12,0,0">
+                <StackPanel Margin="0,12,0,0">
+                    <TextBlock Text="{Binding ScannerControlHint}" Style="{StaticResource Muted}" Margin="0,0,0,10" />
+                    <StackPanel IsEnabled="{Binding CanRepositionScanner}">
+                        <Grid>
+                            <TextBlock Text="Маршрут" />
+                            <TextBlock Text="{Binding ScannerPosition, StringFormat={}{0:F0}%}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <Slider Value="{Binding ScannerPosition}" Minimum="1" Maximum="98" TickFrequency="1" IsSnapToTickEnabled="True" AutomationProperties.Name="Позиция датчика" />
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock Text="Поперёк" />
+                            <TextBlock Text="{Binding ScannerLateral, StringFormat={}{0:F1} м}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <Slider Value="{Binding ScannerLateral}" Minimum="-1" Maximum="1" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Поперечное смещение" />
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock Text="По высоте" />
+                            <TextBlock Text="{Binding ScannerHeight, StringFormat={}{0:F1} м}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <Slider Value="{Binding ScannerHeight}" Minimum="-.5" Maximum=".5" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Смещение по высоте" />
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock Text="Поворот" />
+                            <TextBlock Text="{Binding ScannerYaw, StringFormat={}{0:F0}°}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <Slider Value="{Binding ScannerYaw}" Minimum="-180" Maximum="180" TickFrequency="15" IsSnapToTickEnabled="True" AutomationProperties.Name="Поворот датчика" />
+                    </StackPanel>
+                    <Button Command="{Binding ApplyScannerCommand}" Content="Применить позицию" Margin="0,6,0,0" FontSize="12" />
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

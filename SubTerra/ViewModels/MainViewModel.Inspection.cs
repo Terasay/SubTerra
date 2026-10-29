@@ -64,6 +64,7 @@ public sealed partial class MainViewModel
     public void BeginInspection(bool measure)
     {
         if (!CanInteract || _viewFrames == 0) return;
+        if (IsPlanView) SelectWorkspaceView("3D");
         EndScreenSelection();
         ReturnToOverview();
         _inspectionMode = measure ? 2 : 1;

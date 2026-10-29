@@ -4,7 +4,7 @@
         xmlns:h="http://helix-toolkit.org/wpf/SharpDX"
         xmlns:views="clr-namespace:SubTerra.Views"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Subterra — исследование пространства" Width="1440" Height="900" MinWidth="1040" MinHeight="640"
+        Title="SubTerra — цифровая модель пространства" Width="1440" Height="900" MinWidth="1040" MinHeight="640"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Background="#0B1218"
         UseLayoutRounding="True" SnapsToDevicePixels="True" FontFamily="Segoe UI" Foreground="#E4ECF4"
         Loaded="Window_Loaded" Closing="Window_Closing" Closed="Window_Closed" PreviewKeyDown="Window_PreviewKeyDown"
@@ -13,153 +13,93 @@
         <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
-        <Style x:Key="Panel" TargetType="Border">
-            <Setter Property="Background" Value="#121E28"/><Setter Property="BorderBrush" Value="#2A3B46"/>
-            <Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/>
-        </Style>
-        <Style x:Key="Divider" TargetType="Border"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2A3A45"/><Setter Property="Margin" Value="0,18"/></Style>
-        <Style x:Key="Metric" TargetType="Border" BasedOn="{StaticResource Panel}"><Setter Property="Padding" Value="13,8"/><Setter Property="Margin" Value="0,0,8,0"/><Setter Property="CornerRadius" Value="9"/></Style>
-        <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="#ACBFCD"/><Setter Property="FontSize" Value="11"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-
+        <Style x:Key="Panel" TargetType="Border" BasedOn="{StaticResource Card}"><Setter Property="CornerRadius" Value="9"/></Style>
+        <Style x:Key="WorkflowTab" TargetType="RadioButton" BasedOn="{StaticResource Segment}"><Setter Property="FontSize" Value="13"/><Setter Property="Padding" Value="18,10"/></Style>
     </Window.Resources>
-    <Border x:Name="ShellFrame" BorderBrush="#293945" BorderThickness="1">
-        <Grid>
-            <Grid.RowDefinitions><RowDefinition Height="68"/><RowDefinition Height="*"/><RowDefinition Height="30"/></Grid.RowDefinitions>
-            <Border BorderBrush="#263641" BorderThickness="0,0,0,1" Background="#101A22">
-                <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Margin="16,0,6,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="182"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Grid Width="27" Height="32" Margin="0,0,11,0"><Path Data="M2,22 L14,3 L26,22 L21,29 L7,29 Z M7,22 L14,11 L21,22" Stroke="#A1E3C5" StrokeThickness="1.6" Fill="#17291F"/></Grid>
-                        <StackPanel><TextBlock Text="SUBTERRA" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Исследование пространства" FontSize="10" Foreground="#9BB0BE"/></StackPanel>
-                    </StackPanel>
-                    <Grid Grid.Column="1" Margin="16,0" VerticalAlignment="Center">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                        <Border Background="#223D34" CornerRadius="6" Padding="10,6" Margin="0,0,12,0"><TextBlock Text="{Binding SessionStateText}" Foreground="#D5F8E7" FontSize="12" FontWeight="SemiBold"/></Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding SessionTitle}" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding SaveStateText}" Foreground="#B9CEA7" FontSize="11" Margin="0,3,0,0"/></StackPanel>
+    <Border x:Name="ShellFrame" BorderBrush="#293945" BorderThickness="1"><Grid>
+        <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="48"/><RowDefinition/><RowDefinition Height="28"/></Grid.RowDefinitions>
+        <Border Background="#101A22" BorderBrush="#283B47" BorderThickness="0,0,0,1"><Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Margin="14,0,6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="176"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="112"/></Grid.ColumnDefinitions>
+            <Button Command="{Binding ShowWelcomeCommand}" Style="{StaticResource Ghost}" HorizontalContentAlignment="Left" Padding="0" ToolTip="На стартовый экран"><StackPanel Orientation="Horizontal">
+                <Path Data="M2,22 L14,3 L26,22 L21,29 L7,29 Z M7,22 L14,11 L21,22" Stroke="#A1E3C5" StrokeThickness="1.6" Fill="#17291F" Width="27" Height="32" Margin="0,0,11,0"/>
+                <TextBlock Text="SUBTERRA" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel></Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,12,0" Visibility="{Binding IsWorkspaceVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding SaveStateText}" Style="{StaticResource Muted}" Foreground="#B9CEA7" Margin="0,2,0,0"/></StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Click="Open_Click" Content="Открыть" IsEnabled="{Binding CanInteract}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="Открыть проект · Ctrl+O"/>
+                <Button Click="Import_Click" Content="Импорт" IsEnabled="{Binding CanInteract}" Padding="12,6" Margin="4,0"/>
+                <Button Click="Save_Click" Content="Сохранить" IsEnabled="{Binding CanSave}" Padding="12,6" Margin="0,0,6,0"/>
+                <Button Command="{Binding ToggleSettingsCommand}" Style="{StaticResource Ghost}" Padding="10,6" AutomationProperties.Name="Настройки" ToolTip="Настройки"><TextBlock Style="{StaticResource Icon}" Text="&#xE713;"/></Button>
+                <Button Click="Access_Click" Content="{Binding AccessButtonText}" IsEnabled="{Binding CanInteract}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="{Binding AccessLabel}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Click="Minimize_Click" Style="{StaticResource Ghost}" Width="34" MinHeight="30" Padding="0" AutomationProperties.Name="Свернуть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE921;"/></Button>
+                <Button Click="Maximize_Click" Style="{StaticResource Ghost}" Width="34" MinHeight="30" Padding="0" AutomationProperties.Name="Развернуть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE922;"/></Button>
+                <Button Click="Close_Click" Style="{StaticResource Ghost}" Width="34" MinHeight="30" Padding="0" AutomationProperties.Name="Закрыть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE8BB;"/></Button>
+            </StackPanel>
+        </Grid></Border>
+        <Border Grid.Row="1" Background="#0F1B25" BorderThickness="0,0,0,1" BorderBrush="#263A46"><DockPanel Margin="14,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="↶" Command="{Binding UndoProjectCommand}" ToolTip="{Binding UndoProjectText}" Style="{StaticResource Ghost}" FontSize="19" Width="36" Padding="0" AutomationProperties.Name="Отменить действие"/>
+                <Button Content="↷" Command="{Binding RedoProjectCommand}" ToolTip="{Binding RedoProjectText}" Style="{StaticResource Ghost}" FontSize="19" Width="36" Padding="0" AutomationProperties.Name="Повторить действие"/>
+                <Button Command="{Binding PresentationCommand}" Content="Презентация" Style="{StaticResource Ghost}" ToolTip="Скрыть панели · F11" Margin="8,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <RadioButton Content="Проект" Style="{StaticResource WorkflowTab}" IsChecked="{Binding IsProjectSection, Mode=OneWay}" Command="{Binding SelectSectionCommand}" CommandParameter="Проект" GroupName="Workflow"/>
+                <RadioButton Content="Обработка" Style="{StaticResource WorkflowTab}" IsChecked="{Binding IsProcessingSection, Mode=OneWay}" Command="{Binding SelectSectionCommand}" CommandParameter="Обработка" GroupName="Workflow"/>
+                <RadioButton Content="Анализ" Style="{StaticResource WorkflowTab}" IsChecked="{Binding IsAnalysisSection, Mode=OneWay}" Command="{Binding SelectSectionCommand}" CommandParameter="Анализ" GroupName="Workflow"/>
+                <RadioButton Content="Результаты" Style="{StaticResource WorkflowTab}" IsChecked="{Binding IsResultsSection, Mode=OneWay}" Command="{Binding SelectSectionCommand}" CommandParameter="Результаты" GroupName="Workflow"/>
+            </StackPanel>
+        </DockPanel></Border>
+        <Grid Grid.Row="2" Visibility="{Binding IsWorkspaceVisible, Converter={StaticResource BoolVisibility}}">
+            <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="284"/><ColumnDefinition/><ColumnDefinition x:Name="RightColumn" Width="0"/></Grid.ColumnDefinitions>
+            <Border x:Name="LeftPanel" Panel.ZIndex="20" Style="{StaticResource Panel}" Margin="10,10,0,10"><Grid Margin="14">
+                <Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition/></Grid.RowDefinitions>
+                <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Click="CloseSidebar_Click" Content="×" Style="{StaticResource Ghost}" Padding="6,0" MinHeight="24" ToolTip="Скрыть панель"/><TextBlock Text="{Binding WorkspaceSection}" Style="{StaticResource Label}" VerticalAlignment="Center"/></DockPanel>
+                <Grid Grid.Row="1">
+                    <Grid Visibility="{Binding IsProjectSection, Converter={StaticResource BoolVisibility}}">
+                        <views:ProjectExplorerPanel Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/>
+                        <ScrollViewer Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}"><StackPanel>
+                            <Border Style="{StaticResource InsetCard}"><StackPanel><TextBlock Text="Демонстрация LiDAR" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="Синтетические данные · виртуальная пещера" Style="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel></Border>
+                            <Button Content="Модель корпуса · 3 этажа" Command="{Binding LoadCollegeBuildingCommand}" Margin="0,14,0,0"/>
+                            <TextBlock Text="Сцена" Style="{StaticResource Label}" Margin="0,18,0,8"/>
+                            <ComboBox x:Name="ScenarioPicker" ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario, Mode=OneWay}" DisplayMemberPath="Name" SelectionChanged="Scenario_SelectionChanged" IsEnabled="{Binding CanChangeScenario}" AutomationProperties.Name="Пространство"/>
+                            <TextBlock Text="{Binding SelectedScenario.Description}" Style="{StaticResource Muted}" Margin="0,10,0,14"/>
+                            <CheckBox Content="Координатная сетка" IsChecked="{Binding ShowGrid}" Margin="0,0,0,9"/>
+                            <CheckBox Content="Маршрут сканера" IsChecked="{Binding ShowRoute}" Margin="0,0,0,9"/>
+                            <CheckBox Content="Метки на карте" IsChecked="{Binding ShowMarkers}" Margin="0,0,0,9"/>
+                            <CheckBox Content="Скрыть потолок" IsChecked="{Binding CutRoof}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,9"/>
+                            <CheckBox Content="Следовать за сканером" IsChecked="{Binding FollowScanner}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,9"/>
+                            <CheckBox Content="Тени" IsChecked="{Binding ShowShadows}" IsEnabled="{Binding IsCave}"/>
+                        </StackPanel></ScrollViewer>
                     </Grid>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Click="Import_Click" IsEnabled="{Binding CanInteract}" Content="Импорт скана" ToolTip="3DeVOK MQ · PLY / ASC / XYZ / TXT" Margin="0,0,7,0"/>
-                        <Button Click="Open_Click" IsEnabled="{Binding CanInteract}" Content="Открыть" ToolTip="Открыть сеанс · Ctrl+O" Margin="0,0,7,0"/>
-                        <Button Click="Save_Click" IsEnabled="{Binding CanSave}" Content="Сохранить" ToolTip="Сохранить текущий файл · Ctrl+S. Для записи нужен вход администратора." Margin="0,0,7,0"/>
-                        <Button Click="Access_Click" Content="{Binding AccessButtonText}" IsEnabled="{Binding CanInteract}" Style="{StaticResource Ghost}" FontSize="11" Margin="0,0,3,0" ToolTip="{Binding AccessLabel}"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,0,0">
-                        <Button Click="Minimize_Click" Style="{StaticResource Ghost}" Width="36" Height="28" Padding="0" ToolTip="Свернуть" AutomationProperties.Name="Свернуть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE921;"/></Button>
-                        <Button Click="Maximize_Click" Style="{StaticResource Ghost}" Width="36" Height="28" Padding="0" ToolTip="Развернуть" AutomationProperties.Name="Развернуть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE922;"/></Button>
-                        <Button Click="Close_Click" Style="{StaticResource Ghost}" Width="36" Height="28" Padding="0" ToolTip="Закрыть" AutomationProperties.Name="Закрыть"><TextBlock Style="{StaticResource Icon}" FontSize="10" Text="&#xE8BB;"/></Button>
-                    </StackPanel>
+                    <Grid Visibility="{Binding IsProcessingSection, Converter={StaticResource BoolVisibility}}"><views:ScanProjectPanel Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/><views:SimulationPanel Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}"/></Grid>
+                    <Grid Visibility="{Binding IsAnalysisSection, Converter={StaticResource BoolVisibility}}"><views:StructureAnalysisPanel Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/><StackPanel Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}"><TextBlock Text="Анализ импортированных сканов" Style="{StaticResource Section}" TextWrapping="Wrap"/><TextBlock Text="Для поиска стен, пола и потолка импортируйте облако точек помещения." Style="{StaticResource Muted}" Margin="0,12,0,12"/><Button Click="Import_Click" Content="Импортировать скан"/></StackPanel></Grid>
+                    <ScrollViewer Visibility="{Binding IsResultsSection, Converter={StaticResource BoolVisibility}}"><StackPanel><views:RoomPlanPanel Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/><Border Style="{StaticResource Divider}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/><views:SessionInspectorPanel SaveAsRequested="SaveAs_Click" ExportRequested="Export_Click"/></StackPanel></ScrollViewer>
                 </Grid>
-            </Border>
-
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="312"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="RightColumn" Width="0"/></Grid.ColumnDefinitions>
-                <Border x:Name="LeftPanel" Panel.ZIndex="20" Style="{StaticResource Panel}" Margin="12,14,0,14">
-                    <Grid Margin="16">
-                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                        <StackPanel Margin="0,0,0,16">
-                            <DockPanel Margin="0,0,0,10"><Button DockPanel.Dock="Right" Click="CloseSidebar_Click" Content="×" Style="{StaticResource Ghost}" Padding="7,0" ToolTip="Скрыть панель инструментов" AutomationProperties.Name="Скрыть панель инструментов"/><TextBlock Text="ПРОСТРАНСТВО" Style="{StaticResource Label}" VerticalAlignment="Center"/></DockPanel>
-                            <ComboBox x:Name="ScenarioPicker" ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario, Mode=OneWay}" DisplayMemberPath="Name"
-                                      SelectionChanged="Scenario_SelectionChanged" IsEnabled="{Binding CanChangeScenario}" AutomationProperties.Name="Пространство"/>
-                            <TextBlock Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Text="{Binding SelectedScenario.Description}" Style="{StaticResource Muted}" LineHeight="17" Margin="0,10,0,0"/>
-                        </StackPanel>
-                        <TabControl x:Name="SidebarTabs" Grid.Row="1" Style="{StaticResource SideTabs}" SelectedIndex="{Binding SidebarTabIndex, Mode=TwoWay}">
-                            <TabItem Header="Вид" Style="{StaticResource SideTab}">
-                                <ScrollViewer Padding="0,18,4,0"><StackPanel>
-                                    <Border Background="#142A29" CornerRadius="8" Padding="12" Margin="0,0,0,16"><StackPanel>
-                                        <TextBlock Text="Источник данных" FontWeight="SemiBold" Foreground="#CBF1DF"/>
-                                        <TextBlock Text="{Binding DataSourceText}" Style="{StaticResource Muted}" Margin="0,7,0,0" LineHeight="17"/><TextBlock Text="{Binding ImportDetails}" Style="{StaticResource Muted}" Margin="0,7,0,0" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/>
-                                        <Button Click="Import_Click" Content="Импорт ASC / PLY" IsEnabled="{Binding CanInteract}" FontSize="11" Margin="0,10,0,0"/>
-                                        <Button Content="Модель корпуса · 3 этажа" Command="{Binding LoadCollegeBuildingCommand}" FontSize="11" Margin="0,7,0,0" ToolTip="Создать синтетический корпус с 18 аудиториями, дверьми и лестницей. Текущий проект можно предварительно сохранить."/>
-                                    </StackPanel></Border>
-                                    <TextBlock Text="Слои карты" Style="{StaticResource Section}" Margin="0,0,0,14"/>
-                                    <CheckBox Content="Координатная сетка" IsChecked="{Binding ShowGrid}" Margin="0,0,0,8"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Маршрут сканера" IsChecked="{Binding ShowRoute}" Margin="0,0,0,8"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Метки на карте" IsChecked="{Binding ShowMarkers}" Margin="0,0,0,8"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Скрыть потолок" IsChecked="{Binding CutRoof}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,8"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Следовать за сканером" IsChecked="{Binding FollowScanner}" IsEnabled="{Binding IsOverview}" Margin="0,0,0,8"/>
-                                    <CheckBox Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Content="Тени" IsChecked="{Binding ShowShadows}" IsEnabled="{Binding IsCave}" ToolTip="Отключите для снижения нагрузки на видеокарту. Доступно в режиме «Пещера»."/>
-                                    <Border Style="{StaticResource Divider}"/>
-                                    <TextBlock Text="Навигация" Style="{StaticResource Section}" Margin="0,0,0,9"/>
-                                    <TextBlock Text="Обзор — вращение и масштаб мышью. Внутри сцены — WASD и осмотр мышью." Style="{StaticResource Muted}" LineHeight="17"/>
-                                    <Border Background="#1A2C30" CornerRadius="8" Padding="11" Margin="0,12,0,0" Visibility="{Binding IsPoints, Converter={StaticResource BoolVisibility}}">
-                                        <TextBlock Text="В облаке точек доступен свободный полёт: без стен и привязки к полу. Q / E — вниз / вверх, колесо — скорость." Style="{StaticResource Muted}" Foreground="#C0D8D2" LineHeight="17"/>
-                                    </Border>
-                                    <Button Command="{Binding HomeCommand}" Content="Вернуть общий вид · Home" Margin="0,14,0,0" FontSize="11"/>
-                                    <Button Command="{Binding PresentationCommand}" Content="Презентация · F11" Style="{StaticResource Ghost}" Margin="0,8,0,0" FontSize="11"/>
-
-
-                                </StackPanel></ScrollViewer>
-                            </TabItem>
-                            <TabItem Header="Сканы" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:ScanProjectPanel/></TabItem>
-                            <TabItem Header="Анализ" Style="{StaticResource SideTab}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><views:StructureAnalysisPanel/></TabItem>
-                            <TabItem Header="Сканер" Style="{StaticResource SideTab}" Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}">
-                                <ScrollViewer Padding="0,18,4,0"><StackPanel>
-                                    <Border Background="#26352B" CornerRadius="8" Padding="10" Margin="0,0,0,14" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}">
-                                        <TextBlock Text="Вы в режиме просмотра. Войдите администратором, чтобы записывать и сохранять измерения." Style="{StaticResource Muted}" Foreground="#C3D6B7"/>
-                                    </Border>
-                                    <TextBlock Text="Параметры прохода" Style="{StaticResource Section}" Margin="0,0,0,12"/>
-                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Дальность" VerticalAlignment="Center"/>
-                                        <TextBox x:Name="RangeInput" Grid.Column="1" Width="56" Text="{Binding Range, StringFormat={}{0:0.#}, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding CanEditSettings}"
-                                                 KeyDown="NumericInput_KeyDown" AutomationProperties.Name="Дальность в метрах"/>
-                                        <TextBlock Grid.Column="2" Text="м" VerticalAlignment="Center" Margin="7,0,0,0" Foreground="#ACBFCD"/>
-                                    </Grid>
-                                    <Slider Minimum="1" Maximum="100" Value="{Binding Range}" TickFrequency="1" IsSnapToTickEnabled="True" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Дальность"/>
-                                    <TextBlock Text="Плотность измерений" Margin="0,12,0,8"/>
-                                    <ComboBox ItemsSource="{Binding DensityOptions}" SelectedIndex="{Binding DensityIndex}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Плотность измерений"/>
-                                    <Grid Margin="0,16,0,8"><TextBlock Text="Частота кадров"/><TextBlock Text="{Binding FrequencyText}" HorizontalAlignment="Right" Foreground="#BCD8AB"/></Grid>
-                                    <ComboBox ItemsSource="{Binding FrameIntervals}" SelectedItem="{Binding FrameIntervalMilliseconds}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Частота кадров">
-                                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding StringFormat={}{0} мс между кадрами}" FontSize="11"/></DataTemplate></ComboBox.ItemTemplate>
-                                    </ComboBox>
-                                    <TextBlock Text="{Binding PlannedDurationText}" Style="{StaticResource Muted}" Margin="0,7,0,0"/>
-                                    <Grid Margin="0,16,0,0"><TextBlock Text="Старт на маршруте"/><TextBlock Text="{Binding StartPosition, StringFormat={}{0:F0}%}" HorizontalAlignment="Right" Foreground="#BCD8AB"/></Grid>
-                                    <Slider Minimum="0" Maximum="85" Value="{Binding StartPosition}" TickFrequency="5" IsSnapToTickEnabled="True" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Старт на маршруте"/>
-                                    <Button Command="{Binding PreviewScannerCommand}" Content="Показать старт на карте" FontSize="11" Margin="0,3,0,0"/>
-                                    <TextBlock Text="{Binding SettingsHint}" Style="{StaticResource Muted}" Margin="0,10,0,0"/>
-                                    <Border Style="{StaticResource Divider}"/>
-                                    <Grid><TextBlock Text="Скорость симуляции"/><TextBlock Text="{Binding Speed, StringFormat={}{0:F1}×}" HorizontalAlignment="Right" Foreground="#BCD8AB"/></Grid>
-                                    <Slider Minimum=".5" Maximum="3" Value="{Binding Speed}" TickFrequency=".5" IsSnapToTickEnabled="True" IsEnabled="{Binding IsAdministrator}" AutomationProperties.Name="Скорость симуляции"/>
-                                    <Expander Header="Переставить датчик" Margin="0,12,0,0">
-                                        <StackPanel Margin="0,12,0,0">
-                                            <TextBlock Text="{Binding ScannerControlHint}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
-                                            <StackPanel IsEnabled="{Binding CanRepositionScanner}">
-                                                <Grid><TextBlock Text="Маршрут"/><TextBlock Text="{Binding ScannerPosition, StringFormat={}{0:F0}%}" HorizontalAlignment="Right"/></Grid>
-                                                <Slider Value="{Binding ScannerPosition}" Minimum="1" Maximum="98" TickFrequency="1" IsSnapToTickEnabled="True" AutomationProperties.Name="Позиция датчика"/>
-                                                <Grid Margin="0,8,0,0"><TextBlock Text="Поперёк"/><TextBlock Text="{Binding ScannerLateral, StringFormat={}{0:F1} м}" HorizontalAlignment="Right"/></Grid>
-                                                <Slider Value="{Binding ScannerLateral}" Minimum="-1" Maximum="1" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Поперечное смещение"/>
-                                                <Grid Margin="0,8,0,0"><TextBlock Text="По высоте"/><TextBlock Text="{Binding ScannerHeight, StringFormat={}{0:F1} м}" HorizontalAlignment="Right"/></Grid>
-                                                <Slider Value="{Binding ScannerHeight}" Minimum="-.5" Maximum=".5" TickFrequency=".1" IsSnapToTickEnabled="True" AutomationProperties.Name="Смещение по высоте"/>
-                                                <Grid Margin="0,8,0,0"><TextBlock Text="Поворот"/><TextBlock Text="{Binding ScannerYaw, StringFormat={}{0:F0}°}" HorizontalAlignment="Right"/></Grid>
-                                                <Slider Value="{Binding ScannerYaw}" Minimum="-180" Maximum="180" TickFrequency="15" IsSnapToTickEnabled="True" AutomationProperties.Name="Поворот датчика"/>
-                                            </StackPanel>
-                                            <Button Command="{Binding ApplyScannerCommand}" Content="Применить позицию" Margin="0,6,0,0" FontSize="11"/>
-                                        </StackPanel>
-                                    </Expander>
-                                </StackPanel></ScrollViewer>
-                            </TabItem>
-                            <TabItem Header="Настройки" Style="{StaticResource SideTab}"><views:ViewSettingsPanel/></TabItem>
-                        </TabControl>
-                    </Grid>
-                </Border>
-
-                <Grid Grid.Column="1" Margin="14,14,14,14">
-                    <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <ToggleButton Style="{StaticResource PanelToggle}" IsChecked="{Binding IsSidebarOpen}" VerticalAlignment="Top" Margin="0,0,13,0" Padding="10" ToolTip="Панель вида и сканера" AutomationProperties.Name="Панель инструментов"><TextBlock Style="{StaticResource Icon}" Text="&#xE700;"/></ToggleButton>
-                        <StackPanel Grid.Column="1" Margin="0,0,12,0"><TextBlock Text="{Binding SelectedScenario.Name}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding SelectedScenario.Subtitle}" FontSize="11" Foreground="#9CB0BE" Margin="0,4,0,0"/></StackPanel>
-                        <ToggleButton Grid.Column="2" Style="{StaticResource PanelToggle}" IsChecked="{Binding IsInspectorOpen}" VerticalAlignment="Top" Content="Инструменты" ToolTip="Измерения, метки, срез и экспорт"/>
-                    </Grid>
-                    <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,-8,12">
-                        <Border Style="{StaticResource Metric}"><StackPanel><TextBlock Text="ТОЧКИ" Style="{StaticResource Label}"/><TextBlock Text="{Binding PointCountText}" FontSize="19" FontWeight="SemiBold" Margin="0,4,0,0"/></StackPanel></Border>
-                        <Border Style="{StaticResource Metric}"><StackPanel><TextBlock Text="{Binding DistanceMetricTitle}" Style="{StaticResource Label}"/><TextBlock Text="{Binding DistanceText, StringFormat={}{0} м}" FontSize="19" FontWeight="SemiBold" Margin="0,4,0,0"/></StackPanel></Border>
-                        <Border Style="{StaticResource Metric}"><StackPanel><TextBlock Text="{Binding DurationMetricTitle}" Style="{StaticResource Label}"/><TextBlock Text="{Binding DurationText}" FontSize="19" FontWeight="SemiBold" Margin="0,4,0,0"/></StackPanel></Border>
-                        <Border Style="{StaticResource Metric}"><StackPanel><TextBlock Text="{Binding CoverageMetricTitle}" Style="{StaticResource Label}" ToolTip="Доля маршрута, покрытая показанными участками. Пропущенные при перестановке промежутки не учитываются."/><TextBlock Text="{Binding CoverageMetricText}" FontSize="19" FontWeight="SemiBold" Foreground="#C4E5B1" Margin="0,4,0,0"/></StackPanel></Border>
-                    </UniformGrid>
-                    <Border Grid.Row="2" Style="{StaticResource Panel}" ClipToBounds="True"><Grid>
-                        <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
+            </Grid></Border>
+            <Grid Grid.Column="1" Margin="10"><Grid.RowDefinitions><RowDefinition Height="46"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <DockPanel Margin="0,0,0,8">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Background="#182B30" CornerRadius="7" Padding="3" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"><StackPanel Orientation="Horizontal">
+                            <RadioButton Content="3D" Style="{StaticResource Segment}" Padding="11,6" IsChecked="{Binding Is3DView, Mode=OneWay}" Command="{Binding SelectWorkspaceViewCommand}" CommandParameter="3D" GroupName="WorkspaceView"/>
+                            <RadioButton Content="План 2D" Style="{StaticResource Segment}" Padding="11,6" IsChecked="{Binding IsPlanView, Mode=OneWay}" Command="{Binding SelectWorkspaceViewCommand}" CommandParameter="План 2D" GroupName="WorkspaceView"/>
+                            <RadioButton Content="Рядом" Style="{StaticResource Segment}" Padding="11,6" IsChecked="{Binding IsSplitView, Mode=OneWay}" Command="{Binding SelectWorkspaceViewCommand}" CommandParameter="Рядом" GroupName="WorkspaceView"/>
+                        </StackPanel></Border>
+                        <ToggleButton IsChecked="{Binding IsInspectorOpen}" Style="{StaticResource PanelToggle}" Padding="10,7" Margin="8,0,0,0" ToolTip="Свойства выбранного объекта" AutomationProperties.Name="Свойства"><TextBlock Style="{StaticResource Icon}" Text="&#xE946;"/></ToggleButton>
+                    </StackPanel>
+                    <ToggleButton DockPanel.Dock="Left" IsChecked="{Binding IsSidebarOpen}" Style="{StaticResource PanelToggle}" Padding="10,7" Margin="0,0,10,0" ToolTip="Объекты и инструменты этапа" AutomationProperties.Name="Панель проекта"><TextBlock Style="{StaticResource Icon}" Text="&#xE700;"/></ToggleButton>
+                    <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding SourceBadge}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="#ACBFCD"/><TextBlock Text="{Binding PointCountText, StringFormat={}{0} точек}" FontSize="13" FontWeight="SemiBold" Margin="0,2,0,0"/></StackPanel>
+                </DockPanel>
+                <Grid x:Name="WorkspaceViews" Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition x:Name="Scene3DColumn"/><ColumnDefinition x:Name="ViewDividerColumn" Width="0"/><ColumnDefinition x:Name="PlanColumn" Width="0"/></Grid.ColumnDefinitions>
+                    <Border x:Name="Scene3DHost" Style="{StaticResource Panel}" ClipToBounds="True" Visibility="{Binding Show3DWorkspace, Converter={StaticResource BoolVisibility}}"><Grid><Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition/></Grid.RowDefinitions>
+                        <DockPanel Background="#14232E" LastChildFill="False">
+                            <Button DockPanel.Dock="Right" Command="{Binding HomeCommand}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="Общий вид · Home"><TextBlock Style="{StaticResource Icon}" Text="&#xE80F;"/></Button>
+                            <Button DockPanel.Dock="Right" Command="{Binding MeasureCommand}" Content="↔" Style="{StaticResource Ghost}" Padding="10,6" FontSize="18" ToolTip="Измерить расстояние" AutomationProperties.Name="Измерить расстояние"/>
+                            <Button DockPanel.Dock="Right" Command="{Binding CoordinatesCommand}" Content="⌖" Style="{StaticResource Ghost}" Padding="10,6" FontSize="18" ToolTip="Координаты точки" AutomationProperties.Name="Координаты точки"/>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0"><RadioButton Content="{Binding SurfaceModeText}" Style="{StaticResource Segment}" Padding="9,6" IsEnabled="{Binding CanShowSurface}" IsChecked="{Binding IsSurfaceMode, Mode=OneWay}" Command="{Binding SurfaceCommand}" GroupName="RenderMode"/><RadioButton Content="Высота" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsHeight, Mode=OneWay}" Command="{Binding HeightCommand}" GroupName="RenderMode"/><RadioButton Content="Точки" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsPointMode, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/></StackPanel>
+                        </DockPanel>
+                        <Grid Grid.Row="1">                        <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
                                        BackgroundColor="#0B131B" ShowViewCube="False" ShowCoordinateSystem="False" ModelUpDirection="0,0,1"
                                        EnableSwapChainRendering="False" EnableSSAO="{Binding SsaoEnabled}" SSAOIntensity=".80" SSAOSamplingRadius=".45"
                                        IsShadowMappingEnabled="{Binding ShadowsVisible}" CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7"
@@ -192,99 +132,83 @@
                             <h:LineGeometryModel3D Geometry="{Binding RoomOutline}" Color="#A1E3C5" Thickness="2" DepthBias="-25" IsRendering="{Binding RoomVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding RoomGapOutline}" Color="#FFB46B" Thickness="4" DepthBias="-30" IsRendering="{Binding RoomVisible}" IsHitTestVisible="False"/>
                         </h:Viewport3DX>
-                        <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" ClipToBounds="True"/>
-                        <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,54,10,0" Padding="12,7" Background="#EE254535" CornerRadius="7" IsHitTestVisible="False" Visibility="{Binding IsScreenSelecting, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" Foreground="#D0EDBD"/></Border>
-                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" MaxWidth="260" IsHitTestVisible="False" Visibility="{Binding ImportedMeshVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding MeshPreviewText}" TextWrapping="Wrap" FontSize="11" Foreground="#B9CFAB"/></Border>
-                        <Border VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="14" Background="#F0253B31" BorderBrush="#789C72" BorderThickness="1" CornerRadius="8" Visibility="{Binding HasEditPreview, Converter={StaticResource BoolVisibility}}"><StackPanel>
-                            <TextBlock Text="Предпросмотр изменения" FontWeight="SemiBold" Foreground="#D0EDBD"/><TextBlock Text="{Binding EditPreviewText}" TextWrapping="Wrap" Margin="0,6,0,10"/>
-                            <StackPanel Orientation="Horizontal"><Button Content="Применить" Command="{Binding ApplyCleanPreviewCommand}" Style="{StaticResource Primary}" Margin="0,0,8,0"/><Button Content="Отменить · Esc" Command="{Binding CancelCleanPreviewCommand}"/></StackPanel>
+<Canvas   x:Name="SelectionCanvas" IsHitTestVisible="False" ClipToBounds="True" />
+
+<Border  HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,54,10,0" Padding="12,7" Background="#EE254535" CornerRadius="7" IsHitTestVisible="False" Visibility="{Binding IsScreenSelecting, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" Foreground="#D0EDBD" /></Border>
+
+<Border  VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="14" Background="#F0253B31" BorderBrush="#789C72" BorderThickness="1" CornerRadius="8" Visibility="{Binding HasEditPreview, Converter={StaticResource BoolVisibility}}"><StackPanel>
+                            <TextBlock Text="Предпросмотр изменения" FontWeight="SemiBold" Foreground="#D0EDBD" /><TextBlock Text="{Binding EditPreviewText}" TextWrapping="Wrap" Margin="0,6,0,10" />
+                            <StackPanel Orientation="Horizontal"><Button Content="Применить" Command="{Binding ApplyCleanPreviewCommand}" Style="{StaticResource Primary}" Margin="0,0,8,0" /><Button Content="Отменить · Esc" Command="{Binding CancelCleanPreviewCommand}" /></StackPanel>
                         </StackPanel></Border>
-                        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="#EC14212B" CornerRadius="6" Padding="9,6" Margin="12" IsHitTestVisible="False" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionStateText}" FontSize="11" Foreground="#C2DCAE"/></Border>
-                        <Border HorizontalAlignment="Center" VerticalAlignment="Top" Background="#EF14212B" BorderBrush="#344652" BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,10,0,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton Content="{Binding SurfaceModeText}" IsEnabled="{Binding CanShowSurface}" Style="{StaticResource Segment}" IsChecked="{Binding IsSurfaceMode, Mode=OneWay}" Command="{Binding SurfaceCommand}" GroupName="RenderMode"/>
-                                <RadioButton Content="Высота" Style="{StaticResource Segment}" IsChecked="{Binding IsHeight, Mode=OneWay}" Command="{Binding HeightCommand}" GroupName="RenderMode"/>
-                                <RadioButton Content="Точки" Style="{StaticResource Segment}" IsChecked="{Binding IsPointMode, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/>
-                            </StackPanel>
-                        </Border>
-                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" Visibility="{Binding CloudQualityVisible, Converter={StaticResource BoolVisibility}}">
-                            <StackPanel><ComboBox Width="205" ItemsSource="{Binding PointQualities}" SelectedItem="{Binding PointQuality}" DisplayMemberPath="Name" IsEnabled="{Binding IsOverview}" AutomationProperties.Name="Качество облака" ToolTip="Лимит просмотра. Сохранение включает все точки."/>
-                                <TextBlock Text="{Binding CloudDisplayText}" FontSize="11" Foreground="#B9CFAB" Margin="0,7,0,0"/><TextBlock Text="{Binding QualityStateText}" FontSize="10" Foreground="#A6BECE" Margin="0,4,0,0"/></StackPanel>
-                        </Border>
-                        <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
-                            <Border Background="#EA14212B" CornerRadius="7" Padding="10,7"><StackPanel><TextBlock Text="{Binding NavigationTitle}" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding NavigationSpeedText}" FontSize="11" Foreground="#BCD5AB" Margin="0,4,0,0" Visibility="{Binding IsFlying, Converter={StaticResource BoolVisibility}}"/></StackPanel></Border>
+
+<StackPanel  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
+                            <Border Background="#EA14212B" CornerRadius="7" Padding="10,7"><StackPanel><TextBlock Text="{Binding NavigationTitle}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding NavigationSpeedText}" FontSize="11" Foreground="#BCD5AB" Margin="0,4,0,0" Visibility="{Binding IsFlying, Converter={StaticResource BoolVisibility}}" /></StackPanel></Border>
                         </StackPanel>
-                        <Button Command="{Binding ReturnOverviewCommand}" Content="В обзор · Esc" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Background="#EF1C2C36" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}"/>
-                        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,64,0,0" Background="#EE14212B" CornerRadius="7" Padding="4" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
-                            <StackPanel Orientation="Horizontal"><Button Command="{Binding CoordinatesCommand}" Content="Точка" Padding="9,6" FontSize="11" ToolTip="Выбрать точку и увидеть координаты"/>
-                                <Button Command="{Binding MeasureCommand}" Content="Расстояние" Padding="9,6" FontSize="11" Margin="5,0,0,0" ToolTip="Измерить расстояние между двумя точками"/></StackPanel>
-                        </Border>
-                        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" MaxWidth="360" Margin="12,0,12,42" Padding="10" CornerRadius="8" Background="#E61D323B" Visibility="{Binding IsPicking, Converter={StaticResource BoolVisibility}}"><DockPanel>
-                            <Button DockPanel.Dock="Right" Command="{Binding EndInspectionCommand}" Content="Готово · Esc" Padding="9,6"/>
-                            <StackPanel><TextBlock Text="{Binding InspectionHint}" TextWrapping="Wrap"/><TextBlock Text="{Binding PickedCoordinates}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/><TextBlock Text="{Binding MeasurementText}" FontSize="11" Foreground="#A9E6F3" Margin="0,4,0,0"/></StackPanel>
+
+<Button  Command="{Binding ReturnOverviewCommand}" Content="В обзор · Esc" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Background="#EF1C2C36" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}" />
+
+<Border  HorizontalAlignment="Left" VerticalAlignment="Bottom" MaxWidth="360" Margin="12,0,12,42" Padding="10" CornerRadius="8" Background="#E61D323B" Visibility="{Binding IsPicking, Converter={StaticResource BoolVisibility}}"><DockPanel>
+                            <Button DockPanel.Dock="Right" Command="{Binding EndInspectionCommand}" Content="Готово · Esc" Padding="9,6" />
+                            <StackPanel><TextBlock Text="{Binding InspectionHint}" TextWrapping="Wrap" /><TextBlock Text="{Binding PickedCoordinates}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" /><TextBlock Text="{Binding MeasurementText}" FontSize="11" Foreground="#A9E6F3" Margin="0,4,0,0" /></StackPanel>
                         </DockPanel></Border>
-                        <Border VerticalAlignment="Top" Margin="12,64,12,0" Padding="12" CornerRadius="8" Background="#F02B392C" Visibility="{Binding HasRecovery, Converter={StaticResource BoolVisibility}}"><StackPanel>
-                            <TextBlock Text="Найден несохранённый сеанс. Восстановить работу?" TextWrapping="Wrap"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0"><Button Command="{Binding RestoreRecoveryCommand}" Content="Восстановить" Style="{StaticResource Primary}"/><Button Command="{Binding DismissRecoveryCommand}" Content="Удалить копию" Margin="8,0,0,0"/></StackPanel>
-                        </StackPanel></Border>
-                        <TextBlock Text="+" FontSize="23" Foreground="#BFFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="{Binding MouseCaptured, Converter={StaticResource BoolVisibility}}"/>
-                        <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="12,92,12,0" Background="#EE15252E" CornerRadius="8" Padding="14,10" IsHitTestVisible="False" Visibility="{Binding WalkPromptVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding WalkPrompt}" TextWrapping="Wrap" TextAlignment="Center"/></Border>
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
-                            <Button Command="{Binding HomeCommand}" ToolTip="Общий вид · Home" Padding="10" Margin="0,0,0,7" Background="#ED1C2C36" AutomationProperties.Name="Общий вид"><TextBlock Style="{StaticResource Icon}" Text="&#xE80F;"/></Button>
-                            <Button Command="{Binding TopCommand}" ToolTip="Вид сверху" Padding="10" Background="#ED1C2C36" AutomationProperties.Name="Вид сверху"><TextBlock Style="{StaticResource Icon}" Text="&#xE74A;"/></Button>
-                        </StackPanel>
-                        <Button Command="{Binding ExploreCommand}" Content="{Binding ExploreText}" Style="{StaticResource Primary}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,53" Padding="17,11" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}"/>
-                        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#DD101D27" Padding="10,6" CornerRadius="6" Margin="12,0,12,53" IsHitTestVisible="False"><TextBlock Text="{Binding CameraLabel}" FontSize="11" Foreground="#A6BECE"/></Border>
-                        <Border VerticalAlignment="Bottom" Background="#E6101D27" Padding="12,8" IsHitTestVisible="False"><TextBlock Text="{Binding ControlsHint}" TextWrapping="Wrap" TextAlignment="Center" Foreground="#B9CCD9" FontSize="11"/></Border>
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False"><TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="{Binding EmptyHint}" Foreground="#A1B7C7" Margin="0,9,0,0" TextWrapping="Wrap" TextAlignment="Center"/></StackPanel>
-                        <Border Background="#F20D1721" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="300"><TextBlock Text="{Binding Status}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,18"/><ProgressBar Value="{Binding BusyProgress, Mode=OneWay}" IsIndeterminate="{Binding BusyIsIndeterminate}"/><Button Command="{Binding CancelOperationCommand}" Content="Отменить · Esc" Margin="0,18,0,0"/></StackPanel></Border>
-                        <Border Background="#F2322526" BorderBrush="#97665C" BorderThickness="1" CornerRadius="8" VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="12" Visibility="{Binding HasNotification, Converter={StaticResource BoolVisibility}}"><DockPanel><Button DockPanel.Dock="Right" Command="{Binding DismissNotificationCommand}" Style="{StaticResource Ghost}" Content="×" Padding="6,0" Margin="10,0,0,0" AutomationProperties.Name="Закрыть уведомление"/><TextBlock Text="{Binding Notification}" Foreground="#F4C8BA" TextWrapping="Wrap"/></DockPanel></Border>
-                    </Grid></Border>
 
-                    <Border Grid.Row="3" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Panel}" Padding="16,12" Margin="0,12,0,0"><Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="Скан готов к осмотру" FontWeight="SemiBold"/>
-                            <TextBlock Text="Проверьте масштаб инструментом расстояния. Измерения, метки и срез — в панели «Инструменты». Скан и анализ сохраняются вместе с проектом." Style="{StaticResource Muted}" Margin="0,6,0,0" LineHeight="17"/>
+<TextBlock  Text="+" FontSize="23" Foreground="#BFFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="{Binding MouseCaptured, Converter={StaticResource BoolVisibility}}" />
+
+<Border  HorizontalAlignment="Center" VerticalAlignment="Top" Margin="12,92,12,0" Background="#EE15252E" CornerRadius="8" Padding="14,10" IsHitTestVisible="False" Visibility="{Binding WalkPromptVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding WalkPrompt}" TextWrapping="Wrap" TextAlignment="Center" /></Border>
+
+<StackPanel  VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}">
+
+                            <Button Command="{Binding TopCommand}" ToolTip="Вид сверху" Padding="10" Background="#ED1C2C36" AutomationProperties.Name="Вид сверху"><TextBlock Style="{StaticResource Icon}" Text="" /></Button>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><Button Command="{Binding HomeCommand}" Content="Весь скан · Home" FontSize="11"/>
-                            <Button Command="{Binding FlyCommand}" Content="Полёт по скану" FontSize="11" Margin="0,7,0,0"/>
-                        </StackPanel>
-                    </Grid></Border>
-                    <Border Grid.Row="3" Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Panel}" Padding="14,10" Margin="0,12,0,0"><Grid>
-                        <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="40"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding TimelineText}" FontSize="11" Foreground="#BBCCD9" VerticalAlignment="Center"/>
-                            <Slider Grid.Column="1" Minimum="0" Maximum="{Binding CapturedFrameCount}" Value="{Binding PlaybackFrame, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanInteract}"
-                                    TickFrequency="1" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="14,0" ToolTip="Просмотр истории ставит запись на паузу" AutomationProperties.Name="Временная шкала"/>
-                            <Button Grid.Column="2" Command="{Binding LatestCommand}" Content="К последнему" FontSize="11" Padding="9,5" VerticalAlignment="Center"/>
-                        </Grid>
-                        <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Click="Start_Click" IsEnabled="{Binding CanStart}" Content="{Binding StartText}" Style="{StaticResource Primary}" MinWidth="180" Padding="13,8" FontSize="12" ToolTip="Запись измерений · Пробел. Нужен вход администратора."/>
-                                <Button Command="{Binding PauseCommand}" Content="Пауза" Margin="7,0,0,0" Padding="11,8" ToolTip="Пауза · Пробел"/>
-                                <Button Command="{Binding StopCommand}" Content="Стоп" Margin="7,0,0,0" Padding="11,8"/>
-                            </StackPanel>
-                            <Button Grid.Column="2" Command="{Binding ClearCommand}" Style="{StaticResource Ghost}" Padding="9" ToolTip="Очистить карту" AutomationProperties.Name="Очистить карту"><TextBlock Style="{StaticResource Icon}" Text="&#xE74D;"/></Button>
-                        </Grid>
-                        <Grid Grid.Row="2" Margin="0,3,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Status}" FontSize="11" Foreground="#A5BACA" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="{Binding CaptureProgress, StringFormat=Записано кадров: {0:F0}%}" FontSize="11" Foreground="#B7CDA9" Margin="12,0,0,0" VerticalAlignment="Center"/>
+
+<Button  Command="{Binding ExploreCommand}" Content="{Binding ExploreText}" Style="{StaticResource Primary}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,53" Padding="17,11" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}" />
+
+<Border  HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#DD101D27" Padding="10,6" CornerRadius="6" Margin="12,0,12,53" IsHitTestVisible="False"><TextBlock Text="{Binding CameraLabel}" FontSize="11" Foreground="#A6BECE" /></Border>
+
+<Border  VerticalAlignment="Bottom" Background="#E6101D27" Padding="12,8" IsHitTestVisible="False"><TextBlock Text="{Binding ControlsHint}" TextWrapping="Wrap" TextAlignment="Center" Foreground="#B9CCD9" FontSize="11" /></Border>
+
+<StackPanel  HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False"><TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" /><TextBlock Text="{Binding EmptyHint}" Foreground="#A1B7C7" Margin="0,9,0,0" TextWrapping="Wrap" TextAlignment="Center" /></StackPanel>
+
                         </Grid>
                     </Grid></Border>
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="#304653" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Visibility="{Binding IsSplitView, Converter={StaticResource BoolVisibility}}"/>
+                    <Border Grid.Column="2" Style="{StaticResource Panel}" ClipToBounds="True" Visibility="{Binding ShowPlanWorkspace, Converter={StaticResource BoolVisibility}}"><views:PlanWorkspace/></Border>
                 </Grid>
-
-                <Border x:Name="RightPanel" Panel.ZIndex="21" Visibility="Collapsed" Grid.Column="2" Style="{StaticResource Panel}" Margin="0,14,12,14">
-                    <Grid><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition/></Grid.RowDefinitions>
-                        <DockPanel Margin="16,0,10,0"><Button DockPanel.Dock="Right" Click="CloseInspector_Click" Style="{StaticResource Ghost}" Content="×" Padding="9,4" VerticalAlignment="Center" ToolTip="Закрыть инструменты"/><TextBlock Text="Инструменты карты" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/></DockPanel>
-                        <views:SessionInspectorPanel Grid.Row="1" SaveAsRequested="SaveAs_Click" ExportRequested="Export_Click"/>
-                    </Grid>
-                </Border>
+                <Border Grid.Row="2" Background="#13212A" CornerRadius="8" Margin="0,8,0,0" Padding="12,8" Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal"><Button Click="Start_Click" Content="Запись" IsEnabled="{Binding CanStart}" Style="{StaticResource Primary}" Padding="12,7" ToolTip="Начать / продолжить запись · нужен администратор"/><Button Content="Пауза" Command="{Binding PauseCommand}" Padding="10,7" Margin="6,0"/><Button Content="Стоп" Command="{Binding StopCommand}" Padding="10,7"/></StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="14,0"><TextBlock Text="{Binding TimelineText}" Style="{StaticResource Muted}"/><Slider Maximum="{Binding CapturedFrameCount}" Value="{Binding PlaybackFrame}" TickFrequency="1" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" IsEnabled="{Binding CanInteract}" Height="24" AutomationProperties.Name="Временная шкала"/></StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"><Button Content="К последнему" Command="{Binding LatestCommand}" Style="{StaticResource Ghost}" Padding="8,6"/><Button Content="×" Command="{Binding ClearCommand}" Style="{StaticResource Danger}" Padding="10,6" ToolTip="Очистить карту"/></StackPanel>
+                </Grid></Border>
             </Grid>
-            <Border Grid.Row="2" Background="#101A22" BorderBrush="#263641" BorderThickness="0,1,0,0"><Grid Margin="16,0">
-                <TextBlock Text="{Binding DataSourceText}" FontSize="10" Foreground="#9CB1BF" VerticalAlignment="Center"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><TextBlock Text="{Binding FrameRateText}" FontSize="10" Foreground="#B8D6AD" Margin="0,0,14,0" ToolTip="Частота завершённых кадров и средний интервал между ними; не время выполнения команд GPU."/><TextBlock Text="{Binding PerformanceText}" FontSize="10" Foreground="#9CB1BF" ToolTip="CPU-подготовка геометрии и private bytes процесса."/></StackPanel>
+            <Border x:Name="RightPanel" Grid.Column="2" Panel.ZIndex="21" Visibility="Collapsed" Style="{StaticResource Panel}" Margin="0,10,10,10"><Grid><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition/></Grid.RowDefinitions>
+                <DockPanel Margin="16,0,10,0"><Button DockPanel.Dock="Right" Click="CloseInspector_Click" Content="×" Style="{StaticResource Ghost}" Padding="8,4" ToolTip="Закрыть свойства"/><TextBlock Text="{Binding InspectorTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
+                <views:ContextInspectorPanel Grid.Row="1"/>
             </Grid></Border>
         </Grid>
-    </Border>
+        <Border Grid.Row="1" Grid.RowSpan="2" Background="#0B141D" Visibility="{Binding IsWelcomeVisible, Converter={StaticResource BoolVisibility}}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel MaxWidth="980" Margin="48,46" VerticalAlignment="Center">
+            <TextBlock Text="ИССЛЕДУЙТЕ ПРОСТРАНСТВО" Style="{StaticResource Label}" Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="Добро пожаловать в SubTerra" FontSize="34" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,12"/>
+            <TextBlock Text="От облака точек — к цифровой модели пространства." FontSize="17" Foreground="#ACBFCD" TextWrapping="Wrap" Margin="0,0,0,30"/>
+            <UniformGrid Columns="3">
+                <Button Click="Open_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}" Margin="0,0,12,0"><StackPanel><TextBlock Text="01 / ПРОЕКТ" Style="{StaticResource Label}"/><TextBlock Text="Открыть проект" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Продолжить работу с файлом .subterra" Style="{StaticResource Muted}"/></StackPanel></Button>
+                <Button Click="Import_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}" Margin="0,0,12,0"><StackPanel><TextBlock Text="02 / ДАННЫЕ" Style="{StaticResource Label}" Foreground="{StaticResource AccentBrush}"/><TextBlock Text="Импортировать скан" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Облака и сетки · PLY, ASC, XYZ, TXT" Style="{StaticResource Muted}"/></StackPanel></Button>
+                <Button Click="Demo_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}"><StackPanel><TextBlock Text="03 / ДЕМОНСТРАЦИЯ" Style="{StaticResource Label}"/><TextBlock Text="Исследовать пещеру" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Виртуальное сканирование · синтетическая сцена" Style="{StaticResource Muted}"/></StackPanel></Button>
+            </UniformGrid>
+            <Button Content="Открыть учебный корпус · 3 этажа, 18 аудиторий →" Command="{Binding LoadCollegeBuildingCommand}" HorizontalAlignment="Left" Margin="0,16,0,0" ToolTip="Синтетическая геометрия для проверки анализа, без заранее готовой разметки"/>
+            <Button Content="Вернуться к открытому пространству →" Command="{Binding ContinueWorkspaceCommand}" Visibility="{Binding HasWorkspace, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Ghost}" HorizontalAlignment="Left" Margin="0,18,0,0"/>
+            <Border Style="{StaticResource InsetCard}" Margin="0,26,0,0" Visibility="{Binding HasRecovery, Converter={StaticResource BoolVisibility}}"><StackPanel><TextBlock Text="Найдена копия восстановления" FontWeight="SemiBold"/><StackPanel Orientation="Horizontal" Margin="0,10,0,0"><Button Content="Восстановить работу" Command="{Binding RestoreRecoveryCommand}" Style="{StaticResource Primary}"/><Button Content="Удалить копию" Command="{Binding DismissRecoveryCommand}" Style="{StaticResource Danger}" Margin="10,0,0,0"/></StackPanel></StackPanel></Border>
+            <TextBlock Text="Недавние проекты" Style="{StaticResource Section}" Margin="0,30,0,12"/>
+            <ItemsControl ItemsSource="{Binding RecentSessions}"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Name}" Command="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" ToolTip="{Binding Path}" HorizontalContentAlignment="Left" Style="{StaticResource Ghost}" Margin="0,0,0,4"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            <TextBlock Text="Импорт → обработка → проверка поверхностей → план помещения" Style="{StaticResource Muted}" Margin="0,24,0,0"/>
+        </StackPanel></ScrollViewer></Border>
+        <Border Grid.Row="2" Panel.ZIndex="29" VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="620" Margin="20" Padding="14" CornerRadius="8" Background="#29382E" BorderBrush="#789C72" BorderThickness="1">
+            <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding HasRecovery}" Value="True"/><Condition Binding="{Binding IsWorkspaceVisible}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger></Style.Triggers></Style></Border.Style>
+            <StackPanel><TextBlock Text="Осталась копия предыдущего сеанса" FontWeight="SemiBold"/><TextBlock Text="Восстановите работу или удалите копию, чтобы продолжить редактирование." Style="{StaticResource Muted}" Margin="0,7,0,10"/><StackPanel Orientation="Horizontal"><Button Content="Восстановить" Command="{Binding RestoreRecoveryCommand}"/><Button Content="Удалить копию" Command="{Binding DismissRecoveryCommand}" Style="{StaticResource Danger}" Margin="8,0,0,0"/></StackPanel></StackPanel>
+        </Border>
+        <Border Grid.Row="1" Grid.RowSpan="2" Panel.ZIndex="30" HorizontalAlignment="Right" Width="360" Background="#111E29" BorderBrush="#3B5361" BorderThickness="1,0,0,0" Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolVisibility}}"><Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition/></Grid.RowDefinitions><DockPanel><Button DockPanel.Dock="Right" Content="×" Command="{Binding ToggleSettingsCommand}" Style="{StaticResource Ghost}" Padding="8,0"/><TextBlock Text="Настройки просмотра" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel><views:ViewSettingsPanel Grid.Row="1"/></Grid></Border>
+        <Border Grid.Row="2" Panel.ZIndex="40" Background="#F20D1721" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="320"><TextBlock Text="{Binding Status}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,18"/><ProgressBar Value="{Binding BusyProgress, Mode=OneWay}" IsIndeterminate="{Binding BusyIsIndeterminate}"/><Button Content="Отменить · Esc" Command="{Binding CancelOperationCommand}" Margin="0,18,0,0"/></StackPanel></Border>
+        <Border Grid.Row="2" Panel.ZIndex="41" VerticalAlignment="Bottom" Margin="24" Padding="14" Background="#322526" BorderBrush="#97665C" BorderThickness="1" CornerRadius="8" Visibility="{Binding HasNotification, Converter={StaticResource BoolVisibility}}"><DockPanel><Button DockPanel.Dock="Right" Command="{Binding DismissNotificationCommand}" Content="×" Style="{StaticResource Ghost}" Padding="8,0"/><TextBlock Text="{Binding Notification}" Foreground="#F4C8BA" TextWrapping="Wrap"/></DockPanel></Border>
+        <Border Grid.Row="3" Background="#101A22" BorderBrush="#263641" BorderThickness="0,1,0,0"><DockPanel Margin="14,0"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="{Binding FrameRateText}" Visibility="{Binding HasWorkspace, Converter={StaticResource BoolVisibility}}" FontSize="11" Foreground="#B8D6AD" Margin="0,0,14,0"/><TextBlock Text="{Binding AccessLabel}" Style="{StaticResource Muted}"/></StackPanel><TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/></DockPanel></Border>
+    </Grid></Border>
 </Window>

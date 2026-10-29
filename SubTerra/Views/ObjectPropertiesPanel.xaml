@@ -1,0 +1,24 @@
+<UserControl Foreground="{DynamicResource TextBrush}" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="SubTerra.Views.ObjectPropertiesPanel">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock Text="{Binding SelectedObjectCandidate.Label, TargetNullValue=Выберите группу предмета}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
+        <TextBlock Text="{Binding SelectedObjectCandidate.StatusText}" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+        <TextBlock Text="{Binding SelectedObjectCandidate.Details, FallbackValue=—, TargetNullValue=—}" Style="{StaticResource Muted}" Margin="0,8,0,8" />
+        <Button Content="Приблизить выбранный предмет" Command="{Binding FocusObjectCandidateCommand}" FontSize="12" Margin="0,0,0,8" />
+        <StackPanel IsEnabled="{Binding CanReviewObject}">
+            <TextBox Text="{Binding ObjectCandidateLabel, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" AutomationProperties.Name="Название предмета оператором" />
+            <Button Content="Подтвердить название" Command="{Binding ConfirmObjectCandidateCommand}" FontSize="12" Margin="0,6,0,0" />
+            <Button Content="Отклонить группу" Command="{Binding RejectObjectCandidateCommand}" FontSize="12" Margin="0,6,0,0" />
+            <Button Content="Разделить пополам по длинной оси" Command="{Binding SplitObjectCandidateCommand}" FontSize="12" Margin="0,6,0,8" />
+            <ComboBox ItemsSource="{Binding ObjectCandidates}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding MergeObjectId}" AutomationProperties.Name="Вторая группа для объединения" />
+            <Button Content="Объединить с выбранной группой" Command="{Binding MergeObjectCandidatesCommand}" FontSize="12" Margin="0,6,0,0" />
+        </StackPanel>
+        <TextBlock Text="Группа точек, без автоматического названия нейросетью. Подтверждение и название задаёт оператор." Style="{StaticResource Muted}" Margin="0,12,0,0" />
+    </StackPanel>
+</UserControl>

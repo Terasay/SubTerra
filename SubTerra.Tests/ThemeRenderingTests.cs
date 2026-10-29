@@ -65,7 +65,7 @@ public sealed class ThemeRenderingTests
         root.Children.Add(heading);
         var columns = new Grid { Margin = new Thickness(16, 0, 16, 16) }; Grid.SetRow(columns, 1); root.Children.Add(columns);
         foreach (var width in new[] { 312, 336, 312 }) columns.ColumnDefinitions.Add(new() { Width = new GridLength(width) });
-        UserControl[] panels = [new ViewSettingsPanel { DataContext = demo }, new SessionInspectorPanel { DataContext = demo }, new StructureAnalysisPanel { DataContext = project }];
+        UserControl[] panels = [new ViewSettingsPanel { DataContext = demo }, new SessionInspectorPanel { DataContext = demo }, new SurfacePropertiesPanel { DataContext = project }];
         for (var i = 0; i < panels.Length; i++)
         {
             var card = new Border { Child = panels[i], Margin = new Thickness(6, 0, 6, 0), Padding = new Thickness(i == 1 ? 0 : 16), Style = (Style)root.FindResource("Card") };
@@ -95,6 +95,7 @@ public sealed class ThemeRenderingTests
         // Exercise the real shell XAML as a two-dimensional layout. No Window, Helix device or desktop automation.
         var shell = ShellPreview(demo); Layout(shell, 1440, 900);
         await Dispatcher.Yield(DispatcherPriority.DataBind); shell.UpdateLayout(); CheckReadableText(shell);
+        project.SelectSectionCommand.Execute("Анализ"); project.Inspect("Поверхность");
         var importedShell = ShellPreview(project); Layout(importedShell, 1440, 900);
         await Dispatcher.Yield(DispatcherPriority.DataBind); importedShell.UpdateLayout(); CheckReadableText(importedShell);
         var scenarioPicker = (ComboBox)importedShell.FindName("ScenarioPicker");
@@ -111,42 +112,33 @@ public sealed class ThemeRenderingTests
     });
 
     [Fact]
-    public Task AnalysisTabSurvivesReviewsRoomChangesAndHistory() => ScanControlTests.OnSta(async () =>
+    public Task WorkspaceSectionSurvivesReviewsRoomChangesAndHistory() => ScanControlTests.OnSta(async () =>
     {
         using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
             access: new TestAccess(), interaction: new TestInteraction());
         await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
-        Assert.Equal(1, vm.SidebarTabIndex);
-        var shell = ShellPreview(vm); Layout(shell, 1440, 900);
-        var tabs = (TabControl)shell.FindName("SidebarTabs");
-        await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(2, tabs.SelectedIndex);
+        Assert.True(vm.IsProjectSection);
+        var shell = ShellPreview(vm); vm.SelectSectionCommand.Execute("Анализ"); Layout(shell, 1440, 900);
         await vm.AnalyzeStructureAsync();
         foreach (var surface in vm.StructureSurfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown).ToArray())
-        { vm.SelectedStructureSurface = surface; vm.ConfirmStructureSurfaceCommand.Execute(null); }
+        { vm.SelectedStructureSurface = vm.StructureSurfaces.Single(s => s.Id == surface.Id); vm.ConfirmStructureSurfaceCommand.Execute(null); }
         await vm.BuildRoomAsync(); Assert.True(vm.HasRoom);
         vm.RemoveRoomCommand.Execute(null); Assert.False(vm.HasRoom);
         await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasRoom);
         await vm.RedoProjectCommand.ExecuteAsync(); Assert.False(vm.HasRoom);
         await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasRoom);
         await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(2, tabs.SelectedIndex); Assert.Equal(2, vm.SidebarTabIndex);
-        tabs.SelectedIndex = 4;
-        await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(4, vm.SidebarTabIndex);
+        Assert.True(vm.IsAnalysisSection);
+        Assert.True(Descendants(shell).OfType<RadioButton>().Single(b => Equals(b.Content, "Анализ")).IsChecked);
+        vm.SelectSectionCommand.Execute("Результаты"); vm.IsSettingsOpen = true;
         vm.ClearStructureCommand.Execute(null); await vm.UndoProjectCommand.ExecuteAsync();
-        await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(4, tabs.SelectedIndex);
-        await vm.LoadDemoAsync();
-        await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(0, tabs.SelectedIndex); Assert.Equal(0, vm.SidebarTabIndex);
+        Assert.True(vm.IsResultsSection); Assert.True(vm.IsSettingsOpen);
+        await vm.LoadDemoAsync(); Assert.True(vm.IsProjectSection); Assert.False(vm.IsSettingsOpen);
         await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
-        await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(1, tabs.SelectedIndex);
-        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.True(vm.IsProjectSection); Assert.False(vm.HasNotification, vm.Notification);
     });
 
-    private static FrameworkElement ShellPreview(MainViewModel model)
+    internal static FrameworkElement ShellPreview(MainViewModel model)
     {
         XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
@@ -172,16 +164,14 @@ public sealed class ThemeRenderingTests
             new XElement(p + "StackPanel", new XAttribute("VerticalAlignment", "Center"), new XAttribute("HorizontalAlignment", "Center"),
                 new XElement(p + "TextBlock", new XAttribute("Text", "3D-сцена"), new XAttribute("FontSize", "26"), new XAttribute("Foreground", "#ACBFCD"), new XAttribute("HorizontalAlignment", "Center")),
                 new XElement(p + "TextBlock", new XAttribute("Text", "Предпросмотр вёрстки · без GPU"), new XAttribute("Foreground", "#ACBFCD"), new XAttribute("Margin", "0,10,0,0")))));
-        root.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "RightPanel").SetAttributeValue("Visibility", "Visible");
-        root.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "RightColumn").SetAttributeValue("Width", "336");
-        if (model.IsImported) model.SidebarTabIndex = 2;
         model.IsInspectorOpen = true;
         var control = (FrameworkElement)XamlReader.Parse(root.ToString()); control.DataContext = model;
+        WorkspaceLayout.Apply(control, model, 1440);
         return control;
     }
 
-    private static void Layout(FrameworkElement root, double width, double height)
-    { root.Measure(new Size(width, height)); root.Arrange(new Rect(0, 0, width, height)); root.UpdateLayout(); }
+    internal static void Layout(FrameworkElement root, double width, double height)
+    { root.Width = width; root.Height = height; root.Measure(new Size(width, height)); root.Arrange(new Rect(0, 0, width, height)); root.UpdateLayout(); }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;
