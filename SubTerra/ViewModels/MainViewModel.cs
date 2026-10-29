@@ -81,12 +81,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public MainViewModel(IScanSource source, SessionStorage storage, IScanFrameSource? frameSource = null,
         IAccessSession? access = null, ISessionInteraction? interaction = null, WorkspaceStateStore? workspaceStore = null,
-        IStructureAnalyzer? structureAnalyzer = null)
+        IStructureAnalyzer? structureAnalyzer = null, IPersonScanAnalyzer? personAnalyzer = null)
     {
         _source = source;
         _frameSource = frameSource ?? source;
         _storage = storage;
         _structureAnalyzer = structureAnalyzer ?? new PlaneStructureAnalyzer();
+        _personAnalyzer = personAnalyzer ?? new PersonScanAnalyzer();
         _access = access ?? new AdminAccessService();
         _interaction = interaction ?? new CancelSessionInteraction();
         _workspaceStore = workspaceStore;
@@ -105,7 +106,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ExploreCommand = new RelayCommand(() => { if (CanWalk && (IsImported || !IsPoints)) Inside(); else Fly(); }, () => CanWalk || CanFly);
         NavigateMarkerCommand = new RelayCommand<SceneMarker>(NavigateToMarker, marker => CanInteract && VisibleMarkers.Contains(marker));
         PointsCommand = new RelayCommand(() => SetView(false, false));
-        SurfaceCommand = new RelayCommand(() => SetView(true, false));
+        SurfaceCommand = new AsyncRelayCommand(ShowSurfaceAsync, () => CanSelectSurface, ex => ReportError("Не удалось построить сетку", ex));
         HeightCommand = new RelayCommand(() => SetView(true, true));
         LatestCommand = new RelayCommand(ShowLatest, () => !IsBusy && IsReviewing);
         PreviewScannerCommand = new RelayCommand(PreviewScanner, () => CanEditSettings && IsOverview);
@@ -170,7 +171,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public RelayCommand ExploreCommand { get; }
     public RelayCommand<SceneMarker> NavigateMarkerCommand { get; }
     public RelayCommand PointsCommand { get; }
-    public RelayCommand SurfaceCommand { get; }
+    public AsyncRelayCommand SurfaceCommand { get; }
     public RelayCommand HeightCommand { get; }
     public RelayCommand LatestCommand { get; }
     public RelayCommand PreviewScannerCommand { get; }

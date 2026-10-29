@@ -1,0 +1,29 @@
+<UserControl x:Class="SubTerra.Views.PeopleAnalysisPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Foreground="{DynamicResource TextBrush}">
+    <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+    <StackPanel>
+        <TextBlock Text="Люди · локальная ONNX" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="{Binding PeopleSummary}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+        <TextBlock Text="Эксперимент: модель обучена на фотографиях. Восстановленные RGB-виды скана могут содержать пропуски и склейки; находки нужно проверять." Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+        <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог модели: {0:P0}}" Style="{StaticResource Muted}"/>
+        <Slider Value="{Binding PersonThreshold}" Minimum=".1" Maximum=".9" TickFrequency=".05" IsSnapToTickEnabled="True" IsEnabled="{Binding CanDetectPeople}" AutomationProperties.Name="Порог детектора людей"/>
+        <Button Content="Проверить текущий ракурс" Command="{Binding DetectPeopleCommand}" Margin="0,8,0,6"/>
+        <Button Content="Осмотреть комнату · 8 ракурсов" Command="{Binding SearchPeopleCommand}"/>
+        <TextBlock Text="Для обзора нужны найденный пол и корректный масштаб. Текущий ракурс удобно проверять изнутри: выберите вид, завершите полёт и нажмите проверку." Style="{StaticResource Muted}" Margin="0,8,0,12"/>
+        <StackPanel Visibility="{Binding HasPeopleDetection, Converter={StaticResource BoolVisibility}}">
+            <ComboBox ItemsSource="{Binding PersonViews}" SelectedItem="{Binding SelectedPersonView}" DisplayMemberPath="Label" AutomationProperties.Name="Ракурс проверки людей"/>
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,8,0,8" Background="#727272"><Image Source="{Binding PersonPreview}" Stretch="Uniform" AutomationProperties.Name="RGB-изображение с рамками людей"/></Border>
+            <TextBlock Text="{Binding PersonViewSummary}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+            <Button Content="Перейти к этому ракурсу в 3D" Command="{Binding FocusPersonViewCommand}" Margin="0,0,0,8"/>
+            <ListBox ItemsSource="{Binding PersonFindings}" SelectedItem="{Binding SelectedPerson}" MaxHeight="210" AutomationProperties.Name="Кандидаты людей">
+                <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Details}" Style="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="{Binding SelectedPerson.LocationText}" Style="{StaticResource Muted}" Margin="0,8,0,6"/>
+            <UniformGrid Columns="2"><Button Content="Это человек" Command="{Binding ConfirmPersonCommand}" Margin="0,0,4,0"/><Button Content="Ошибка" Command="{Binding RejectPersonCommand}" Margin="4,0,0,0"/></UniformGrid>
+            <Button Content="Вернуть на проверку" Command="{Binding ResetPersonReviewCommand}" Style="{StaticResource Ghost}" Margin="0,6,0,8"/>
+            <CheckBox Content="3D-рамка выбранного кандидата" IsChecked="{Binding ShowPeople}"/>
+            <TextBlock Text="Зелёный — подтверждено; красный — ошибка; оранжевый — не проверено. Поиск не распознаёт личность. Результаты и проверка действуют в текущем сеансе." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

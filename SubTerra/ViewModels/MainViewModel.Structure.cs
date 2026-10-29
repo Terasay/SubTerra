@@ -82,6 +82,7 @@ public sealed partial class MainViewModel
     private void InitializeStructureCommands()
     {
         InitializeIndoorCommands();
+        InitializePeopleCommands();
         InitializeRoomCommands();
         InitializeObjectAnalysisCommands();
         AnalyzeStructureCommand = new(AnalyzeStructureAsync, () => CanAnalyzeStructure,
@@ -205,6 +206,7 @@ public sealed partial class MainViewModel
     }
     private void ClearStructureAnalysis(bool preservePreview = false)
     {
+        ClearPersonDetections();
         if (!preservePreview) InvalidateIndoorPreview(null);
         _structureDocument = null;
         SelectedStructureSurface = null;
@@ -216,6 +218,7 @@ public sealed partial class MainViewModel
     }
     private void NotifyStructureState()
     {
+        NotifyPeopleState();
         NotifyRoomState();
         NotifyObjectState();
         NotifyIndoorState();
@@ -251,6 +254,7 @@ public sealed partial class MainViewModel
     public string IndoorPreviewSummary => HasReconstruction ?
         $"Реконструкция · гипотеза: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. " +
         $"Достроено ячеек: {_indoorPreview.FilledCells:N0}; точек предметов: {_indoorPreview.RemainingPoints?.Points.Length ?? 0:N0}. " +
+        $"Замкнутый контур: {(_indoorPreview.HasRoomShell ? "найден" : "не найден")}; условных окон: {_indoorPreview.ReconstructedWindows}. " +
         $"Скрыто изолированных / внешних точек: {_indoorPreview.SuppressedPoints:N0}. Исходные измерения сохранены." : HasIndoorPreview ?
         $"Предварительная сетка: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. Непросканированные участки остаются открытыми; отделка условная." :
         "Построение поверхностей по наблюдаемым точкам пола, стен и потолка. Исходные точки и RGB сохраняются.";
@@ -266,7 +270,7 @@ public sealed partial class MainViewModel
             UseNeuralClasses = true; Raise(nameof(UseNeuralClasses));
             var previous = _structureDocument;
             await AnalyzeStructureAsync();
-            if (_structureDocument is not null && !ReferenceEquals(previous, _structureDocument)) await PrepareIndoorPreviewAsync();
+            if (_structureDocument is not null && !ReferenceEquals(previous, _structureDocument)) await ReconstructRoomAsync();
         }, () => CanAnalyzeStructure, ex => ReportError("Не удалось подготовить осмотр", ex));
     }
     public Task PrepareIndoorPreviewAsync() => PrepareIndoorViewAsync(false);
@@ -351,6 +355,7 @@ public sealed partial class MainViewModel
         foreach (var property in new[] { nameof(HasIndoorPreview), nameof(IsIndoorSurfaceView), nameof(CanPrepareIndoorPreview), nameof(IndoorPreviewSummary),
             nameof(HasReconstruction), nameof(ReconstructionSettingsPending), nameof(CanExportReconstruction),
             nameof(CanShowSurface), nameof(SurfaceModeText), nameof(MeshPreviewText), nameof(CanWalk), nameof(CanFly), nameof(ExploreText) }) Raise(property);
+        Raise(nameof(CanSelectSurface)); Raise(nameof(SurfaceModeHint));
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
     public Navigation.ICameraNavigator CreateIndoorNavigator() => new Navigation.IndoorNavigator(_indoorStart, Vector3.UnitX,

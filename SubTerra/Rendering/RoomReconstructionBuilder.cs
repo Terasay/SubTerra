@@ -6,7 +6,8 @@ using SubTerra.Services;
 namespace SubTerra.Rendering;
 
 public sealed record RoomReconstructionOptions(bool AlignSurfaces = true, double FloorHoleSize = 1.6,
-    double WallHoleSize = .25, bool KeepObjects = true, bool RemoveIsolatedPoints = true, bool LimitToRoom = false)
+    double WallHoleSize = .25, bool KeepObjects = true, bool RemoveIsolatedPoints = true, bool LimitToRoom = false,
+    bool CompleteRoomShell = true, bool RepairWindows = true, bool ClipOutsideShell = true)
 {
     public void Validate()
     {
@@ -17,7 +18,7 @@ public sealed record RoomReconstructionOptions(bool AlignSurfaces = true, double
 }
 
 /// <summary>Bounded room hypotheses from measured planes. Original points, labels and colors are immutable.</summary>
-public static class RoomReconstructionBuilder
+public static partial class RoomReconstructionBuilder
 {
     private const int MaximumCells = 450_000, MaximumGridArea = 450_000, MaximumTriangles = 850_000;
     private static readonly (int X, int Y)[] Neighbors = [(1, 0), (-1, 0), (0, 1), (0, -1)];
@@ -73,13 +74,18 @@ public static class RoomReconstructionBuilder
         var surfaces = document.Result.Surfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown && s.Review != StructureReviewState.Rejected).ToArray();
         if (surfaces.Length == 0) throw new InvalidDataException("Сначала найдите пол, стены или потолок и проверьте классы.");
         var patches = CreatePatches(surfaces, options.AlignSurfaces);
+        var shell = options.CompleteRoomShell ? CreateShell(patches, activeRoom) : null;
+        if (shell is not null)
+            foreach (var patch in new[] { patches.Where(p => p.Kind == StructureSurfaceKind.Floor).MaxBy(p => p.Sources.Sum(s => s.AreaSquareMeters)),
+                patches.Where(p => p.Kind == StructureSurfaceKind.Ceiling).MaxBy(p => p.Sources.Sum(s => s.AreaSquareMeters)) }.OfType<Patch>())
+                if (Math.Abs(patch.Normal.Z) > .996f) patch.Boundaries = [shell.Contour.Select(p => patch.Local(p)).ToArray()];
         var area = surfaces.Sum(s => s.AreaSquareMeters);
         var visibleCount = project.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount);
         var step = Math.Max(.025, Math.Max(Math.Sqrt(area / 300_000), 1.2 * Math.Sqrt(area / Math.Max(1, visibleCount))));
         var tolerance = Math.Min(.1, Math.Max(.025, document.Result.Options.DistanceTolerance * 2));
         var residual = new List<ScanPoint>(); var residualColors = new List<uint>();
         var cellCount = 0; var outside = 0; var visited = 0;
-        bool Excluded(Vector3 p) => room is not null && !RoomTopology.Contains(room, p);
+        bool Excluded(Vector3 p) => room is not null && !RoomTopology.Contains(room, p) || options.ClipOutsideShell && shell is not null && !shell.Contains(p, .12);
         bool Opening(Patch patch, Vector3 p)
         {
             if (activeRoom is not { } current || patch.Kind != StructureSurfaceKind.Wall) return false;
@@ -124,12 +130,14 @@ public static class RoomReconstructionBuilder
                 cell.Add(rgb);
             }
         }
-        var measured = cellCount; var filled = 0; var skipped = 0;
+        var measured = cellCount; var filled = 0; var skipped = 0; var windows = 0;
         foreach (var patch in patches)
         {
             token.ThrowIfCancellationRequested();
             var diameter = patch.Kind == StructureSurfaceKind.Wall ? options.WallHoleSize : options.FloorHoleSize;
-            FillHoles(patch, step, diameter, p => Excluded(p) || Opening(patch, p), ref cellCount, ref filled, ref skipped, token);
+            if (shell is not null && patch.Kind != StructureSurfaceKind.Wall && Math.Abs(patch.Normal.Z) > .996f)
+                CompleteSupport(patch, step, p => Excluded(p), ref cellCount, ref filled, token);
+            FillHoles(patch, step, diameter, p => Excluded(p) || Opening(patch, p), shell, options.RepairWindows, ref windows, ref cellCount, ref filled, ref skipped, token);
         }
         var removed = options.RemoveIsolatedPoints ? FilterIsolated(residual, residualColors, token) : 0;
         var points = new List<ScanPoint>(); var colors = new List<uint>(); var materials = new List<uint>();
@@ -169,6 +177,7 @@ public static class RoomReconstructionBuilder
             ReconstructionOptions = options, CompletionColors = completion.ToArray(), FilledCells = filled, MeasuredCells = measured,
             LeveledSurfaces = options.AlignSurfaces ? patches.Count(p => p.Sources.Any(s => Vector3.DistanceSquared(s.Normal, p.Normal) > 1e-10f)) : 0,
             SuppressedPoints = removed + outside, SkippedHoleRegions = skipped,
+            HasRoomShell = shell is not null, ReconstructedWindows = windows,
             RemainingPoints = residual.Count == 0 ? null : new ImportedScan { Metadata = metadata, Points = residual.ToArray(), Colors = residualColors.ToArray() }
         };
     }
@@ -224,7 +233,7 @@ public static class RoomReconstructionBuilder
     }
 
     private static void FillHoles(Patch patch, double step, double diameter, Func<Vector3, bool> excluded,
-        ref int total, ref int filled, ref int skipped, CancellationToken token)
+        RoomShell? shell, bool repairWindows, ref int windows, ref int total, ref int filled, ref int skipped, CancellationToken token)
     {
         if (diameter <= 0 || patch.Cells.Count < 4) return;
         var x0 = patch.Cells.Keys.Min(p => p.X) - 1; var y0 = patch.Cells.Keys.Min(p => p.Y) - 1;
@@ -253,8 +262,21 @@ public static class RoomReconstructionBuilder
                     visited[ny * w + nx] = true; queue.Enqueue((nx, ny));
                 }
             }
-            if (blocked || Math.Max(maxX - minX + 1, maxY - minY + 1) * step > diameter) continue;
+            var window = !blocked && repairWindows && shell is not null && patch.Kind == StructureSurfaceKind.Wall &&
+                IsWindow(patch, step, minX + x0, maxX + x0, minY + y0, maxY + y0, region.Count, shell);
+            if (blocked || !window && Math.Max(maxX - minX + 1, maxY - minY + 1) * step > diameter) continue;
             if (total + region.Count > MaximumCells) { skipped++; continue; }
+            if (window)
+            {
+                windows++;
+                foreach (var p in region)
+                {
+                    var frame = p.X - x0 - minX < 2 || maxX - (p.X - x0) < 2 || p.Y - y0 - minY < 2 || maxY - (p.Y - y0) < 2 ||
+                        Math.Abs(p.X - x0 - (minX + maxX) * .5) < 1;
+                    var cell = new Cell { Inferred = true }; cell.Add(frame ? 0xCAD5DCu : 0x52758Cu); patch.Cells.Add(p, cell); total++; filled++;
+                }
+                continue;
+            }
             // Multi-source growth copies nearby observed color; it never invents photographic detail.
             var pending = region.ToHashSet(); var front = new Queue<(int X, int Y)>();
             foreach (var p in region) if (Neighbors.Any(d => patch.Cells.ContainsKey((p.X + d.X, p.Y + d.Y)))) front.Enqueue(p);

@@ -143,6 +143,10 @@ public sealed class WorkspacePresentationTests
         await Dispatcher.Yield(DispatcherPriority.DataBind); settings.UpdateLayout();
         Assert.True(vm.HasReconstruction); Assert.False(vm.HasNotification, vm.Notification);
         CheckBindings(settings); ThemeRenderingTests.CheckReadableText(settings); SavePreview(settings, "reconstruction-settings.png");
+        await vm.DetectPeopleAsync(); Assert.True(vm.HasPeopleDetection); Assert.False(vm.HasNotification, vm.Notification);
+        var people = new PeopleAnalysisPanel { DataContext = vm }; ThemeRenderingTests.Layout(people, 320, 1700);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); people.UpdateLayout();
+        CheckBindings(people); ThemeRenderingTests.CheckReadableText(people); SavePreview(people, "people-analysis.png");
     });
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

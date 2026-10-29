@@ -1,0 +1,9 @@
+{
+  "model": "YOLOX-Nano COCO 0.1.1rc0",
+  "source": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+  "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+  "license": "Apache-2.0; YOLOX-LICENSE.txt",
+  "input": "1x3x416x416 float32, BGR CHW, pixel range 0..255",
+  "output": "1x3549x85, raw YOLOX stride 8/16/32 decode; COCO class 0 person",
+  "scope": "Pretrained photographic detector on locally rendered RGB views; no scan-specific training, no identity recognition or measured 3D accuracy."
+}

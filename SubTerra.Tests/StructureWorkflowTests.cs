@@ -45,7 +45,7 @@ public sealed class StructureWorkflowTests
         Assert.True(vm.CanWalk); Assert.True(vm.CanFly); Assert.NotNull(vm.Surface);
         Assert.True(vm.UseNeuralClasses); Assert.True(vm.IsIndoorSurfaceView);
         var materials = vm.Surface;
-        vm.IndoorStyle = vm.IndoorStyles[1]; Assert.NotSame(materials, vm.Surface);
+        vm.IndoorStyle = vm.IndoorStyles[0]; Assert.NotSame(materials, vm.Surface);
         vm.InsideCommand.Execute(null); Assert.True(vm.IsWalking);
         var nav = vm.CreateIndoorNavigator(); vm.UpdateWalkPosition(nav); vm.ReturnToOverview();
         Assert.InRange((vm.LampCamera.Position - vm.Camera.Position).Length, .01, 1);

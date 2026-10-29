@@ -6,11 +6,15 @@ public sealed partial class MainViewModel
 {
     private bool _alignRoom = true, _keepRoomObjects = true, _cleanRoomNoise = true, _limitReconstructionToRoom;
     private double _floorHoleSize = 1.6, _wallHoleSize = .25;
+    private bool _completeRoomShell = true, _repairWindows = true, _clipOutsideShell = true;
     public AsyncRelayCommand ReconstructRoomCommand { get; private set; } = null!;
     public bool HasReconstruction => _indoorPreview?.ReconstructionOptions is not null;
     public bool CanExportReconstruction => CanExport && HasReconstruction;
     public bool ReconstructionSettingsPending => HasReconstruction && _indoorPreview!.ReconstructionOptions != ReconstructionOptions;
-    private RoomReconstructionOptions ReconstructionOptions => new(AlignRoom, FloorHoleSize, WallHoleSize, KeepRoomObjects, CleanRoomNoise, LimitReconstructionToRoom);
+    private RoomReconstructionOptions ReconstructionOptions => new(AlignRoom, FloorHoleSize, WallHoleSize, KeepRoomObjects, CleanRoomNoise, LimitReconstructionToRoom, CompleteRoomShell, RepairWindows, ClipOutsideShell);
+    public bool CompleteRoomShell { get => _completeRoomShell; set { if (Set(ref _completeRoomShell, value)) Raise(nameof(ReconstructionSettingsPending)); } }
+    public bool RepairWindows { get => _repairWindows; set { if (Set(ref _repairWindows, value)) Raise(nameof(ReconstructionSettingsPending)); } }
+    public bool ClipOutsideShell { get => _clipOutsideShell; set { if (Set(ref _clipOutsideShell, value)) Raise(nameof(ReconstructionSettingsPending)); } }
     public bool AlignRoom { get => _alignRoom; set { if (Set(ref _alignRoom, value)) Raise(nameof(ReconstructionSettingsPending)); } }
     public bool KeepRoomObjects { get => _keepRoomObjects; set { if (Set(ref _keepRoomObjects, value)) Raise(nameof(ReconstructionSettingsPending)); } }
     public bool CleanRoomNoise { get => _cleanRoomNoise; set { if (Set(ref _cleanRoomNoise, value)) Raise(nameof(ReconstructionSettingsPending)); } }

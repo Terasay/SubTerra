@@ -28,6 +28,8 @@ internal static class Program
                 return PrepareIndoor(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--reconstruct-indoor")
                 return ReconstructIndoor(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "--detect-people")
+                return DetectPeople(args[1], args[2]);
             var passes = 12;
             var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
@@ -130,9 +132,52 @@ internal static class Program
             Output = Path.GetFullPath(output), OriginalPoints = scan.Points.Length, SourceSha256 = sourceHash, OriginalUnchanged = true,
             ReconstructionTriangles = preview.Scan.Triangles.Length / 3, FloorTriangles = preview.FloorTriangles.Length / 3,
             preview.MeasuredCells, preview.FilledCells, preview.LeveledSurfaces, preview.SuppressedPoints, preview.SkippedHoleRegions,
+            preview.HasRoomShell, preview.ReconstructedWindows,
             ObjectPoints = preview.RemainingPoints?.Points.Length ?? 0, ExportedPoints = exported.Points.Length,
             Hypothesis = true, ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local CPU processing; no neural retraining or GPU benchmark"
         }, new JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
+
+    private static int DetectPeople(string input, string directory)
+    {
+        if (Directory.Exists(directory) || File.Exists(directory)) throw new ArgumentException("Выберите новую папку для проверки людей.");
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        var token = cancellation.Token; var clock = Stopwatch.StartNew();
+        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z, LocalOrigin: false), token).GetAwaiter().GetResult();
+        var project = ScanProject.FromSession(scan.ToSession());
+        var structure = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(DistanceTolerance: .035, MaximumPlanes: 24, UseNeuralClasses: true), null, token).GetAwaiter().GetResult();
+        var document = StructureProvenance.Create(project, structure, token);
+        var poses = PersonScanAnalyzer.RoomViews(document);
+        var result = new PersonScanAnalyzer().AnalyzeAsync(project, poses, structure.Surfaces, .3f, null, null, token).GetAwaiter().GetResult();
+        Directory.CreateDirectory(directory);
+        for (var i = 0; i < result.Views.Length; i++)
+        {
+            var view = result.Views[i];
+            var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(view.Size, view.Size, 96, 96, System.Windows.Media.PixelFormats.Rgb24, null, view.Rgb, view.Size * 3);
+            var visual = new System.Windows.Media.DrawingVisual();
+            using (var drawing = visual.RenderOpen())
+            {
+                drawing.DrawImage(bitmap, new System.Windows.Rect(0, 0, view.Size, view.Size));
+                foreach (var finding in result.Findings.Where(f => f.ViewIndex == i))
+                {
+                    var box = finding.Box;
+                    drawing.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Orange, 2), new(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
+                    var text = new System.Windows.Media.FormattedText($"person? {box.Score:P0}", CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
+                        new System.Windows.Media.Typeface("Segoe UI"), 12, System.Windows.Media.Brushes.Orange, 1);
+                    drawing.DrawText(text, new(box.Left, Math.Max(0, box.Top - 18)));
+                }
+            }
+            var rendered = new System.Windows.Media.Imaging.RenderTargetBitmap(view.Size, view.Size, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); rendered.Render(visual);
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rendered));
+            using var stream = File.Create(Path.Combine(directory, $"people-view-{i + 1:00}.png")); encoder.Save(stream);
+        }
+        var report = new { result.Model, Threshold = .3, Findings = result.Findings, Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
+            ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local RGB projections; per-view candidates, not unique people or measured accuracy" };
+        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+        File.WriteAllText(Path.Combine(directory, "people.json"), json);
+        Console.WriteLine($"Views: {result.Views.Length}; candidates: {result.Findings.Length}; elapsed: {clock.Elapsed.TotalSeconds:F2}s; output: {directory}");
         return 0;
     }
 

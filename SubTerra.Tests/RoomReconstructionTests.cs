@@ -77,6 +77,42 @@ public sealed class RoomReconstructionTests
     private static TriangleIndex Index(IndoorSurfacePreview preview) => new(preview.Scan.Points.Select(p => p.Position).ToArray(), preview.Scan.Triangles);
 
     [Fact]
+    public void ClosedWallsSupportLargeBoundaryOcclusionsAndConditionalWindowsWithoutSealingTheDoor()
+    {
+        var points = new List<ScanPoint>(); var colors = new List<uint>(); var planes = new List<StructureSurface>();
+        var id = Guid.NewGuid();
+        void Plane(StructureSurfaceKind kind, Vector3 normal, Vector3[] boundary, double area, IEnumerable<Vector3> sample)
+        {
+            var samples = new List<StructureSample>();
+            foreach (var p in sample) { samples.Add(new(new(id, points.Count), p)); points.Add(new(p.X, p.Y, p.Z, 1)); colors.Add(0xA9B7C4); }
+            var center = boundary.Aggregate(Vector3.Zero, (a, b) => a + b) / boundary.Length;
+            planes.Add(new(planes.Count + 1, kind, normal, -Vector3.Dot(normal, center), center, boundary, area, 0, samples.ToArray()));
+        }
+        var xs = Enumerable.Range(0, 61).Select(i => i * .1f).ToArray(); var ys = Enumerable.Range(0, 51).Select(i => i * .1f).ToArray(); var zs = Enumerable.Range(0, 31).Select(i => i * .1f).ToArray();
+        Plane(StructureSurfaceKind.Floor, Vector3.UnitZ, [new(0,0,0),new(6,0,0),new(6,5,0),new(0,5,0)],30,
+            from x in xs from y in ys where !(x > 2 && x < 4 && y < 1.5) select new Vector3(x,y,0));
+        Plane(StructureSurfaceKind.Ceiling, Vector3.UnitZ, [new(0,0,3),new(6,0,3),new(6,5,3),new(0,5,3)],30,from x in xs from y in ys select new Vector3(x,y,3));
+        // Overlapping RANSAC floor fragments must not double the footprint area and reject the shell.
+        Plane(StructureSurfaceKind.Floor, Vector3.UnitZ, [new(0,0,.08f),new(6,0,.08f),new(6,5,.08f),new(0,5,.08f)],30,
+            from x in xs from y in ys where !(x > 2 && x < 4 && y < 1.5) select new Vector3(x,y,.08f));
+        foreach (var x in new[] { 0, 6 }) Plane(StructureSurfaceKind.Wall,Vector3.UnitX,[new(x,0,0),new(x,5,0),new(x,5,3),new(x,0,3)],15,from y in ys from z in zs select new Vector3(x,y,z));
+        Plane(StructureSurfaceKind.Wall,Vector3.UnitY,[new(0,0,0),new(6,0,0),new(6,0,3),new(0,0,3)],18,from x in xs from z in zs where !(x > .5 && x < 1.3 && z < 2) select new Vector3(x,0,z));
+        Plane(StructureSurfaceKind.Wall,Vector3.UnitY,[new(0,5,0),new(6,5,0),new(6,5,3),new(0,5,3)],18,from x in xs from z in zs where !(x > 2 && x < 4 && z > 1 && z < 2.5) select new Vector3(x,5,z));
+        var scan = new ImportedScan { Metadata = new("room.ply",ScanUnit.Meters,ScanUpAxis.Z,0,0,0),Points=points.ToArray(),Colors=colors.ToArray() };
+        var project = new ScanProject([new(id,"room",scan)],id,null);
+        var doc = StructureProvenance.Create(project,new(planes.ToArray(),points.Count,points.Count,new()));
+        var observed = RoomReconstructionBuilder.Build(project,doc,new(CompleteRoomShell:false,RepairWindows:false));
+        Assert.False(Index(observed).Cast(new(3,.6f,1),-Vector3.UnitZ,2,out _));
+        var restored = RoomReconstructionBuilder.Build(project,doc,new());
+        Assert.True(restored.HasRoomShell); Assert.True(Index(restored).Cast(new(3,.6f,1),-Vector3.UnitZ,2,out _));
+        Assert.True(restored.ReconstructedWindows > 0); Assert.True(Index(restored).Cast(new(3,4,1.7f),Vector3.UnitY,2,out _));
+        Assert.False(Index(restored).Cast(new(.9f,1,1),-Vector3.UnitY,2,out _));
+        var noWindow = RoomReconstructionBuilder.Build(project,doc,new(RepairWindows:false));
+        Assert.Equal(0,noWindow.ReconstructedWindows); Assert.False(Index(noWindow).Cast(new(3,4,1.7f),Vector3.UnitY,2,out _));
+        Assert.Equal(points.ToArray(),scan.Points); Assert.Equal(colors.ToArray(),scan.Colors);
+    }
+
+    [Fact]
     public async Task ConfirmedOpeningIsProtectedEvenWhenWallPointsExistThere()
     {
         var project = await RoomPlannerTests.PlannedRoom(); var doc = project.Structure!;

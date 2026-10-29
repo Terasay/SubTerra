@@ -132,6 +132,8 @@ public sealed record IndoorSurfacePreview(ImportedScan Scan, uint[] MaterialColo
     public int LeveledSurfaces { get; init; }
     public int SuppressedPoints { get; init; }
     public int SkippedHoleRegions { get; init; }
+    public bool HasRoomShell { get; init; }
+    public int ReconstructedWindows { get; init; }
 }
 
 /// <summary>Observed planar surface preview. Empty grid cells are never filled with a convex hull.</summary>

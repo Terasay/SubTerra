@@ -9,7 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="Assets\Models\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="3.1.2" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
   </ItemGroup>
 
 </Project>

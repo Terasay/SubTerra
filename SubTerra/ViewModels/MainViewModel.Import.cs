@@ -24,7 +24,25 @@ public sealed partial class MainViewModel
     public AsyncRelayCommand LoadCollegeBuildingCommand { get; private set; } = null!;
     private ScanProjectView? CurrentProjectView => _previewView ?? _projectView;
     public bool CanShowSurface => !IsImported || HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
-    public string SurfaceModeText => IsImported ? HasReconstruction ? "Реконструкция" : HasIndoorPreview ? "Поверхности" : "Сетка" : "Пещера";
+    public bool CanSelectSurface => CanInteract && (!IsImported || CanShowSurface || !HasEditPreview && !IsScreenSelecting && !HasRecovery &&
+        (HasStructureAnalysis && !StructureIsStale || IsAdministrator && _scanProject?.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount) >= 64));
+    public string SurfaceModeHint => CanShowSurface ? "Показать поверхности" : HasStructureAnalysis && !StructureIsStale ? "Восстановить поверхности по имеющемуся анализу" :
+        IsAdministrator ? "Построить поверхности по цветным точкам; анализ можно отменить" : "Первое построение сетки по точкам требует входа администратора";
+    public string SurfaceModeText => IsImported ? HasReconstruction ? "Реконструкция" : HasIndoorPreview ? "Поверхности" : CanShowSurface ? "Сетка" : "Построить сетку" : "Пещера";
+    public async Task ShowSurfaceAsync()
+    {
+        if (!CanSelectSurface) return;
+        if (!IsImported || HasReconstruction || CurrentProjectView?.Data.VisibleScan?.HasMesh == true) { SetView(true, false); return; }
+        ReturnToOverview(); EndInspection();
+        if (!CanPrepareIndoorPreview)
+        {
+            var before = _structureDocument;
+            UseNeuralClasses = true; Raise(nameof(UseNeuralClasses));
+            await AnalyzeStructureAsync();
+            if (_structureDocument is null || ReferenceEquals(before, _structureDocument)) return;
+        }
+        if (CanPrepareIndoorPreview) await ReconstructRoomAsync();
+    }
     public string DataSourceText => IsImported ? HasSyntheticScans ? "Проект содержит синтетическую модель · метры · Z вверх" :
         "Сканы проекта · метры · локальные координаты" : "Симуляция LiDAR · данные на этом компьютере";
     public string DistanceMetricTitle => IsImported ? "ГАБАРИТ X" : "ПРОЙДЕНО";

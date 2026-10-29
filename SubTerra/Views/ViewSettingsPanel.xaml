@@ -18,11 +18,16 @@
                 <Slider Value="{Binding WallHoleSize}" Minimum="0" Maximum=".5" TickFrequency=".05" IsSnapToTickEnabled="True" AutomationProperties.Name="Размер заполнения стен"/>
                 <CheckBox Content="Сохранить точки предметов и людей" IsChecked="{Binding KeepRoomObjects}" Margin="0,8,0,8"/>
                 <CheckBox Content="Скрыть одиночные шумовые точки" IsChecked="{Binding CleanRoomNoise}" Margin="0,0,0,8"/>
+                <CheckBox Content="Достроить пол / потолок до стен" IsChecked="{Binding CompleteRoomShell}" Margin="0,0,0,8"/>
+                <TextBlock Text="Только при устойчивом замкнутом контуре. Заполняет и крупные области под мебелью; результат — гипотеза." Style="{StaticResource Muted}" Margin="0,0,0,8"/>
+                <CheckBox Content="Скрыть точки снаружи контура" IsChecked="{Binding ClipOutsideShell}" Margin="0,0,0,8"/>
+                <CheckBox Content="Условные окна в крупных проёмах" IsChecked="{Binding RepairWindows}" Margin="0,0,0,8"/>
+                <TextBlock Text="Рамы и заполнение — условная визуализация прямоугольных отверстий над полом. Это не распознавание стекла и не восстановление фотографии." Style="{StaticResource Muted}" Margin="0,0,0,8"/>
                 <CheckBox Content="Ограничить активной комнатой" IsChecked="{Binding LimitReconstructionToRoom}" Margin="0,0,0,8"/>
                 <TextBlock Text="Ограничение требует готового плана с высотой. Помогает скрыть точки снаружи, в том числе за стеклом. Исходник не обрезается." Style="{StaticResource Muted}"/>
             </StackPanel></Expander>
             <TextBlock Text="Параметры изменены · постройте заново" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding ReconstructionSettingsPending, Converter={StaticResource BoolVisibility}}"/>
-            <TextBlock Text="Достроенное — гипотеза. Заполняются только небольшие окружённые точками пропуски; крупные окна и края остаются открытыми. Мебель сохраняется точками." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
+            <TextBlock Text="Достроенное — гипотеза. Незамкнутые границы и двери сохраняются открытыми. Мебель сохраняется точками. Вернуть измерения можно кнопкой «Точки»." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
             <Button Content="Подготовить поверхности для осмотра" Command="{Binding PrepareIndoorPreviewCommand}"/>
             <ComboBox ItemsSource="{Binding IndoorStyles}" SelectedItem="{Binding IndoorStyle}" DisplayMemberPath="Label" IsEnabled="{Binding HasIndoorPreview}" AutomationProperties.Name="Оформление предварительных поверхностей" Margin="0,10,0,8"/>
             <TextBlock Text="{Binding IndoorPreviewSummary}" Style="{StaticResource Muted}"/>
