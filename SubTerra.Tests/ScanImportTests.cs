@@ -12,6 +12,28 @@ namespace SubTerra.Tests;
 
 public sealed class ScanImportTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task SubterraExportsReopenAtTheirOriginalMeterScale(bool importedMesh) => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var path = Path.Combine(files.Directory, "export.ply");
+        ScanPoint[] points = [new(0, 0, 0, .5f), new(12, 0, 0, .6f), new(12, 8, 3, .7f)];
+        var storage = new SessionStorage();
+        if (importedMesh)
+            await storage.ExportImportedPlyAsync(path, new ImportedScan
+            {
+                Metadata = new("model.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0) { IsSynthetic = true },
+                Points = points, Colors = [0xFF0000, 0x00FF00, 0x0000FF], Triangles = [0, 1, 2]
+            });
+        else await storage.ExportPlyAsync(path, points);
+        var dialog = new SubTerra.Views.ScanImportWindow(path);
+        Assert.Equal(ScanUnit.Meters, dialog.Options.Unit); Assert.Equal(ScanUpAxis.Z, dialog.Options.UpAxis);
+        var restored = await new ScanImporter().ImportAsync(path, dialog.Options);
+        Assert.Equal(points, restored.Points); Assert.Equal(new Vector3(12, 8, 3), restored.Bounds.Maximum);
+        Assert.Equal(importedMesh, restored.HasMesh);
+    });
+
     [Fact]
     public Task ScaniverseHeaderPresetsMetersWithoutGuessingFromTheFileName() => ScanControlTests.OnSta(() =>
     {
