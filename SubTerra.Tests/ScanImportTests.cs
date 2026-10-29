@@ -13,6 +13,18 @@ namespace SubTerra.Tests;
 public sealed class ScanImportTests
 {
     [Fact]
+    public Task ScaniverseHeaderPresetsMetersWithoutGuessingFromTheFileName() => ScanControlTests.OnSta(() =>
+    {
+        using var files = new Files();
+        var identified = files.Write("room.ply", "ply\nformat ascii 1.0\ncomment Created with Scaniverse - https://scaniverse.com\nelement vertex 0\nend_header\n");
+        var dialog = new SubTerra.Views.ScanImportWindow(identified);
+        Assert.Equal(ScanUnit.Meters, dialog.Options.Unit);
+        var ordinary = files.Write("Scaniverse.ply", "ply\nformat ascii 1.0\nelement vertex 0\nend_header\n");
+        Assert.Equal(ScanUnit.Millimeters, new SubTerra.Views.ScanImportWindow(ordinary).Options.Unit);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public async Task AscConvertsMillimetersAndYAxisWithoutLosingLargeCoordinateOffsets()
     {
         using var files = new Files();

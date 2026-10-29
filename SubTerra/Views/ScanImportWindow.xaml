@@ -3,22 +3,23 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Импорт 3D-скана" Width="580" Height="650" MinHeight="480" ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="#111B26" Foreground="#E4ECF4">
+    <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
     <Grid Margin="26">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,18">
-            <TextBlock Text="Импорт реального скана" FontSize="23" FontWeight="SemiBold"/>
+            <TextBlock Text="Импорт 3D-скана" FontSize="23" FontWeight="SemiBold"/>
             <TextBlock x:Name="FileLabel" TextTrimming="CharacterEllipsis" Foreground="#A4BDC9" Margin="0,8,0,0"/>
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,12,0">
             <Border Background="#1D302B" Padding="14" CornerRadius="8" Margin="0,0,0,18"><StackPanel>
-                <TextBlock Text="3DeVOK MQ → Studio → SubTerra" FontWeight="SemiBold" Foreground="#CCE7BB"/>
-                <TextBlock Text="В 3DeVOK Studio завершите сканирование и сшивку, удалите лишние точки. Экспортируйте облако в ASC или цветную сетку в PLY. Затем откройте файл здесь." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
+                <TextBlock Text="PLY с iPhone или экспорт 3DeVOK" FontWeight="SemiBold" Foreground="#CCE7BB"/>
+                <TextBlock Text="Перенесите готовый PLY на компьютер и откройте его здесь. Для здания удобны отдельные файлы этажей в общей системе координат. Из 3DeVOK Studio сначала экспортируйте совмещённое облако ASC или сетку PLY." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
             </StackPanel></Border>
             <TextBlock Text="Единицы исходного файла" FontWeight="SemiBold"/>
             <ComboBox x:Name="Units" SelectedIndex="2" Margin="0,8,0,5" AutomationProperties.Name="Единицы исходного скана">
                 <ComboBoxItem Content="Метры (m)"/><ComboBoxItem Content="Сантиметры (cm)"/><ComboBoxItem Content="Миллиметры (mm)"/>
             </ComboBox>
-            <TextBlock Text="Укажите единицы из настроек экспорта Studio. PLY и ASC не гарантируют единицы в самом файле. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+            <TextBlock Text="Укажите единицы из настроек приложения, создавшего файл. PLY и ASC не гарантируют единицы. После импорта проверьте масштаб по известной длине, например ширине двери. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
             <TextBlock Text="Какая ось направлена вверх?" FontWeight="SemiBold" Margin="0,18,0,8"/>
             <ComboBox x:Name="UpAxis" SelectedIndex="0" AutomationProperties.Name="Ось высоты скана">
                 <ComboBoxItem Content="Z вверх"/><ComboBoxItem Content="Y вверх → повернуть в Z вверх"/>

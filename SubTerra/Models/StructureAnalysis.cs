@@ -9,7 +9,7 @@ public readonly record struct StructureSample(SourcePointReference Source, Vecto
 
 public sealed record StructureSurface(int Id, StructureSurfaceKind Kind, Vector3 Normal, double Offset,
     Vector3 Center, Vector3[] Boundary, double AreaSquareMeters, double RmsMeters, StructureSample[] Samples,
-    StructureReviewState Review = StructureReviewState.Proposed, StructureSurfaceKind? SuggestedKind = null)
+    StructureReviewState Review = StructureReviewState.Proposed, StructureSurfaceKind? SuggestedKind = null, double? NeuralScore = null)
 {
     public string KindText => Kind switch
     {
@@ -22,11 +22,12 @@ public sealed record StructureSurface(int Id, StructureSurfaceKind Kind, Vector3
         StructureReviewState.Confirmed => "Подтверждено оператором",
         StructureReviewState.Rejected => "Отклонено · скрыто", _ => "Кандидат · требует проверки"
     };
-    public string Details => $"≈ {AreaSquareMeters:F1} м² · разброс {RmsMeters * 100:F1} см · {Samples.Length:N0} точек выборки";
+    public string Details => $"≈ {AreaSquareMeters:F1} м² · разброс {RmsMeters * 100:F1} см · {Samples.Length:N0} точек выборки" +
+        (NeuralScore is { } score ? $" · MLP {score:P0} (оценка модели)" : "");
 }
 
 public sealed record StructureAnalysisOptions(double DistanceTolerance = .025, int MaximumSamples = 30_000,
-    int Iterations = 192, int MaximumPlanes = 12, int MinimumSupport = 64, double MinimumArea = .5)
+    int Iterations = 192, int MaximumPlanes = 12, int MinimumSupport = 64, double MinimumArea = .5, bool UseNeuralClasses = false)
 {
     public void Validate()
     {
@@ -42,6 +43,7 @@ public sealed record StructureAnalysisResult(StructureSurface[] Surfaces, int Sa
     StructureAnalysisOptions Options)
 {
     public const string Algorithm = "planes-ransac-v1";
+    public const string NeuralAlgorithm = "planes-ransac-v1+room-mlp-synthetic-v1";
 }
 
 /// <summary>Geometry provenance; names, tint and active selection do not affect plane analysis.</summary>

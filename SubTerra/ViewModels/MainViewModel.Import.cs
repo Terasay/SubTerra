@@ -20,10 +20,13 @@ public sealed partial class MainViewModel
     }
     public bool IsImported => _dataset?.Session.ImportedScan is not null || _dataset?.Session.Project is not null;
     public bool IsSimulation => !IsImported;
+    public bool HasSyntheticScans => _scanProject?.Objects.Any(o => o.Source.Metadata.IsSynthetic) == true;
+    public AsyncRelayCommand LoadCollegeBuildingCommand { get; private set; } = null!;
     private ScanProjectView? CurrentProjectView => _previewView ?? _projectView;
-    public bool CanShowSurface => !IsImported || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
-    public string SurfaceModeText => IsImported ? "Сетка" : "Пещера";
-    public string DataSourceText => IsImported ? "Реальный скан · метры · локальные координаты" : "Симуляция LiDAR · данные на этом компьютере";
+    public bool CanShowSurface => !IsImported || HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
+    public string SurfaceModeText => IsImported ? HasIndoorPreview ? "Поверхности" : "Сетка" : "Пещера";
+    public string DataSourceText => IsImported ? HasSyntheticScans ? "Проект содержит синтетическую модель · метры · Z вверх" :
+        "Сканы проекта · метры · локальные координаты" : "Симуляция LiDAR · данные на этом компьютере";
     public string DistanceMetricTitle => IsImported ? "ГАБАРИТ X" : "ПРОЙДЕНО";
     public string DurationMetricTitle => IsImported ? "ГАБАРИТ Y" : "ВРЕМЯ СКАНА";
     public string CoverageMetricTitle => IsImported ? "ГАБАРИТ Z" : "ПОКРЫТИЕ";
@@ -38,8 +41,30 @@ public sealed partial class MainViewModel
     public bool ImportedMeshVisible => IsImported && IsSurface;
     private bool CoarseMesh => AdaptiveQuality && (IsCameraMoving || Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
         (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4);
-    public string MeshPreviewText => $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
+    public string MeshPreviewText => IsIndoorSurfaceView ? IndoorPreviewSummary : $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
     public bool CanExport => CanSave && (!IsImported || CurrentProjectView?.Data.VisibleScan is not null);
+
+    public async Task LoadCollegeBuildingAsync()
+    {
+        if (!CanChangeScenario || HasRecovery || HasEditPreview || !await ConfirmReplacementAsync("создать модель корпуса")) return;
+        ReturnToOverview();
+        var token = BeginOperation("Моделирование корпуса · три этажа и лестница");
+        try
+        {
+            var project = await Task.Run(() => Simulation.CollegeBuildingFactory.Create(token), token);
+            var view = await ScanProjectView.PrepareAsync(project, token);
+            token.ThrowIfCancellationRequested();
+            if (_disposed) return;
+            Assign(new(null, project.ToSession()), 1, view);
+            _sessionPath = null; MarkSessionDirty(); NotifySessionProperties();
+            await ClearRecoveryAsync(); Home(); Notification = "";
+            Status = "Синтетический корпус: 3 этажа, 18 аудиторий и лестница. Выберите этаж → «Только выбранный» → «Анализ».";
+            AddEvent(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
+        catch (Exception ex) { ReportError("Не удалось создать модель корпуса", ex); }
+        finally { EndOperation(); }
+    }
 
     public async Task ImportAsync(string path, ScanImportOptions options, bool addToProject = false)
     {
@@ -86,7 +111,9 @@ public sealed partial class MainViewModel
         var project = ScanProject.FromSession(dataset.Session);
         var view = prepared ?? ScanProjectView.PrepareAsync(project).GetAwaiter().GetResult();
         _baselineSettings = null;
-        SelectedScenario = new("imported", "Проект сканов", "РЕАЛЬНЫЕ 3D-СКАНЫ · ASC / PLY", "Импортированные измерения в метрах");
+        var synthetic = project.Objects.Any(o => o.Source.Metadata.IsSynthetic);
+        SelectedScenario = new("imported", synthetic ? "Модель корпуса" : "Проект сканов",
+            synthetic ? "СИНТЕТИЧЕСКИЕ ДАННЫЕ · ТЕСТ АНАЛИЗА" : "3D-СКАНЫ · ASC / PLY", "Геометрия в метрах");
         Route = null; Markers = null; Scanner = null; ScannerHeading = null;
         VisibleMarkers.Clear();
         _isHeight = false; _isSurface = false;
@@ -97,8 +124,8 @@ public sealed partial class MainViewModel
     }
     private void NotifySourceProperties()
     {
-        foreach (var name in new[] { nameof(IsImported), nameof(IsSimulation), nameof(Scenarios), nameof(CanShowSurface), nameof(SurfaceModeText),
-            nameof(DataSourceText), nameof(DistanceMetricTitle), nameof(DurationMetricTitle), nameof(CoverageMetricTitle),
+        foreach (var name in new[] { nameof(IsImported), nameof(IsSimulation), nameof(HasSyntheticScans), nameof(Scenarios), nameof(CanShowSurface), nameof(SurfaceModeText),
+            nameof(DataSourceText), nameof(WalkAmbientColor), nameof(DistanceMetricTitle), nameof(DurationMetricTitle), nameof(CoverageMetricTitle),
             nameof(CoverageMetricText), nameof(ImportDetails), nameof(ExportButtonText), nameof(HeightMinText), nameof(HeightMaxText),
             nameof(TotalLengthText), nameof(ScannerVisible), nameof(RouteVisible), nameof(MarkersVisible), nameof(ExploreText),
             nameof(CloudQualityVisible), nameof(MarkerCountText), nameof(RecordingText) }) Raise(name);
@@ -110,8 +137,8 @@ public sealed partial class MainViewModel
     {
         var clock = Stopwatch.StartNew();
         if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry?.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight);
-        else Surface = _viewFrames == 0 ? null : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
-        CloudOnly = IsSurface ? CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight) : null;
+        else Surface = _viewFrames == 0 ? null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
+        CloudOnly = IsSurface && !IsIndoorSurfaceView ? CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight) : null;
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
     }

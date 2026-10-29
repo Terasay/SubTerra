@@ -15,7 +15,10 @@ public sealed record ScanImportOptions(ScanUnit Unit = ScanUnit.Millimeters, Sca
 
 // Source coordinates are retained in double precision. Local geometry is always Z-up, in meters.
 public sealed record ImportMetadata(string FileName, ScanUnit Unit, ScanUpAxis UpAxis,
-    double OriginX, double OriginY, double OriginZ);
+    double OriginX, double OriginY, double OriginZ)
+{
+    public bool IsSynthetic { get; init; }
+}
 
 public sealed class ImportedScan
 {

@@ -83,6 +83,7 @@ public sealed class ScanImporter
             token.ThrowIfCancellationRequested();
             var line = HeaderLine();
             if (line == "end_header") break;
+            if (line == "comment subterra_contains_synthetic_data") builder.IsSynthetic = true;
             var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0 || parts[0] is "comment" or "obj_info") continue;
             if (parts[0] == "format" && parts.Length == 3 && parts[2] == "1.0" && format is null) format = parts[1];
@@ -190,6 +191,7 @@ public sealed class ScanImporter
         private int _pendingTriangles;
         private double _ox, _oy, _oz;
         private bool _hasColor;
+        public bool IsSynthetic { get; set; }
         public void Add(double x, double y, double z, double intensity, uint? color)
         {
             if (_points.Count >= ImportedScan.MaximumPoints) throw new InvalidDataException("Лимит импорта — 5 млн точек. Уменьшите плотность в 3DeVOK Studio.");
@@ -223,7 +225,7 @@ public sealed class ScanImporter
                 _pendingTriangles -= polygon.Length - 2;
                 Triangulate(polygon, token);
             }
-            return new() { Metadata = new(Path.GetFileName(path), options.Unit, options.UpAxis, _ox, _oy, _oz),
+            return new() { Metadata = new(Path.GetFileName(path), options.Unit, options.UpAxis, _ox, _oy, _oz) { IsSynthetic = IsSynthetic },
                 Points = _points.ToArray(), Colors = _hasColor ? _colors.ToArray() : [], Triangles = _triangles.ToArray() };
         }
         private void Triangulate(int[] polygon, CancellationToken token)

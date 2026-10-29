@@ -35,7 +35,7 @@ public sealed class WalkController : IDisposable
     public void Start()
     {
         Stop();
-        _navigator = _viewModel.IsFlying ? _viewModel.CreateFlyNavigator() : _viewModel.CreateNavigator();
+        _navigator = _viewModel.IsFlying ? _viewModel.CreateFlyNavigator() : _viewModel.IsImported ? _viewModel.CreateIndoorNavigator() : _viewModel.CreateNavigator();
         _viewport.IsRotationEnabled = _viewport.IsPanEnabled = _viewport.IsZoomEnabled = false;
         _viewport.IsChangeFieldOfViewEnabled = false;
         _viewport.IsInertiaEnabled = false;
@@ -167,6 +167,7 @@ public sealed class WalkController : IDisposable
         var previousPosition = _navigator.Position;
         if (_navigator is FlyNavigator flight) { flight.SetSpeed(_viewModel.EffectiveFlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if (_navigator is WalkNavigator walk) { walk.Speed = (float)_viewModel.WalkSpeed; walk.FastMultiplier = (float)_viewModel.FastMultiplier; }
+        if (_navigator is IndoorNavigator indoor) { indoor.Speed = (float)_viewModel.WalkSpeed; indoor.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
             _navigator.Move(forward, right, dt, Down(Key.LeftShift, Key.RightShift), up);
         if (delta.LengthSquared() > 0 || _navigator.Position != previousPosition)

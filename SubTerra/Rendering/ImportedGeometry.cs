@@ -3,6 +3,7 @@ using HelixToolkit;
 using HelixToolkit.Maths;
 using HelixToolkit.SharpDX;
 using SubTerra.Models;
+using SubTerra.Services;
 
 namespace SubTerra.Rendering;
 
@@ -107,5 +108,108 @@ public sealed class ImportedGeometry(ImportedScan scan)
             points.Add(new(center.X - size / 2, center.Y + offset, z)); points.Add(new(center.X + size / 2, center.Y + offset, z));
         }
         return SceneGeometry.Lines(points);
+    }
+}
+
+public enum IndoorSurfaceStyle { SourceColors, Materials, Classes }
+public sealed record IndoorSurfacePreview(ImportedScan Scan, uint[] MaterialColors, uint[] ClassColors, int[] FloorTriangles);
+
+/// <summary>Observed planar surface preview. Empty grid cells are never filled with a convex hull.</summary>
+public static class IndoorSurfaceBuilder
+{
+    private sealed class Cell
+    {
+        public int Count; public long Red, Green, Blue;
+    }
+    private sealed record Patch(StructureSurface Surface, Vector3 U, Vector3 V, Dictionary<(int X, int Y), Cell> Cells);
+    public static IndoorSurfacePreview Build(ScanProject project, StructureAnalysisDocument document, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested(); project.Validate(token);
+        if (StructureProvenance.Refresh(document, project, token).IsStale)
+            throw new System.IO.InvalidDataException("Поверхности устарели. Повторите анализ.");
+        var surfaces = document.Result.Surfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown && s.Review != StructureReviewState.Rejected).ToArray();
+        if (surfaces.Length == 0) throw new System.IO.InvalidDataException("Нет пола, стен или потолка для предварительных поверхностей.");
+        var area = surfaces.Sum(s => s.AreaSquareMeters);
+        var visibleCount = project.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount);
+        var cellSize = Math.Max(.06, Math.Max(Math.Sqrt(area / 80_000), Math.Min(.25, 1.7 * Math.Sqrt(area / Math.Max(1, visibleCount)))));
+        var patches = surfaces.Select(s =>
+        {
+            var u = Vector3.Normalize(Vector3.Cross(s.Normal, Math.Abs(s.Normal.Z) < .9f ? Vector3.UnitZ : Vector3.UnitX));
+            return new Patch(s, u, Vector3.Cross(s.Normal, u), []);
+        }).ToArray();
+        var tolerance = document.Result.Options.DistanceTolerance * 2;
+        var cellCount = 0;
+        foreach (var obj in project.Objects.Where(o => o.IsVisible))
+        {
+            var matrix = obj.Matrix;
+            for (var i = 0; i < obj.Source.Points.Length; i++)
+            {
+                if ((i & 2047) == 0) token.ThrowIfCancellationRequested();
+                if (!obj.Includes(i)) continue;
+                var p = Vector3.Transform(obj.Source.Points[i].Position, matrix);
+                Patch? nearest = null; var distance = tolerance;
+                foreach (var patch in patches)
+                {
+                    var d = Math.Abs(PlanePatch.Distance(patch.Surface.Normal, patch.Surface.Offset, p));
+                    if (d < distance) { nearest = patch; distance = d; }
+                }
+                if (nearest is null) continue;
+                var relative = p - nearest.Surface.Center;
+                var key = ((int)Math.Floor(Vector3.Dot(relative, nearest.U) / cellSize), (int)Math.Floor(Vector3.Dot(relative, nearest.V) / cellSize));
+                if (!nearest.Cells.TryGetValue(key, out var cell))
+                {
+                    if (++cellCount > 250_000) throw new System.IO.InvalidDataException("Слишком много участков для предпросмотра. Выберите один этаж или помещение.");
+                    nearest.Cells[key] = cell = new();
+                }
+                var rgb = obj.Source.Colors.Length == 0 ? 0xB5BCC3u : obj.Source.Colors[i];
+                cell.Count++; cell.Red += rgb >> 16 & 255; cell.Green += rgb >> 8 & 255; cell.Blue += rgb & 255;
+            }
+        }
+        var points = new List<ScanPoint>(); var colors = new List<uint>(); var materials = new List<uint>(); var classes = new List<uint>();
+        var triangles = new List<int>(); var floorTriangles = new List<int>();
+        foreach (var patch in patches)
+        {
+            token.ThrowIfCancellationRequested();
+            var indices = new Dictionary<(int, int), int>();
+            foreach (var (key, cell) in patch.Cells.OrderBy(c => c.Key.X).ThenBy(c => c.Key.Y))
+            {
+                var p = patch.Surface.Center + patch.U * (float)((key.X + .5) * cellSize) + patch.V * (float)((key.Y + .5) * cellSize);
+                indices[key] = points.Count; points.Add(new(p.X, p.Y, p.Z, 1));
+                colors.Add((uint)(cell.Red / cell.Count << 16 | cell.Green / cell.Count << 8 | cell.Blue / cell.Count));
+                materials.Add(Material(patch.Surface.Kind, p));
+                classes.Add(patch.Surface.Kind switch { StructureSurfaceKind.Floor => 0x61E08Cu, StructureSurfaceKind.Wall => 0xF5B84Du, _ => 0x66A6FAu });
+            }
+            foreach (var key in indices.Keys)
+            {
+                var a = indices[key];
+                var right = indices.TryGetValue((key.Item1 + 1, key.Item2), out var b);
+                var above = indices.TryGetValue((key.Item1, key.Item2 + 1), out var c);
+                var diagonal = indices.TryGetValue((key.Item1 + 1, key.Item2 + 1), out var d);
+                if (right && above) Add(a, b, c);
+                if (right && above && diagonal) Add(b, d, c);
+            }
+            void Add(int a, int b, int c)
+            {
+                if (triangles.Count / 3 >= 300_000) throw new System.IO.InvalidDataException("Превышен лимит предварительной сетки. Выберите меньшее помещение.");
+                triangles.AddRange([a, b, c]);
+                if (patch.Surface.Kind == StructureSurfaceKind.Floor) floorTriangles.AddRange([a, b, c]);
+            }
+        }
+        token.ThrowIfCancellationRequested();
+        if (triangles.Count == 0) throw new System.IO.InvalidDataException("Недостаточно соседних точек для поверхностей. Попробуйте более плотный скан.");
+        return new(new ImportedScan
+        {
+            Metadata = new("indoor-surface-preview.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0) { IsSynthetic = true },
+            Points = points.ToArray(), Colors = colors.ToArray(), Triangles = triangles.ToArray()
+        }, materials.ToArray(), classes.ToArray(), floorTriangles.ToArray());
+    }
+    private static uint Material(StructureSurfaceKind kind, Vector3 p)
+    {
+        if (kind == StructureSurfaceKind.Ceiling) return 0xEBE9E0;
+        if (kind == StructureSurfaceKind.Wall) return 0xD9D5C9;
+        var x = p.X / .6; var y = p.Y / .6;
+        if (Math.Min(x - Math.Floor(x), 1 - (x - Math.Floor(x))) < .035 ||
+            Math.Min(y - Math.Floor(y), 1 - (y - Math.Floor(y))) < .035) return 0x9C9D97;
+        return (((long)Math.Floor(x) + (long)Math.Floor(y)) & 1) == 0 ? 0xC4C4B8u : 0xB8B9AEu;
     }
 }

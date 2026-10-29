@@ -70,6 +70,7 @@
                                         <TextBlock Text="Источник данных" FontWeight="SemiBold" Foreground="#CBF1DF"/>
                                         <TextBlock Text="{Binding DataSourceText}" Style="{StaticResource Muted}" Margin="0,7,0,0" LineHeight="17"/><TextBlock Text="{Binding ImportDetails}" Style="{StaticResource Muted}" Margin="0,7,0,0" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}"/>
                                         <Button Click="Import_Click" Content="Импорт ASC / PLY" IsEnabled="{Binding CanInteract}" FontSize="11" Margin="0,10,0,0"/>
+                                        <Button Content="Модель корпуса · 3 этажа" Command="{Binding LoadCollegeBuildingCommand}" FontSize="11" Margin="0,7,0,0" ToolTip="Создать синтетический корпус с 18 аудиториями, дверьми и лестницей. Текущий проект можно предварительно сохранить."/>
                                     </StackPanel></Border>
                                     <TextBlock Text="Слои карты" Style="{StaticResource Section}" Margin="0,0,0,14"/>
                                     <CheckBox Content="Координатная сетка" IsChecked="{Binding ShowGrid}" Margin="0,0,0,8"/>
@@ -164,7 +165,7 @@
                                        IsShadowMappingEnabled="{Binding ShadowsVisible}" CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7"
                                        IsInertiaEnabled="False" UseDefaultGestures="False" Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
                             <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding IsOverview}"/>
-                            <h:AmbientLight3D Color="#242C38" IsRendering="{Binding IsWalking}"/>
+                            <h:AmbientLight3D Color="{Binding WalkAmbientColor}" IsRendering="{Binding IsWalking}"/>
                             <h:DirectionalLight3D Direction="-.6,.8,-1.6" Color="#D7CABB" IsRendering="{Binding IsOverview}"/>
                             <h:DirectionalLight3D Direction="1,-.7,-.3" Color="#7C8FA1" IsRendering="{Binding IsOverview}"/>
                             <h:SpotLight3D Position="{Binding LampCamera.Position}" Direction="{Binding LampCamera.LookDirection}" Color="#FFF0D9" Attenuation="1,.025,.009" Range="36" OuterAngle="96" InnerAngle="48" Falloff="1.4" IsRendering="{Binding IsWalking}"/>

@@ -99,6 +99,15 @@ public sealed class PlaneStructureAnalyzer : IStructureAnalyzer
         for (var i = 0; i < surfaces.Count; i++)
         {
             var surface = surfaces[i];
+            if (options.UseNeuralClasses)
+            {
+                var height = top - bottom;
+                var prediction = RoomNeuralClassifier.Predict(Math.Abs(surface.Normal.Z), (surface.Center.Z - bottom) / height,
+                    (surface.Samples.Max(p => p.Position.Z) - surface.Samples.Min(p => p.Position.Z)) / height,
+                    Math.Clamp(surface.AreaSquareMeters / footprint, 0, 1));
+                surfaces[i] = surface with { Kind = prediction.Kind, NeuralScore = prediction.Score };
+                continue;
+            }
             var kind = StructureSurfaceKind.Unknown;
             if (Math.Abs(surface.Normal.Z) >= .978f && surface.AreaSquareMeters >= Math.Max(2, footprint * .2))
             {
@@ -111,6 +120,35 @@ public sealed class PlaneStructureAnalyzer : IStructureAnalyzer
                 kind = StructureSurfaceKind.Wall;
             surfaces[i] = surface with { Kind = kind };
         }
+    }
+}
+
+/// <summary>Experimental 4-12-4 tanh/softmax MLP, trained on synthetic plane descriptors.
+/// Features: |normal.Z|, relative elevation, relative vertical span, relative area.
+/// Seed 20261029; 12000 training descriptors, Adam .012, 3000 batches of 256.
+/// Classes use StructureSurfaceKind order. Scores are uncalibrated, not measured accuracy.
+/// This model has no image input, door class or training on real Scaniverse scans.</summary>
+public static class RoomNeuralClassifier
+{
+    private static readonly double[] W = [-2.043125, .8602777, 1.522864, -1.873732, -1.224644, 2.384773, 1.319656, .9399669, .03927992, 2.914704, .1007509, -.7504044, -.7321154, -6.380595, -.1807972, .1496836, 5.386796, 1.586761, -3.345902, 1.825793, -2.259349, 1.211129, 3.331896, 3.177529, 3.535878, -2.832668, -1.049561, 2.853949, 2.473403, -3.433997, -.9427941, -2.39927, 1.416337, -3.382006, -4.153536, 1.546893, -.2392348, -.06533547, -.3874948, -.5640667, .117875, -.1291515, -.03789243, -.1626944, .3617018, -.07093256, -.2494035, .113954];
+    private static readonly double[] B = [-1.762594, -.07272134, .09986452, 1.29282, .4680094, 1.348617, 1.441143, -2.153171, .5552922, 1.428664, -2.677868, -1.937716];
+    private static readonly double[] V = [-1.696024, -1.00776, 2.092175, -.9965285, -3.155434, 4.42731, -.4104467, -.2378375, -.8155073, 1.86863, -2.906739, 2.236955, 2.918162, -1.84273, 1.184986, -2.719587, 3.361083, -4.252006, .7879413, 1.066556, 2.063911, 1.442097, -2.964728, .9142102, 2.498214, 1.505929, -1.526104, -3.569653, -2.073605, -.880644, -1.112556, 3.550887, -1.581311, 2.42224, 2.133223, -2.461338, 3.010297, .7624568, -2.687613, .7990147, -3.119591, -1.389008, -.9492244, 2.655944, -3.562716, -2.001552, 2.647275, 2.386226];
+    private static readonly double[] C = [-.02818023, .8450056, -.0516132, -.3218536];
+    public static (StructureSurfaceKind Kind, double? Score) Predict(double vertical, double elevation, double span, double area)
+    {
+        double[] x = [vertical, elevation, span, area];
+        if (x.Any(v => !double.IsFinite(v)) || vertical is < 0 or > 1.001 || elevation is < -.1 or > 1.1 ||
+            span is < 0 or > 1.2 || area is < 0 or > 1) return (StructureSurfaceKind.Unknown, null);
+        var logits = (double[])C.Clone();
+        for (var j = 0; j < 12; j++)
+        {
+            var value = B[j]; for (var i = 0; i < 4; i++) value += x[i] * W[i * 12 + j];
+            var hidden = Math.Tanh(value);
+            for (var k = 0; k < 4; k++) logits[k] += hidden * V[j * 4 + k];
+        }
+        var maximum = logits.Max(); var probabilities = logits.Select(l => Math.Exp(l - maximum)).ToArray();
+        var best = Array.IndexOf(logits, maximum); var score = probabilities[best] / probabilities.Sum();
+        return score >= .9 ? ((StructureSurfaceKind)best, score) : (StructureSurfaceKind.Unknown, null);
     }
 }
 

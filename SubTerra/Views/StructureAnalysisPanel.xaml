@@ -18,12 +18,20 @@
             <Grid Margin="0,10,0,4"><TextBlock Text="Допуск плоскости" Style="{StaticResource Hint}"/><TextBlock Text="{Binding StructureTolerance, StringFormat={}{0:F3} м}" HorizontalAlignment="Right" FontSize="11"/></Grid>
             <Slider Minimum=".005" Maximum=".1" TickFrequency=".005" IsSnapToTickEnabled="True" Value="{Binding StructureTolerance}" IsEnabled="{Binding CanAnalyzeStructure}" AutomationProperties.Name="Допуск анализа плоскостей"/>
             <Button Content="Найти поверхности" Command="{Binding AnalyzeStructureCommand}" FontSize="12" Margin="0,5,0,9" ToolTip="Новый анализ заменит прежние классы. Действие можно отменить."/>
+            <CheckBox Content="Экспериментальные классы MLP" IsChecked="{Binding UseNeuralClasses}" IsEnabled="{Binding CanAnalyzeStructure}" FontSize="11" Margin="0,0,0,8"/>
+            <Button Content="Автоклассы и поверхности" Command="{Binding AnalyzeIndoorCommand}" FontSize="11" Margin="0,0,0,8"/>
+            <TextBlock Text="MLP обучена на синтетических признаках плоскостей. Оценка модели не означает измеренную точность; двери и предметы не распознаются." Style="{StaticResource Hint}" Margin="0,0,0,9"/>
+            <Button Content="Построить поверхности для осмотра" Command="{Binding PrepareIndoorPreviewCommand}" FontSize="11" Margin="0,0,0,7"/>
+            <ComboBox ItemsSource="{Binding IndoorStyles}" SelectedItem="{Binding IndoorStyle}" DisplayMemberPath="Label" IsEnabled="{Binding HasIndoorPreview}" AutomationProperties.Name="Оформление предварительных поверхностей" Margin="0,0,0,7"/>
+            <TextBlock Text="{Binding IndoorPreviewSummary}" Style="{StaticResource Hint}" Margin="0,0,0,7"/>
+            <Button Content="Прогулка по поверхностям" Command="{Binding InsideCommand}" FontSize="11" Margin="0,0,0,9"/>
             <StackPanel Visibility="{Binding HasStructureAnalysis, Converter={StaticResource BoolVisibility}}">
                 <CheckBox Content="Подсветка структуры" IsChecked="{Binding ShowStructure}" FontSize="11" Margin="0,0,0,9"/>
                 <WrapPanel Margin="0,0,0,8"><TextBlock Text="● Пол  " Foreground="#61E08C" FontSize="10"/><TextBlock Text="● Стены  " Foreground="#F5B84D" FontSize="10"/><TextBlock Text="● Потолок  " Foreground="#66A6FA" FontSize="10"/><TextBlock Text="● Не определено" Foreground="#BD8CE0" FontSize="10"/></WrapPanel>
                 <ListBox ItemsSource="{Binding StructureSurfaces}" SelectedItem="{Binding SelectedStructureSurface}" ItemContainerStyle="{StaticResource ObjectRow}" MaxHeight="160" Background="Transparent" BorderThickness="0" Foreground="#E4ECF4" AutomationProperties.Name="Кандидаты поверхностей">
                     <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Title}" FontSize="11" TextWrapping="Wrap"/><TextBlock Text="{Binding ReviewText}" Style="{StaticResource Hint}" Margin="0,3,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
+                <Button Content="Приблизить поверхность" Command="{Binding FocusStructureSurfaceCommand}" FontSize="11" Margin="0,8,0,0"/>
                 <TextBlock Text="{Binding SelectedStructureSurface.Details, TargetNullValue=—, FallbackValue=—}" Style="{StaticResource Hint}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedStructureSurface.Details}" Margin="0,8,0,0"/><StackPanel Margin="0,12,0,0" IsEnabled="{Binding CanReviewStructure}">
                     <TextBlock Text="Класс выбранной поверхности" Style="{StaticResource Hint}"/>
                     <ComboBox ItemsSource="{Binding StructureClasses}" SelectedItem="{Binding SelectedStructureClass}" DisplayMemberPath="Label" Margin="0,5,0,6" AutomationProperties.Name="Класс поверхности"/>

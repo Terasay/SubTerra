@@ -20,6 +20,7 @@ public sealed partial class MainViewModel
     private LineGeometry3D? _structureOutline;
     private bool _showStructure = true;
     private double _structureTolerance = .025;
+    public bool UseNeuralClasses { get; set; }
     public IReadOnlyList<StructureClassChoice> StructureClasses { get; } =
         [new("Не определено", StructureSurfaceKind.Unknown), new("Пол", StructureSurfaceKind.Floor),
          new("Стена", StructureSurfaceKind.Wall), new("Потолок", StructureSurfaceKind.Ceiling)];
@@ -35,6 +36,7 @@ public sealed partial class MainViewModel
     public RelayCommand ConfirmStructureSurfaceCommand { get; private set; } = null!;
     public RelayCommand RejectStructureSurfaceCommand { get; private set; } = null!;
     public RelayCommand ResetStructureSurfaceCommand { get; private set; } = null!;
+    public RelayCommand FocusStructureSurfaceCommand { get; private set; } = null!;
     public bool CanAnalyzeStructure => CanManageProject && !IsScreenSelecting &&
         _scanProject?.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount) >= 64;
     public bool HasStructureAnalysis => _structureAnalysis is not null;
@@ -79,6 +81,7 @@ public sealed partial class MainViewModel
 
     private void InitializeStructureCommands()
     {
+        InitializeIndoorCommands();
         InitializeRoomCommands();
         InitializeObjectAnalysisCommands();
         AnalyzeStructureCommand = new(AnalyzeStructureAsync, () => CanAnalyzeStructure,
@@ -87,12 +90,22 @@ public sealed partial class MainViewModel
         ConfirmStructureSurfaceCommand = new(() => ReviewStructureSurface(StructureReviewState.Confirmed), () => CanReviewStructure);
         RejectStructureSurfaceCommand = new(() => ReviewStructureSurface(StructureReviewState.Rejected), () => CanReviewStructure);
         ResetStructureSurfaceCommand = new(() => ReviewStructureSurface(StructureReviewState.Proposed), () => CanReviewStructure);
+        FocusStructureSurfaceCommand = new(FocusStructureSurface, () => CanInteract && !StructureIsStale && SelectedStructureSurface is not null);
+    }
+    private void FocusStructureSurface()
+    {
+        if (!CanInteract || StructureIsStale || SelectedStructureSurface is not { } surface) return;
+        ReturnToOverview();
+        var previous = _importedBounds;
+        _importedBounds = (surface.Boundary.Aggregate(new Vector3(float.MaxValue), Vector3.Min),
+            surface.Boundary.Aggregate(new Vector3(float.MinValue), Vector3.Max));
+        FitImported(); _importedBounds = previous; CameraLabel = surface.Title;
     }
     public async Task AnalyzeStructureAsync()
     {
         if (!CanAnalyzeStructure || _scanProject is not { } snapshot) return;
         EndInspection(); EndScreenSelection();
-        var options = new StructureAnalysisOptions(DistanceTolerance: StructureTolerance);
+        var options = new StructureAnalysisOptions(DistanceTolerance: StructureTolerance, MaximumPlanes: UseNeuralClasses ? 24 : 12, UseNeuralClasses: UseNeuralClasses);
         var token = BeginOperation("Поиск плоских поверхностей помещения");
         try
         {
@@ -137,11 +150,14 @@ public sealed partial class MainViewModel
     }
     private void SetStructureDocument(StructureAnalysisDocument? document)
     {
+        InvalidateIndoorPreview(document);
         var selectedId = SelectedStructureSurface?.Id;
         var selectedObjectId = _selectedObjectCandidate?.Id;
-        ClearStructureAnalysis();
+        ClearStructureAnalysis(true);
         _structureDocument = document;
         if (document is null) return;
+        UseNeuralClasses = document.Result.Options.UseNeuralClasses; Raise(nameof(UseNeuralClasses));
+        StructureTolerance = document.Result.Options.DistanceTolerance;
         foreach (var surface in document.Result.Surfaces) StructureSurfaces.Add(surface);
         RefreshObjectCandidates(selectedObjectId);
         RefreshRoomDocument();
@@ -154,6 +170,7 @@ public sealed partial class MainViewModel
         UpdateRoomDisplay();
         UpdateObjectDisplay();
         if (_structureAnalysis is null || StructureIsStale) { StructureGeometry = null; StructureOutline = null; return; }
+        if (IsIndoorSurfaceView) { StructureGeometry = null; UpdateStructureOutline(); return; }
         var positions = new Vector3Collection(); var colors = new Color4Collection();
         foreach (var surface in StructureSurfaces)
         {
@@ -184,8 +201,9 @@ public sealed partial class MainViewModel
         }
         StructureOutline = segments.Count == 0 ? null : Rendering.SceneGeometry.Lines(segments);
     }
-    private void ClearStructureAnalysis()
+    private void ClearStructureAnalysis(bool preservePreview = false)
     {
+        if (!preservePreview) InvalidateIndoorPreview(null);
         _structureDocument = null;
         SelectedStructureSurface = null;
         StructureSurfaces.Clear(); StructureGeometry = null; StructureOutline = null;
@@ -198,12 +216,115 @@ public sealed partial class MainViewModel
     {
         NotifyRoomState();
         NotifyObjectState();
+        NotifyIndoorState();
         Raise(nameof(CanAnalyzeStructure)); Raise(nameof(HasStructureAnalysis));
         Raise(nameof(StructureVisible)); Raise(nameof(StructureSummary));
         Raise(nameof(StructureCountsText)); Raise(nameof(StructureDataText));
         Raise(nameof(StructureIsStale)); Raise(nameof(CanReviewStructure));
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
+}
+
+public sealed record IndoorStyleChoice(string Label, Rendering.IndoorSurfaceStyle Style);
+
+public sealed partial class MainViewModel
+{
+    private Rendering.IndoorSurfacePreview? _indoorPreview;
+    private StructureAnalysisDocument? _indoorDocument;
+    private readonly Dictionary<Rendering.IndoorSurfaceStyle, MeshGeometry3D> _indoorMeshes = [];
+    private Simulation.TriangleIndex? _indoorCollisions, _indoorFloor;
+    private Vector3 _indoorStart;
+    public IReadOnlyList<IndoorStyleChoice> IndoorStyles { get; } =
+        [new("Условная отделка", Rendering.IndoorSurfaceStyle.Materials), new("Цвета скана", Rendering.IndoorSurfaceStyle.SourceColors), new("Классы поверхностей", Rendering.IndoorSurfaceStyle.Classes)];
+    private IndoorStyleChoice? _indoorStyle;
+    public IndoorStyleChoice IndoorStyle
+    {
+        get => _indoorStyle ?? IndoorStyles[0];
+        set { if (value is not null && IndoorStyles.Contains(value) && Set(ref _indoorStyle, value) && HasIndoorPreview) RefreshImportedGeometry(); }
+    }
+    public bool HasIndoorPreview => _indoorPreview is not null;
+    public bool IsIndoorSurfaceView => IsImported && IsSurface && HasIndoorPreview;
+    public bool CanPrepareIndoorPreview => IsImported && CanInteract && IsOverview && !HasEditPreview && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
+    public string IndoorPreviewSummary => HasIndoorPreview ?
+        $"Предварительная сетка: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. Непросканированные участки остаются открытыми; отделка условная." :
+        "Построение поверхностей по наблюдаемым точкам пола, стен и потолка. Исходные точки и RGB сохраняются.";
+    public AsyncRelayCommand PrepareIndoorPreviewCommand { get; private set; } = null!;
+    public AsyncRelayCommand AnalyzeIndoorCommand { get; private set; } = null!;
+    private void InitializeIndoorCommands()
+    {
+        PrepareIndoorPreviewCommand = new(PrepareIndoorPreviewAsync, () => CanPrepareIndoorPreview, ex => ReportError("Не удалось построить поверхности", ex));
+        AnalyzeIndoorCommand = new(async () =>
+        {
+            if (!CanAnalyzeStructure) return;
+            UseNeuralClasses = true; Raise(nameof(UseNeuralClasses));
+            var previous = _structureDocument;
+            await AnalyzeStructureAsync();
+            if (_structureDocument is not null && !ReferenceEquals(previous, _structureDocument)) await PrepareIndoorPreviewAsync();
+        }, () => CanAnalyzeStructure, ex => ReportError("Не удалось подготовить осмотр", ex));
+    }
+    public async Task PrepareIndoorPreviewAsync()
+    {
+        if (!CanPrepareIndoorPreview || _scanProject is not { } project || _structureDocument is not { } document) return;
+        var token = BeginOperation("Предварительные поверхности · исходные точки сохраняются");
+        try
+        {
+            var prepared = await Task.Run(() =>
+            {
+                var preview = Rendering.IndoorSurfaceBuilder.Build(project, document, token);
+                var original = new Rendering.ImportedGeometry(preview.Scan).Mesh(false);
+                MeshGeometry3D WithColors(uint[] rgb)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var colors = new Color4Collection(preview.Scan.Triangles.Length);
+                    foreach (var i in preview.Scan.Triangles) colors.Add(new((rgb[i] >> 16 & 255) / 255f, (rgb[i] >> 8 & 255) / 255f, (rgb[i] & 255) / 255f, 1));
+                    return new() { Positions = original.Positions, Normals = original.Normals, Indices = original.Indices, Colors = colors };
+                }
+                var materials = WithColors(preview.MaterialColors); var classes = WithColors(preview.ClassColors);
+                var positions = preview.Scan.Points.Select(p => p.Position).ToArray();
+                var collisions = new Simulation.TriangleIndex(positions, preview.Scan.Triangles);
+                var floor = preview.FloorTriangles.Length == 0 ? null : new Simulation.TriangleIndex(positions, preview.FloorTriangles);
+                var start = Vector3.Zero; var distance = float.MaxValue;
+                var support = document.Result.Surfaces.Where(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected).MaxBy(s => s.AreaSquareMeters);
+                for (var i = 0; i < preview.FloorTriangles.Length; i += 3)
+                {
+                    var center = (positions[preview.FloorTriangles[i]] + positions[preview.FloorTriangles[i + 1]] + positions[preview.FloorTriangles[i + 2]]) / 3;
+                    var d = Vector3.DistanceSquared(center, support!.Center);
+                    if (d < distance) { distance = d; start = center + Vector3.UnitZ * 1.65f; }
+                }
+                return (preview, original, materials, classes, collisions, floor, start);
+            }, token);
+            token.ThrowIfCancellationRequested();
+            if (_disposed || !ReferenceEquals(project, _scanProject) || !ReferenceEquals(document, _structureDocument)) return;
+            _indoorPreview = prepared.preview; _indoorDocument = document;
+            _indoorMeshes[Rendering.IndoorSurfaceStyle.SourceColors] = prepared.original;
+            _indoorMeshes[Rendering.IndoorSurfaceStyle.Materials] = prepared.materials;
+            _indoorMeshes[Rendering.IndoorSurfaceStyle.Classes] = prepared.classes;
+            _indoorCollisions = prepared.collisions; _indoorFloor = prepared.floor; _indoorStart = prepared.start;
+            NotifyIndoorState(); SetView(true, false);
+            Status = "Поверхности готовы · условная отделка · доступна прогулка по наблюдаемому полу"; AddEvent(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
+        catch (Exception ex) { ReportError("Не удалось построить поверхности", ex); }
+        finally { EndOperation(); NotifyIndoorState(); }
+    }
+    private void InvalidateIndoorPreview(StructureAnalysisDocument? next)
+    {
+        if (!HasIndoorPreview || ReferenceEquals(next, _indoorDocument) && next?.IsStale == false) return;
+        _indoorPreview = null; _indoorDocument = null; _indoorMeshes.Clear(); _indoorCollisions = null; _indoorFloor = null;
+        Surface = null; CloudOnly = null;
+        if (IsImported && !CanShowSurface) IsSurface = false;
+        if (IsNavigating && IsImported) ReturnToOverview();
+        NotifyIndoorState();
+        if (IsImported && _importedGeometry is not null) RefreshImportedGeometry();
+    }
+    private void NotifyIndoorState()
+    {
+        foreach (var property in new[] { nameof(HasIndoorPreview), nameof(IsIndoorSurfaceView), nameof(CanPrepareIndoorPreview), nameof(IndoorPreviewSummary),
+            nameof(CanShowSurface), nameof(SurfaceModeText), nameof(MeshPreviewText), nameof(CanWalk), nameof(CanFly), nameof(ExploreText) }) Raise(property);
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+    }
+    public Navigation.ICameraNavigator CreateIndoorNavigator() => new Navigation.IndoorNavigator(_indoorStart, Vector3.UnitX,
+        _indoorCollisions ?? throw new InvalidOperationException("Нет поверхностей для прогулки."), _indoorFloor!, (float)WalkSpeed);
 }
 
 public sealed partial class MainViewModel

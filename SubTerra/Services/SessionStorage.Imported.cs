@@ -84,6 +84,7 @@ public sealed partial class SessionStorage
             using (var header = new StreamWriter(stream, new UTF8Encoding(false), 1024, leaveOpen: true))
             {
                 header.WriteLine("ply\nformat binary_little_endian 1.0\ncomment Subterra scan; units meters; Z up; local coordinates");
+                if (scan.Metadata.IsSynthetic) header.WriteLine("comment subterra_contains_synthetic_data");
                 header.WriteLine($"element vertex {scan.Points.Length}");
                 header.WriteLine("property float x\nproperty float y\nproperty float z\nproperty float intensity");
                 if (scan.Colors.Length > 0) header.WriteLine("property uchar red\nproperty uchar green\nproperty uchar blue");

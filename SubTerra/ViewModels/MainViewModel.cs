@@ -103,7 +103,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         TopCommand = new RelayCommand(Top);
         InsideCommand = new RelayCommand(Inside, () => CanWalk);
         FlyCommand = new RelayCommand(Fly, () => CanFly);
-        ExploreCommand = new RelayCommand(() => { if (IsPoints) Fly(); else Inside(); }, () => IsPoints ? CanFly : CanWalk);
+        ExploreCommand = new RelayCommand(() => { if (CanWalk && (IsImported || !IsPoints)) Inside(); else Fly(); }, () => CanWalk || CanFly);
         NavigateMarkerCommand = new RelayCommand<SceneMarker>(NavigateToMarker, marker => CanInteract && VisibleMarkers.Contains(marker));
         PointsCommand = new RelayCommand(() => SetView(false, false));
         SurfaceCommand = new RelayCommand(() => SetView(true, false));
@@ -213,11 +213,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsWalking => _isWalking;
     public bool IsFlying => _isFlying;
     public bool IsNavigating => IsWalking || IsFlying;
-    public bool CanWalk => IsSimulation && CanInteract && _viewFrames > 0 && WalkCoverage.End - WalkCoverage.Start >= .06f;
-    public bool CanFly => CanInteract && IsPoints && _viewFrames > 0;
+    public bool CanWalk => CanInteract && _viewFrames > 0 && (IsImported ? _indoorFloor is not null : WalkCoverage.End - WalkCoverage.Start >= .06f);
+    public bool CanFly => CanInteract && (IsPoints || IsImported) && _viewFrames > 0;
     public bool IsOverview => !IsNavigating;
-    public string ExploreText => IsPoints ? "Свободный полёт" : "Прогулка внутри";
-    public string NavigationTitle => IsFlying ? "Свободный полёт" : "Прогулка по пещере";
+    public string ExploreText => IsImported ? CanWalk ? "Прогулка по поверхностям" : "Свободный полёт" : IsPoints ? "Свободный полёт" : "Прогулка внутри";
+    public string NavigationTitle => IsFlying ? "Свободный полёт" : IsImported ? "Прогулка по скану" : "Прогулка по пещере";
+    public System.Windows.Media.Color WalkAmbientColor => IsImported ? System.Windows.Media.Color.FromRgb(112, 119, 131) : System.Windows.Media.Color.FromRgb(36, 44, 56);
     public float FlightSpeedScale => IsImported ? Math.Clamp((_importedBounds.Maximum - _importedBounds.Minimum).Length() / 10, .001f, 1) : 1;
     public float EffectiveFlightSpeed => _flightSpeed * FlightSpeedScale;
     public string NavigationSpeedText => $"{EffectiveFlightSpeed:F3} м/с · колесо меняет скорость";
@@ -272,6 +273,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         RefreshGeometry();
         UpdateAnnotations();
         UpdateStructureDisplay();
+        NotifyIndoorState();
     }
     public string RenderLabel => IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : IsPoints ? "ОБЛАКО ТОЧЕК" : IsImported ? "ПОВЕРХНОСТЬ СКАНА" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
     public bool ShowGrid { get => _showGrid; set { if (Set(ref _showGrid, value)) Raise(nameof(GridVisible)); } }
@@ -840,7 +842,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Camera.Position = new(p.X, p.Y, p.Z);
         Camera.LookDirection = new(d.X, d.Y, d.Z);
         Camera.UpDirection = new(0, 0, 1);
-        if (navigator is WalkNavigator)
+        if (navigator is WalkNavigator or Navigation.IndoorNavigator)
         {
             var right = Vector3.Normalize(Vector3.Cross(d, Vector3.UnitZ));
             var lamp = p + right * .18f + Vector3.UnitZ * -.08f;

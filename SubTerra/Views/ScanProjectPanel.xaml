@@ -21,6 +21,8 @@
                 <StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding Details}" Style="{StaticResource Hint}" Margin="0,3,0,0"/></StackPanel>
             </DockPanel></DataTemplate></ListBox.ItemTemplate>
         </ListBox>
+        <UniformGrid Columns="2" Margin="0,9,0,0"><Button Content="Только выбранный" Command="{Binding IsolateObjectCommand}" FontSize="10" Margin="0,0,4,0" ToolTip="Оставить видимым выбранный этаж или скан. Действие можно отменить."/><Button Content="Показать все" Command="{Binding ShowAllObjectsCommand}" FontSize="10"/></UniformGrid>
+        <TextBlock Text="Для корпуса: выберите этаж и нажмите «Только выбранный», затем найдите поверхности во вкладке «Анализ»." Style="{StaticResource Hint}" Margin="0,7,0,0"/>
         <UniformGrid Columns="2" Margin="0,9,0,0"><Button Content="Показать" Command="{Binding FocusObjectCommand}" FontSize="11" Margin="0,0,4,0" ToolTip="Подобрать камеру под выбранный объект"/><Button Content="Удалить" Command="{Binding RemoveObjectCommand}" FontSize="11"/></UniformGrid>
         <UniformGrid Columns="2" Margin="0,7,0,13"><Button Content="↶ Отмена" Command="{Binding UndoProjectCommand}" ToolTip="{Binding UndoProjectText}" FontSize="11" Margin="0,0,4,0"/><Button Content="↷ Повтор" Command="{Binding RedoProjectCommand}" ToolTip="{Binding RedoProjectText}" FontSize="11"/></UniformGrid>
 
@@ -32,7 +34,7 @@
             <TextBlock Text="Поворот XYZ, градусы" Style="{StaticResource Hint}"/>
             <UniformGrid Columns="3"><TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateX, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот X"/><TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateY, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот Y"/><TextBox Style="{StaticResource Field}" Text="{Binding ObjectRotateZ, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Поворот Z"/></UniformGrid>
             <Button Command="{Binding ApplyObjectCommand}" Content="Применить свойства" FontSize="11"/>
-            <TextBlock Text="Положение задаётся вручную. Автоматическое совмещение проходов не выполняется." Style="{StaticResource Hint}" Margin="0,7,0,0"/>
+            <TextBlock Text="Положение задаётся вручную; уточнение по опорным парам доступно ниже в разделе совмещения." Style="{StaticResource Hint}" Margin="0,7,0,0"/>
         </StackPanel></Expander>
         <Expander Header="Очистка и выделение" Margin="0,14,0,0"><StackPanel Margin="0,8,0,0">
         <Border Height="1" Background="#2A3A45" Margin="0,14,0,14"/>

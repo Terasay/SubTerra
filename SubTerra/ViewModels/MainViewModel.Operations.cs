@@ -80,6 +80,7 @@ public sealed partial class MainViewModel
         ReturnToOverview();
         Pause();
         var token = BeginOperation(recovery ? "Восстановление сеанса" : "Открытие сеанса");
+        var prepareIndoor = false;
         try
         {
             var session = await _storage.LoadAsync(path, token, OperationProgress(token, .8)).WaitAsync(token);
@@ -107,9 +108,11 @@ public sealed partial class MainViewModel
             Notification = "";
             Home();
             AddEvent(recovery ? "Восстановлена аварийная копия" : "Из файла восстановлены все измерения");
+            prepareIndoor = session.Project?.Structure?.Result.Options.UseNeuralClasses == true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось открыть сеанс", ex); }
         finally { _loadingSettings = false; EndOperation(); }
+        if (prepareIndoor && CanPrepareIndoorPreview) await PrepareIndoorPreviewAsync();
     }
 }

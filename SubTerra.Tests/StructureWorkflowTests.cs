@@ -14,6 +14,72 @@ namespace SubTerra.Tests;
 public sealed class StructureWorkflowTests
 {
     [Fact]
+    public Task NeuralSurfacePreviewCanBeViewedByGuestsAndWalkedWithoutChangingSources() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(); await Import(vm);
+        await vm.AnalyzeIndoorCommand.ExecuteAsync();
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasIndoorPreview);
+        Assert.True(vm.CanWalk); Assert.True(vm.CanFly); Assert.NotNull(vm.Surface);
+        Assert.True(vm.UseNeuralClasses); Assert.True(vm.IsIndoorSurfaceView);
+        var materials = vm.Surface;
+        vm.IndoorStyle = vm.IndoorStyles[1]; Assert.NotSame(materials, vm.Surface);
+        vm.InsideCommand.Execute(null); Assert.True(vm.IsWalking);
+        var nav = vm.CreateIndoorNavigator(); vm.UpdateWalkPosition(nav); vm.ReturnToOverview();
+        Assert.InRange((vm.LampCamera.Position - vm.Camera.Position).Length, .01, 1);
+        var path = Path.Combine(files.Directory, "neural-room.subterra"); Assert.True(await vm.SaveAsync(path));
+        var saved = await new SessionStorage().LoadAsync(path);
+        Assert.Equal(3747, saved.PointCount); Assert.False(saved.Project!.Active!.Source.HasMesh);
+        Assert.Equal(StructureAnalysisResult.NeuralAlgorithm, saved.Project.Structure!.Algorithm);
+        using var guest = Vm(new(false)); await guest.OpenAsync(path);
+        Assert.True(guest.HasIndoorPreview); Assert.True(guest.CanPrepareIndoorPreview);
+        Assert.False(guest.HasUnsavedChanges); Assert.False(guest.AnalyzeIndoorCommand.CanExecute(null));
+        guest.FlyCommand.Execute(null); Assert.True(guest.IsFlying); guest.ReturnToOverview();
+        vm.SelectedStructureSurface = vm.StructureSurfaces.First(); vm.ConfirmStructureSurfaceCommand.Execute(null);
+        Assert.False(vm.HasIndoorPreview); Assert.False(vm.CanWalk);
+        Assert.False(vm.HasNotification, vm.Notification);
+    });
+
+    [Fact]
+    public Task CollegeStoreysCanBeIsolatedAnalyzedSavedAndRestored() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm();
+        await vm.LoadCollegeBuildingAsync();
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.True(vm.HasSyntheticScans); Assert.Equal(4, vm.ScanObjects.Count);
+        Assert.False(vm.HasStructureAnalysis); Assert.Contains("СИНТЕТИЧЕСКИЕ", vm.SelectedScenario.Subtitle);
+        vm.SelectedScanObject = vm.ScanObjects[1];
+        var originalPoints = vm.ScanObjects.Sum(o => o.PointCount);
+        await vm.IsolateObjectAsync();
+        Assert.Single(vm.ScanObjects, o => o.IsVisible);
+        Assert.True(vm.ScanObjects[1].IsVisible);
+        Assert.Equal(originalPoints, vm.ScanObjects.Sum(o => o.PointCount));
+        await vm.AnalyzeStructureAsync();
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.InRange(Assert.Single(vm.StructureSurfaces, s => s.Kind == StructureSurfaceKind.Floor).Center.Z, 3.59f, 3.61f);
+        Assert.InRange(Assert.Single(vm.StructureSurfaces, s => s.Kind == StructureSurfaceKind.Ceiling).Center.Z, 6.79f, 6.81f);
+        Assert.True(vm.StructureSurfaces.Count(s => s.Kind == StructureSurfaceKind.Wall) >= 6);
+        Assert.All(vm.StructureSurfaces, s => Assert.Equal(StructureReviewState.Proposed, s.Review));
+        await vm.ShowAllObjectsAsync(); Assert.True(vm.StructureIsStale);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.False(vm.StructureIsStale);
+        var path = Path.Combine(files.Directory, "college.subterra"); Assert.True(await vm.SaveAsync(path));
+        using var guest = Vm(new(false)); await guest.OpenAsync(path);
+        Assert.True(guest.HasSyntheticScans); Assert.True(guest.HasStructureAnalysis);
+        Assert.False(guest.IsolateObjectCommand.CanExecute(null)); Assert.False(guest.ShowAllObjectsCommand.CanExecute(null));
+        await guest.ShowAllObjectsAsync(); await guest.IsolateObjectAsync();
+        Assert.Single(guest.ScanObjects, o => o.IsVisible); Assert.False(guest.HasUnsavedChanges);
+    });
+
+    [Fact]
+    public Task CancellingCollegeCreationKeepsThePreviousProject() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await Import(vm);
+        var before = vm.ScanObjects.ToArray();
+        var pending = vm.LoadCollegeBuildingAsync(); vm.CancelOperation(); await pending;
+        Assert.Equal(before, vm.ScanObjects.ToArray()); Assert.False(vm.HasSyntheticScans);
+        Assert.False(vm.IsBusy); Assert.False(vm.HasNotification, vm.Notification);
+    });
+
+    [Fact]
     public Task CancelledGroupingAndGuestCommandsCannotReplaceAnAnalysis() => ScanControlTests.OnSta(async () =>
     {
         using var files = new Files(); using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();

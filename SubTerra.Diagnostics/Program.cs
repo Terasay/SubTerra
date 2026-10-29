@@ -24,6 +24,8 @@ internal static class Program
         {
             if (args.Length == 2 && args[0] == "--stress-points")
                 return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
+            if (args.Length == 3 && args[0] == "--prepare-indoor")
+                return PrepareIndoor(args[1], args[2]);
             var passes = 12;
             var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
@@ -65,6 +67,36 @@ internal static class Program
         }
         catch (OperationCanceledException) { Console.Error.WriteLine("Замер отменён."); return 2; }
         catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    }
+
+    private static int PrepareIndoor(string input, string output)
+    {
+        if (!Path.GetExtension(output).Equals(".subterra", StringComparison.OrdinalIgnoreCase) || File.Exists(output) ||
+            Path.GetFullPath(input).Equals(Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Укажите новый выходной .subterra; существующие файлы не заменяются.");
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        var token = cancellation.Token; var clock = Stopwatch.StartNew();
+        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z, LocalOrigin: false), token).GetAwaiter().GetResult();
+        var project = ScanProject.FromSession(scan.ToSession());
+        var result = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(DistanceTolerance: .035, MaximumPlanes: 24,
+            UseNeuralClasses: true), null, token).GetAwaiter().GetResult();
+        var document = StructureProvenance.Create(project, result, token);
+        var preview = IndoorSurfaceBuilder.Build(project, document, token);
+        var storage = new SessionStorage();
+        storage.SaveAsync(output, (project with { Structure = document }).ToSession(), 0, token).GetAwaiter().GetResult();
+        var reopened = storage.LoadAsync(output, token).GetAwaiter().GetResult();
+        if (reopened.Project?.Active?.Source is not { } restored || !restored.Points.SequenceEqual(scan.Points) || !restored.Colors.SequenceEqual(scan.Colors))
+            throw new InvalidDataException("Изменились исходные измерения или RGB.");
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            Output = Path.GetFullPath(output), InputUnit = "meters", UpAxis = "Z", Points = scan.Points.Length,
+            Bounds = new { Minimum = scan.Bounds.Minimum.ToString(), Maximum = scan.Bounds.Maximum.ToString() },
+            Model = document.Algorithm, PreviewTriangles = preview.Scan.Triangles.Length / 3, FloorTriangles = preview.FloorTriangles.Length / 3,
+            Surfaces = result.Surfaces.Select(s => new { s.Id, s.KindText, s.AreaSquareMeters, s.RmsMeters, s.NeuralScore }),
+            ElapsedSeconds = clock.Elapsed.TotalSeconds
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        return 0;
     }
 
     private static int RunImportedStress(int count)

@@ -11,6 +11,61 @@ namespace SubTerra.Tests;
 
 public sealed class SimulationTests
 {
+    [Fact]
+    public void CollegeHasThreeSeparateStoreysDoorsAndAStaircase()
+    {
+        var building = CollegeBuildingFactory.Create();
+        var repeated = CollegeBuildingFactory.Create();
+        Assert.Equal(4, building.Objects.Length);
+        Assert.Null(building.Structure); // Test geometry never masquerades as recognition output.
+        for (var floor = 0; floor < CollegeBuildingFactory.FloorCount; floor++)
+        {
+            var scan = building.Objects[floor].Source;
+            Assert.True(scan.Metadata.IsSynthetic); Assert.True(scan.HasMesh);
+            Assert.Equal(scan.Points, repeated.Objects[floor].Source.Points);
+            Assert.Equal(scan.Triangles, repeated.Objects[floor].Source.Triangles);
+            Assert.InRange(scan.Points.Length, 10_000, 50_000);
+            Assert.Equal(scan.Points.Length, scan.Colors.Length);
+            var z = floor * CollegeBuildingFactory.FloorSpacing;
+            Assert.InRange(scan.Bounds.Minimum.Z, z - .002f, z);
+            Assert.InRange(scan.Bounds.Maximum.Z, z + 3.2f, z + 3.202f);
+            var index = new TriangleIndex(scan.Points.Select(p => p.Position).ToArray(), scan.Triangles);
+            Assert.False(index.Cast(new(3, 6, z + 1), -Vector3.UnitY, 2, out _));
+            Assert.True(index.Cast(new(1, 6, z + 1), -Vector3.UnitY, 2, out var wall));
+            Assert.InRange(wall.Y, 4.498f, 4.502f);
+            Assert.True(index.Cast(new(3, 6, z + 1), Vector3.UnitZ, 3, out var ceiling));
+            Assert.InRange(ceiling.Z, z + 3.198f, z + 3.202f);
+        }
+        Assert.Contains("лестница", building.Objects[^1].Name);
+        Assert.InRange(building.Objects[^1].Source.Bounds.Maximum.Z, 10.399f, 10.402f);
+        Assert.ThrowsAny<OperationCanceledException>(() => CollegeBuildingFactory.Create(new CancellationToken(true)));
+    }
+
+    [Fact]
+    public async Task CollegePlyRoundTripRetainsGeometryAndSyntheticSourceMarker()
+    {
+        var project = CollegeBuildingFactory.Create();
+        project = project with { Objects = project.Objects.Select((o, i) => o with { IsVisible = i == 1 }).ToArray() };
+        var data = ScanProjectEvaluator.Evaluate(project);
+        var scan = Assert.IsType<ImportedScan>(data.VisibleScan);
+        var ply = Path.Combine(Path.GetTempPath(), $"subterra-college-{Guid.NewGuid():N}.ply");
+        var session = Path.ChangeExtension(ply, ".subterra");
+        try
+        {
+            var storage = new SessionStorage();
+            await storage.ExportImportedPlyAsync(ply, scan);
+            var read = await new ScanImporter().ImportAsync(ply, new(ScanUnit.Meters, LocalOrigin: false));
+            Assert.True(read.Metadata.IsSynthetic);
+            Assert.Equal(scan.Points, read.Points); Assert.Equal(scan.Colors, read.Colors); Assert.Equal(scan.Triangles, read.Triangles);
+            await storage.SaveAsync(session, project.ToSession(), 0);
+            var saved = Assert.IsType<ScanProject>((await storage.LoadAsync(session)).Project);
+            Assert.Equal(project.Objects.Select(o => o.Id), saved.Objects.Select(o => o.Id));
+            Assert.All(saved.Objects, o => Assert.True(o.Source.Metadata.IsSynthetic));
+            Assert.Single(saved.Objects, o => o.IsVisible);
+        }
+        finally { File.Delete(ply); File.Delete(session); }
+    }
+
     private static Task<ScanDataset> SmallScan(float range = 20) => new SimulatedScanSource().GenerateAsync(
         ScenarioDefinition.All[0], new ScanSettings(range, 64, 8), null, CancellationToken.None);
 

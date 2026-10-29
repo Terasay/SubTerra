@@ -72,6 +72,8 @@ public sealed partial class MainViewModel
     public RelayCommand<ScanObjectItem> ToggleScanObjectCommand { get; private set; } = null!;
     public AsyncRelayCommand ApplyObjectCommand { get; private set; } = null!;
     public AsyncRelayCommand RemoveObjectCommand { get; private set; } = null!;
+    public AsyncRelayCommand IsolateObjectCommand { get; private set; } = null!;
+    public AsyncRelayCommand ShowAllObjectsCommand { get; private set; } = null!;
     public RelayCommand FocusObjectCommand { get; private set; } = null!;
     public AsyncRelayCommand UndoProjectCommand { get; private set; } = null!;
     public AsyncRelayCommand RedoProjectCommand { get; private set; } = null!;
@@ -84,9 +86,13 @@ public sealed partial class MainViewModel
     private void InitializeProjectCommands()
     {
         InitializeAlignmentCommands();
+        LoadCollegeBuildingCommand = new(LoadCollegeBuildingAsync, () => CanChangeScenario && !HasRecovery && !HasEditPreview,
+            ex => ReportError("Не удалось создать модель корпуса", ex));
         ToggleScanObjectCommand = new(o => _ = ToggleObjectAsync(o.Id), _ => CanManageProject);
         ApplyObjectCommand = new(ApplyObjectAsync, () => CanEditObject, ex => ReportError("Не удалось изменить объект", ex));
         RemoveObjectCommand = new(RemoveObjectAsync, () => CanEditObject, ex => ReportError("Не удалось удалить объект", ex));
+        IsolateObjectCommand = new(IsolateObjectAsync, () => CanEditObject, ex => ReportError("Не удалось показать этаж", ex));
+        ShowAllObjectsCommand = new(ShowAllObjectsAsync, () => CanManageProject, ex => ReportError("Не удалось показать здание", ex));
         FocusObjectCommand = new(FocusObject, () => IsImported && CanInteract && ActiveScanObject is not null);
         UndoProjectCommand = new(() => ReplayProjectAsync(false), () => CanUndoProject, ex => ReportError("Не удалось отменить действие", ex));
         RedoProjectCommand = new(() => ReplayProjectAsync(true), () => CanRedoProject, ex => ReportError("Не удалось повторить действие", ex));
@@ -133,6 +139,20 @@ public sealed partial class MainViewModel
     {
         if (!CanManageProject || _scanProject?.Objects.FirstOrDefault(o => o.Id == id) is not { } o) return;
         await ChangeProjectAsync(_scanProject.Replace(o with { IsVisible = !o.IsVisible }), o.IsVisible ? "скрытие объекта" : "показ объекта");
+    }
+    public async Task IsolateObjectAsync()
+    {
+        if (!CanEditObject || _scanProject is not { } project) return;
+        var objects = project.Objects.Select(o => o with { IsVisible = o.Id == project.ActiveObjectId }).ToArray();
+        if (objects.SequenceEqual(project.Objects)) return;
+        await ChangeProjectAsync(project with { Objects = objects }, "показ только выбранного скана");
+        FocusObject();
+    }
+    public async Task ShowAllObjectsAsync()
+    {
+        if (!CanManageProject || _scanProject is not { } project || project.Objects.All(o => o.IsVisible)) return;
+        await ChangeProjectAsync(project with { Objects = project.Objects.Select(o => o with { IsVisible = true }).ToArray() }, "показ всех сканов");
+        Home();
     }
     private async Task RemoveObjectAsync()
     {

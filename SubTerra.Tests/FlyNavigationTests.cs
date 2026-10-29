@@ -1,11 +1,30 @@
 using System.Numerics;
 using SubTerra.Navigation;
+using SubTerra.Simulation;
 using Xunit;
 
 namespace SubTerra.Tests;
 
 public sealed class FlyNavigationTests
 {
+    [Fact]
+    public void IndoorWalkKeepsEyeHeightAndCannotCrossObservedWallsOrMissingFloor()
+    {
+        Vector3[] p = [new(0, 0, 0), new(2, 0, 0), new(2, 2, 0), new(0, 2, 0),
+            new(1.5f, 0, 0), new(1.5f, 2, 0), new(1.5f, 2, 3), new(1.5f, 0, 3)];
+        var floor = new TriangleIndex(p, [0, 1, 2, 0, 2, 3]);
+        var walls = new TriangleIndex(p, [4, 5, 6, 4, 6, 7]);
+        var walk = new IndoorNavigator(new(.5f, 1, 1.65f), Vector3.UnitX, walls, floor);
+        walk.Look(0, .9f);
+        for (var i = 0; i < 100; i++) walk.Move(1, 0, .1f, true, 1);
+        Assert.InRange(walk.Position.X, 1.1f, 1.33f); Assert.Equal(1.65f, walk.Position.Z, 4);
+        var holeFloor = new TriangleIndex([new(0, 0, 0), new(1, 0, 0), new(1, 2, 0), new(0, 2, 0)], [0, 1, 2, 0, 2, 3]);
+        var limited = new IndoorNavigator(new(.5f, 1, 1.65f), Vector3.UnitX, walls, holeFloor);
+        for (var i = 0; i < 100; i++) limited.Move(1, 0, .1f, true);
+        Assert.InRange(limited.Position.X, .8f, 1.001f);
+        var before = limited.Position; limited.Move(float.NaN, 1, .1f, false);
+        Assert.Equal(before, limited.Position);
+    }
     [Theory]
     [InlineData(.001f)]
     [InlineData(1)]

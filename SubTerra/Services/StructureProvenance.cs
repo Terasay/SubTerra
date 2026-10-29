@@ -19,7 +19,8 @@ public static class StructureProvenance
     {
         var initialized = result with { Surfaces = result.Surfaces.Select(s => s with
             { SuggestedKind = s.Kind, Review = StructureReviewState.Proposed }).ToArray() };
-        return new(1, StructureAnalysisResult.Algorithm, DateTimeOffset.UtcNow, Capture(project, token), initialized);
+        return new(1, result.Options.UseNeuralClasses ? StructureAnalysisResult.NeuralAlgorithm : StructureAnalysisResult.Algorithm,
+            DateTimeOffset.UtcNow, Capture(project, token), initialized);
     }
     public static StructureAnalysisDocument Refresh(StructureAnalysisDocument document, ScanProject project, CancellationToken token = default) =>
         document with { IsStale = !document.Inputs.OrderBy(i => i.ObjectId).SequenceEqual(Capture(project, token)) };
@@ -60,7 +61,7 @@ public static class StructureProvenance
         if (document.Version is not (1 or 2 or 3 or 4 or 5) || (document.Version == 5) != (document.Rooms is not null) ||
             (document.Version < 5 && (document.Version == 4) != (document.Objects is not null)) ||
             (document.Version < 4 && ((document.Version >= 2) != (document.Room is not null) || (document.Version == 3) != (document.Room?.IsManuallyEdited == true))) ||
-            document.Algorithm != StructureAnalysisResult.Algorithm || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
+            document.Algorithm is not (StructureAnalysisResult.Algorithm or StructureAnalysisResult.NeuralAlgorithm) || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
             document.Inputs is null || document.Inputs.Length > ScanProject.MaximumObjects || document.Inputs.Any(i => i is null) ||
             document.Inputs.Select(i => i.ObjectId).Distinct().Count() != document.Inputs.Length ||
             document.Inputs.Any(i => i.ObjectId == Guid.Empty || i.PointCount is < 1 or > ImportedScan.MaximumPoints ||
@@ -70,6 +71,7 @@ public static class StructureProvenance
         foreach (var input in document.Inputs) input.Transform.Validate();
         var result = document.Result;
         if (result?.Options is null || result.Surfaces is null) Invalid();
+        if (document.Algorithm != (result!.Options.UseNeuralClasses ? StructureAnalysisResult.NeuralAlgorithm : StructureAnalysisResult.Algorithm)) Invalid();
         try { result!.Options.Validate(); }
         catch (ArgumentOutOfRangeException ex) { throw new System.IO.InvalidDataException("Некорректные параметры анализа.", ex); }
         if (result.SampleCount < 0 || result.SampleCount > result.Options.MaximumSamples ||
@@ -91,6 +93,7 @@ public static class StructureProvenance
                 !double.IsFinite(surface.Offset) || Math.Abs(surface.Offset) > 175_000 || !Point(surface.Center) ||
                 !double.IsFinite(surface.AreaSquareMeters) || surface.AreaSquareMeters <= 0 || surface.AreaSquareMeters > 70_000_000_000 ||
                 !double.IsFinite(surface.RmsMeters) || surface.RmsMeters is < 0 or > 1 ||
+                (surface.NeuralScore is { } score && (!result.Options.UseNeuralClasses || !double.IsFinite(score) || score is < 0 or > 1)) ||
                 surface.Samples is null || surface.Samples.Length < result.Options.MinimumSupport ||
                 surface.Boundary is null || surface.Boundary.Length < 3) Invalid();
             boundaryCount += surface.Boundary.Length;

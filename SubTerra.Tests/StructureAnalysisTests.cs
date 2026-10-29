@@ -2,12 +2,77 @@ using System.IO;
 using System.Numerics;
 using SubTerra.Models;
 using SubTerra.Services;
+using SubTerra.Simulation;
 using Xunit;
 
 namespace SubTerra.Tests;
 
 public sealed class StructureAnalysisTests
 {
+    [Theory]
+    [InlineData(1, 0, .01, 1, StructureSurfaceKind.Floor)]
+    [InlineData(1, 1, .01, 1, StructureSurfaceKind.Ceiling)]
+    [InlineData(.01, .5, 1, .2, StructureSurfaceKind.Wall)]
+    [InlineData(1, .27, .01, .1, StructureSurfaceKind.Unknown)]
+    [InlineData(.01, .5, .3, .1, StructureSurfaceKind.Unknown)]
+    public void SyntheticNeuralModelDistinguishesStructureFromPartialPatches(double normal, double height, double span, double area, StructureSurfaceKind expected)
+    {
+        var result = RoomNeuralClassifier.Predict(normal, height, span, area);
+        Assert.Equal(expected, result.Kind); Assert.InRange(result.Score!.Value, .9, 1);
+        Assert.Null(RoomNeuralClassifier.Predict(double.NaN, height, span, area).Score);
+        Assert.Null(RoomNeuralClassifier.Predict(normal, 2, span, area).Score);
+    }
+
+    [Fact]
+    public async Task NeuralResultsAndObservedSurfacePreviewPreserveSourcesAndDoorGaps()
+    {
+        var project = CollegeBuildingFactory.Create();
+        project = project with { Objects = project.Objects.Select((o, i) => o with { IsVisible = i == 0 }).ToArray() };
+        var original = project.Active!.Source.Points.ToArray();
+        var result = await Analyze(project, new(UseNeuralClasses: true));
+        var document = StructureProvenance.Create(project, result);
+        Assert.Equal(StructureAnalysisResult.NeuralAlgorithm, document.Algorithm);
+        Assert.Contains(result.Surfaces, s => s.Kind == StructureSurfaceKind.Floor && s.NeuralScore >= .9);
+        var preview = SubTerra.Rendering.IndoorSurfaceBuilder.Build(project, document);
+        Assert.NotEmpty(preview.FloorTriangles); Assert.True(preview.Scan.HasMesh);
+        Assert.Equal(preview.Scan.Points.Length, preview.MaterialColors.Length);
+        var index = new SubTerra.Simulation.TriangleIndex(preview.Scan.Points.Select(p => p.Position).ToArray(), preview.Scan.Triangles);
+        Assert.False(index.Cast(new(3, 6, 1), -Vector3.UnitY, 2, out _));
+        Assert.True(index.Cast(new(1, 6, 1), -Vector3.UnitY, 2, out _));
+        Assert.Equal(original, project.Active.Source.Points);
+        Assert.ThrowsAny<OperationCanceledException>(() => SubTerra.Rendering.IndoorSurfaceBuilder.Build(project, document, new CancellationToken(true)));
+        var changed = project.Replace(project.Active with { Transform = new(1) });
+        Assert.Throws<InvalidDataException>(() => SubTerra.Rendering.IndoorSurfaceBuilder.Build(changed, document));
+        Assert.Throws<InvalidDataException>(() => StructureProvenance.Validate(document with { Algorithm = StructureAnalysisResult.Algorithm }, project));
+        var invalid = result.Surfaces.Select((s, i) => i == 0 ? s with { NeuralScore = 1.1 } : s).ToArray();
+        Assert.Throws<InvalidDataException>(() => StructureProvenance.Validate(document with { Result = result with { Surfaces = invalid } }, project));
+    }
+
+    [Fact]
+    public async Task CollegeClassroomCanBePlannedWithItsDoorOpening()
+    {
+        var project = CollegeBuildingFactory.Create();
+        project = project with { Objects = project.Objects.Select((o, i) => o with { IsVisible = i == 2 }).ToArray() };
+        var result = await Analyze(project);
+        var doc = StructureProvenance.Create(project, result);
+        doc = doc with { Result = result with { Surfaces = doc.Result.Surfaces.Select(s => s with { Review = StructureReviewState.Confirmed }).ToArray() } };
+        var wallPoints = new[] { new Vector3(0, 2, 8), new(6, 2, 8), new(3, 0, 8), new(3, 4.5f, 8) };
+        var wallIds = wallPoints.Select(p => doc.Result.Surfaces.Where(s => s.Kind == StructureSurfaceKind.Wall)
+            .MinBy(s => Math.Abs(Vector3.Dot(s.Normal, p) + s.Offset))!.Id).ToArray();
+        Assert.Equal(4, wallIds.Distinct().Count());
+        var support = doc.Result.Surfaces.Where(s => s.Kind is StructureSurfaceKind.Floor or StructureSurfaceKind.Ceiling).Select(s => s.Id);
+        var built = RoomPlanner.Build(doc, "Аудитория 301", surfaceIds: [.. support, .. wallIds], interiorPoint: new(3, 2, 7.2f));
+        var room = Assert.IsType<RoomPlan>(built.Room);
+        Assert.InRange(room.AreaSquareMeters, 26.8, 27.2);
+        Assert.InRange(room.MinimumHeight!.Value, 3.18, 3.22);
+        Assert.Contains(room.Gaps, gap =>
+        {
+            var a = room.FloorContour[gap.EdgeIndex]; var b = room.FloorContour[(gap.EdgeIndex + 1) % room.FloorContour.Length];
+            return Math.Abs(a.Y - 4.5) < .03 && Math.Abs(b.Y - 4.5) < .03;
+        });
+        StructureProvenance.Validate((doc with { Room = room }).NormalizeVersion(), project, CancellationToken.None);
+    }
+
     [Fact]
     public async Task ObjectGroupingExcludesReviewedPlanesAndKeepsStableSourceReferences()
     {

@@ -62,3 +62,41 @@ public sealed class FlyNavigator : ICameraNavigator
         DistanceTravelled += step.Length();
     }
 }
+
+/// <summary>Eye-height motion restricted to observed floor triangles and preview wall collisions.</summary>
+public sealed class IndoorNavigator(Vector3 start, Vector3 direction, TriangleIndex obstacles, TriangleIndex floor, float speed = 2.5f) : ICameraNavigator
+{
+    private readonly FlyNavigator _view = new("imported", start, direction);
+    public Vector3 Position { get; private set; } = start;
+    public Vector3 Forward => _view.Forward;
+    public float DistanceTravelled { get; private set; }
+    public float Speed { get; set; } = speed;
+    public float FastMultiplier { get; set; } = 3;
+    public void PlaceAt(float progress) { }
+    public void Look(float yawDelta, float pitchDelta) => _view.Look(yawDelta, pitchDelta);
+    public void Move(float forward, float right, float deltaSeconds, bool fast, float up = 0)
+    {
+        if (!float.IsFinite(deltaSeconds) || deltaSeconds <= 0 || !float.IsFinite(forward) || !float.IsFinite(right) || !float.IsFinite(Speed)) return;
+        var heading = new Vector3(MathF.Cos(_view.Yaw), MathF.Sin(_view.Yaw), 0);
+        var sideways = new Vector3(heading.Y, -heading.X, 0);
+        var motion = heading * forward + sideways * right;
+        if (motion.LengthSquared() < 1e-10f) return;
+        if (motion.LengthSquared() > 1) motion = Vector3.Normalize(motion);
+        motion *= Math.Clamp(Speed, .5f, 8) * (fast && float.IsFinite(FastMultiplier) ? Math.Clamp(FastMultiplier, 1, 5) : 1) * Math.Min(deltaSeconds, .1f);
+        var pieces = Math.Max(1, (int)Math.Ceiling(motion.Length() / .08f));
+        for (var i = 0; i < pieces; i++)
+        {
+            var target = Position + motion / pieces;
+            if (!floor.Cast(target + Vector3.UnitZ * .3f, -Vector3.UnitZ, 2.2f, out var ground)) break;
+            target.Z = ground.Z + 1.65f;
+            if (Math.Abs(target.Z - Position.Z) > .25f) break;
+            var step = target - Position; var length = step.Length();
+            if (length < 1e-8f) break;
+            var blocked = false;
+            foreach (var lower in new[] { 0f, -.7f, -1.45f })
+                if (obstacles.Cast(Position + Vector3.UnitZ * lower, step / length, length + .18f, out _)) { blocked = true; break; }
+            if (blocked) break;
+            Position = target; DistanceTravelled += length;
+        }
+    }
+}

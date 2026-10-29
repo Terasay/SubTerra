@@ -56,7 +56,8 @@ public static class ScanProjectEvaluator
             if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
             if (!referenced[i]) cloudOnly.Add(i);
         }
-        var scan = new ImportedScan { Metadata = new("SubTerra-project.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
+        var scan = new ImportedScan { Metadata = new("SubTerra-project.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0)
+            { IsSynthetic = project.Objects.Any(o => o.IsVisible && o.PointCount > 0 && o.Source.Metadata.IsSynthetic) },
             Points = points, Colors = colors, Triangles = triangles.ToArray() };
         return new(scan, cloudOnly.ToArray(), (min, max));
     }
