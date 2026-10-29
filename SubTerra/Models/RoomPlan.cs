@@ -3,10 +3,15 @@ using System.Numerics;
 namespace SubTerra.Models;
 
 /// <summary>A convex envelope inferred from reviewed planes, not proof of continuous walls.</summary>
-public sealed record RoomGap(int WallSurfaceId, int EdgeIndex, double Start, double End);
-public sealed record RoomPlan(string Name, int Version, string SourceSignature, int FloorSurfaceId, int? CeilingSurfaceId,
-    int[] WallSurfaceIds, Vector3[] FloorContour, Vector3[] CeilingContour, RoomGap[] Gaps, int[] IncompleteWallIds)
+public sealed record RoomGap(int WallSurfaceId, int EdgeIndex, double Start, double End, bool IsConfirmedOpening = false)
 {
+    public string Description => $"Ребро {EdgeIndex + 1} · {Start:P0}–{End:P0}";
+}
+public sealed record RoomPlan(string Name, int Version, string SourceSignature, int FloorSurfaceId, int? CeilingSurfaceId,
+    int[] WallSurfaceIds, Vector3[] FloorContour, Vector3[] CeilingContour, RoomGap[] Gaps, int[] IncompleteWallIds,
+    RoomPlan? AutomaticPlan = null, int[]? SurfaceIds = null, Vector3? InteriorPoint = null)
+{
+    public bool IsManuallyEdited => AutomaticPlan is not null;
     public bool HasHeight => CeilingContour.Length == FloorContour.Length;
     public double AreaSquareMeters
     {
@@ -30,3 +35,8 @@ public sealed record RoomPlan(string Name, int Version, string SourceSignature, 
     public double? MaximumHeight => HasHeight ? FloorContour.Zip(CeilingContour, (a, b) => (double)b.Z - a.Z).Max() : null;
 }
 public sealed record RoomBuildResult(RoomPlan? Room, string Message);
+public sealed record SavedRoom(Guid Id, string Floor, RoomPlan Plan)
+{
+    public string Label => $"{Floor} · {Plan.Name}";
+}
+public sealed record RoomConnection(Guid FirstRoomId, Guid SecondRoomId, bool HasConfirmedOpening);

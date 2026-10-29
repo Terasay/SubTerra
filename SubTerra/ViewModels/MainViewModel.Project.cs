@@ -20,6 +20,7 @@ public sealed partial class MainViewModel
     private ScanProjectView? _projectView, _previewView;
     private ScanProject? _previewProject;
     private string _previewDescription = "";
+    private string _previewOperation = "очистка объекта";
     private readonly ScanProjectHistory _projectHistory = new();
     private ScanObjectItem? _selectedScanObject;
     private string _objectName = "";
@@ -82,6 +83,7 @@ public sealed partial class MainViewModel
 
     private void InitializeProjectCommands()
     {
+        InitializeAlignmentCommands();
         ToggleScanObjectCommand = new(o => _ = ToggleObjectAsync(o.Id), _ => CanManageProject);
         ApplyObjectCommand = new(ApplyObjectAsync, () => CanEditObject, ex => ReportError("Не удалось изменить объект", ex));
         RemoveObjectCommand = new(RemoveObjectAsync, () => CanEditObject, ex => ReportError("Не удалось удалить объект", ex));
@@ -104,6 +106,8 @@ public sealed partial class MainViewModel
     }
     private void LoadObjectDraft()
     {
+        if (AlignmentPairs.Any(p => p.SourceId != _scanProject?.ActiveObjectId || _scanProject.Objects.All(o => o.Id != p.TargetId))) ClearAlignmentPairs();
+        Raise(nameof(AlignmentTargets)); Raise(nameof(AlignmentTargetId)); Raise(nameof(CanPreviewAlignment));
         var o = ActiveScanObject; var t = o?.Transform ?? new();
         _objectName = o?.Name ?? ""; _objectX = t.X; _objectY = t.Y; _objectZ = t.Z;
         _objectRotateX = t.RotateX; _objectRotateY = t.RotateY; _objectRotateZ = t.RotateZ;
@@ -214,4 +218,86 @@ public sealed partial class MainViewModel
         EndInspection(); _selectionTool = tool; NotifyProjectState();
     }
     public void EndScreenSelection() { _selectionTool = ScanSelectionTool.None; NotifyProjectState(); }
+}
+
+public sealed record ScanAlignmentPair(Guid SourceId, Guid TargetId, Vector3 SourceLocal, Vector3 TargetLocal);
+
+public sealed partial class MainViewModel
+{
+    private Guid _alignmentTargetId;
+    private (Guid SourceId, Guid TargetId, Vector3 Point)? _alignmentPendingPoint;
+    private bool _refineAlignment = true;
+    private double _alignmentDistance = .2;
+    public ObservableCollection<ScanAlignmentPair> AlignmentPairs { get; } = [];
+    public IReadOnlyList<ScanObjectItem> AlignmentTargets => ScanObjects.Where(o => o.Id != _scanProject?.ActiveObjectId).ToArray();
+    public Guid AlignmentTargetId
+    {
+        get => AlignmentTargets.Any(o => o.Id == _alignmentTargetId) ? _alignmentTargetId : AlignmentTargets.FirstOrDefault()?.Id ?? Guid.Empty;
+        set { if (Set(ref _alignmentTargetId, value)) ClearAlignmentPairs(); }
+    }
+    public bool RefineAlignment { get => _refineAlignment; set => Set(ref _refineAlignment, value); }
+    public double AlignmentDistance { get => _alignmentDistance; set => Set(ref _alignmentDistance, value); }
+    private ScanObject? AlignmentTarget => _scanProject?.Objects.FirstOrDefault(o => o.Id == AlignmentTargetId);
+    public bool CanCaptureAlignmentPoint => CanEditObject && AlignmentTarget is not null && _pickedPoint is not null && AlignmentPairs.Count < 32;
+    public bool CanPreviewAlignment => CanEditObject && ActiveScanObject?.IsVisible == true && AlignmentTarget?.IsVisible == true &&
+        ActiveScanObject.PointCount >= 3 && AlignmentTarget.PointCount >= 3 && AlignmentPairs.Count >= 3;
+    public string AlignmentSummary => $"Опорных пар: {AlignmentPairs.Count}" + (_alignmentPendingPoint is null ? " · выберите исходную точку" : " · теперь выберите соответствующую точку опорного скана");
+    public RelayCommand CaptureAlignmentSourceCommand { get; private set; } = null!;
+    public RelayCommand CaptureAlignmentTargetCommand { get; private set; } = null!;
+    public RelayCommand ClearAlignmentPairsCommand { get; private set; } = null!;
+    public AsyncRelayCommand PreviewAlignmentCommand { get; private set; } = null!;
+    private void InitializeAlignmentCommands()
+    {
+        CaptureAlignmentSourceCommand = new(() =>
+        {
+            if (!CanCaptureAlignmentPoint || ActiveScanObject is not { } source || !Matrix4x4.Invert(source.Matrix, out var inverse)) return;
+            _alignmentPendingPoint = (source.Id, AlignmentTargetId, Vector3.Transform(_pickedPoint!.Value.Position, inverse));
+            Raise(nameof(AlignmentSummary));
+        }, () => CanCaptureAlignmentPoint);
+        CaptureAlignmentTargetCommand = new(() =>
+        {
+            if (!CanCaptureAlignmentPoint || _alignmentPendingPoint is not { } pending || pending.SourceId != _scanProject?.ActiveObjectId ||
+                AlignmentTarget is not { } target || pending.TargetId != target.Id || !Matrix4x4.Invert(target.Matrix, out var inverse)) return;
+            AlignmentPairs.Add(new(pending.SourceId, target.Id, pending.Point, Vector3.Transform(_pickedPoint!.Value.Position, inverse)));
+            _alignmentPendingPoint = null; NotifyAlignmentState();
+        }, () => CanCaptureAlignmentPoint && _alignmentPendingPoint is not null);
+        ClearAlignmentPairsCommand = new(ClearAlignmentPairs);
+        PreviewAlignmentCommand = new(PreviewAlignmentAsync, () => CanPreviewAlignment, ex => ReportError("Не удалось совместить сканы", ex));
+    }
+    private void ClearAlignmentPairs()
+    {
+        AlignmentPairs.Clear(); _alignmentPendingPoint = null; NotifyAlignmentState();
+    }
+    private void NotifyAlignmentState()
+    {
+        Raise(nameof(AlignmentSummary)); Raise(nameof(CanCaptureAlignmentPoint)); Raise(nameof(CanPreviewAlignment));
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+    }
+    public async Task PreviewAlignmentAsync()
+    {
+        if (!CanPreviewAlignment || _scanProject is not { } project || ActiveScanObject is not { } source || AlignmentTarget is not { } target) return;
+        var pairs = AlignmentPairs.ToArray(); var maximumDistance = AlignmentDistance; var refine = RefineAlignment;
+        if (pairs.Any(p => p.SourceId != source.Id || p.TargetId != target.Id)) return;
+        EndInspection(); EndScreenSelection(); var token = BeginOperation("Совмещение сканов по опорным точкам");
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var from = pairs.Select(p => Vector3.Transform(p.SourceLocal, source.Matrix)).ToArray();
+                var to = pairs.Select(p => Vector3.Transform(p.TargetLocal, target.Matrix)).ToArray();
+                var initial = ScanAlignment.Fit(from, to, token);
+                return ScanAlignment.Refine(ScanAlignment.Sample(source, token:token), ScanAlignment.Sample(target, token:token), initial, maximumDistance, refine, token);
+            }, token).WaitAsync(token);
+            var transform = ScanAlignment.Transform(source.Matrix * result.Correction);
+            var next = project.Replace(source with { Transform = transform });
+            var view = await ScanProjectView.PrepareAsync(next, token); token.ThrowIfCancellationRequested();
+            if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
+            _previewProject = next; _previewView = view; _previewOperation = "совмещение скана";
+            _previewDescription = $"RMS по выборке: {result.RmsMeters:F4} м · совпало {result.MatchedPoints} из {result.SourcePoints} точек. Проверьте положение перед применением; это не оценка точности сканера.";
+            ApplyProjectView(view); NotifySourceProperties(); Notification = ""; Status = "Предпросмотр совмещения · примените или отмените";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
+        catch (Exception ex) { ReportError("Не удалось совместить сканы", ex); }
+        finally { EndOperation(); NotifyAlignmentState(); }
+    }
 }

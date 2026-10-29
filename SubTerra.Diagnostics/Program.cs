@@ -9,6 +9,7 @@ using System.Text.Json;
 using Microsoft.Win32;
 using SubTerra.Models;
 using SubTerra.Rendering;
+using SubTerra.Services;
 using SubTerra.Simulation;
 
 namespace SubTerra.Diagnostics;
@@ -21,13 +22,15 @@ internal static class Program
         Console.OutputEncoding = new UTF8Encoding(false);
         try
         {
+            if (args.Length == 2 && args[0] == "--stress-points")
+                return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
             var passes = 12;
             var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--passes" && i + 1 < args.Length) passes = int.Parse(args[++i], CultureInfo.InvariantCulture);
                 else if (args[i] == "--output" && i + 1 < args.Length) output = Path.GetFullPath(args[++i]);
-                else throw new ArgumentException("Параметры: --passes 12 --output <папка отчёта>");
+                else throw new ArgumentException("Параметры: --passes 12 --output <папка отчёта> или --stress-points <число точек> (только консоль).");
             }
             if (passes is < 3 or > 100) throw new ArgumentOutOfRangeException(nameof(passes), "Число проходов: 3–100.");
             using var cancellation = new CancellationTokenSource();
@@ -62,6 +65,68 @@ internal static class Program
         }
         catch (OperationCanceledException) { Console.Error.WriteLine("Замер отменён."); return 2; }
         catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    }
+
+    private static int RunImportedStress(int count)
+    {
+        if (count is < 1000 or > ImportedScan.MaximumPoints) throw new ArgumentOutOfRangeException(nameof(count), "Число точек: 1000–5000000.");
+        var stem = Path.Combine(Path.GetTempPath(), $"subterra-stress-{Guid.NewGuid():N}");
+        var scanPath = stem + ".ply"; var sessionPath = stem + ".subterra";
+        using var cancellation = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        Console.CancelKeyPress += cancel;
+        try
+        {
+            using (var stream = File.Create(scanPath))
+            {
+                stream.Write(Encoding.ASCII.GetBytes($"ply\nformat binary_little_endian 1.0\nelement vertex {count}\nproperty float x\nproperty float y\nproperty float z\nend_header\n"));
+                using var writer = new BinaryWriter(stream);
+                for (var i = 0; i < count; i++)
+                {
+                    if ((i & 4095) == 0) cancellation.Token.ThrowIfCancellationRequested();
+                    var u = (i / 6 % 1000) / 999f; var v = (i / 6000 % 1000) / 999f;
+                    var p = (i % 6) switch
+                    {
+                        0 => new System.Numerics.Vector3(u * 6, v * 5, 0), 1 => new(u * 6, v * 5, 3),
+                        2 => new(0, u * 5, v * 3), 3 => new(6, u * 5, v * 3), 4 => new(u * 6, 0, v * 3), _ => new(u * 6, 5, v * 3)
+                    };
+                    writer.Write(p.X); writer.Write(p.Y); writer.Write(p.Z);
+                }
+            }
+            var clock = Stopwatch.StartNew(); var allocated = GC.GetTotalAllocatedBytes(true);
+            var scan = new ScanImporter().ImportAsync(scanPath, new(ScanUnit.Meters, LocalOrigin:false), cancellation.Token).GetAwaiter().GetResult();
+            var importedMs = clock.Elapsed.TotalMilliseconds;
+            var project = ScanProject.FromSession(scan.ToSession()); clock.Restart();
+            var view = ScanProjectView.PrepareAsync(project, cancellation.Token).GetAwaiter().GetResult();
+            var cloud = view.Geometry!.Cloud(60_000, null); var preparedMs = clock.Elapsed.TotalMilliseconds;
+            if (cloud.Positions!.Count > 60_000) throw new InvalidOperationException("Нарушен лимит отображения.");
+            clock.Restart(); var options = new StructureAnalysisOptions();
+            var analysis = new PlaneStructureAnalyzer().AnalyzeAsync(project, options, null, cancellation.Token).GetAwaiter().GetResult();
+            var analysisMs = clock.Elapsed.TotalMilliseconds;
+            project = project with { Structure = StructureProvenance.Create(project, analysis, cancellation.Token) }; clock.Restart();
+            var storage = new SessionStorage(); storage.SaveAsync(sessionPath, project.ToSession(), 1, cancellation.Token).GetAwaiter().GetResult();
+            var savedMs = clock.Elapsed.TotalMilliseconds; clock.Restart();
+            var restored = storage.LoadAsync(sessionPath, cancellation.Token).GetAwaiter().GetResult();
+            var loadedMs = clock.Elapsed.TotalMilliseconds;
+            if (restored.Project!.Active!.Source.Points.Length != count || restored.Project.Active.Source.Points[^1] != scan.Points[^1])
+                throw new InvalidOperationException("После повторного открытия изменились исходные измерения.");
+            using var process = Process.GetCurrentProcess(); process.Refresh();
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                Synthetic = true, Points = count, ImportMs = importedMs, ViewMs = preparedMs, AnalysisMs = analysisMs,
+                SaveMs = savedMs, LoadMs = loadedMs, RenderedPoints = cloud.Positions.Count, AnalysisSamples = analysis.SampleCount,
+                Planes = analysis.Surfaces.Length, AllocatedMiB = (GC.GetTotalAllocatedBytes(true) - allocated) / 1048576d,
+                PrivateMiB = process.PrivateMemorySize64 / 1048576d, PeakWorkingSetMiB = process.PeakWorkingSet64 / 1048576d,
+                Scope = "CPU and file I/O; no GPU or hardware accuracy measurement"
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            GC.KeepAlive(view); GC.KeepAlive(restored); return 0;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancel;
+            if (File.Exists(scanPath)) File.Delete(scanPath);
+            if (File.Exists(sessionPath)) File.Delete(sessionPath);
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

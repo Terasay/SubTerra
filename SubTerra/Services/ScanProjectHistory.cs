@@ -25,11 +25,29 @@ public sealed class ScanProjectHistory
         void IncludeAnalysis(StructureAnalysisDocument? document, bool count)
         {
             if (document is null) return;
+            if (document.Objects is { } groups)
+                foreach (var group in groups)
+                    if (arrays.Add(group.Samples) && count) bytes += group.Samples.LongLength * 32;
+            foreach (var saved in document.Rooms ?? [])
+            {
+                foreach (var plan in new[] { saved.Plan, saved.Plan.AutomaticPlan }.OfType<RoomPlan>())
+                {
+                    if (arrays.Add(plan.FloorContour) && count) bytes += plan.FloorContour.LongLength * 12;
+                    if (arrays.Add(plan.CeilingContour) && count) bytes += plan.CeilingContour.LongLength * 12;
+                    if (arrays.Add(plan.Gaps) && count) bytes += plan.Gaps.LongLength * 32;
+                }
+            }
             if (document.Room is { } room)
             {
                 if (arrays.Add(room.FloorContour) && count) bytes += room.FloorContour.LongLength * 12;
                 if (arrays.Add(room.CeilingContour) && count) bytes += room.CeilingContour.LongLength * 12;
                 if (arrays.Add(room.Gaps) && count) bytes += room.Gaps.LongLength * 32;
+                if (room.AutomaticPlan is { } automatic)
+                {
+                    if (arrays.Add(automatic.FloorContour) && count) bytes += automatic.FloorContour.LongLength * 12;
+                    if (arrays.Add(automatic.CeilingContour) && count) bytes += automatic.CeilingContour.LongLength * 12;
+                    if (arrays.Add(automatic.Gaps) && count) bytes += automatic.Gaps.LongLength * 32;
+                }
             }
             foreach (var surface in document.Result.Surfaces)
             {

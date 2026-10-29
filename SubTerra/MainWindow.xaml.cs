@@ -200,7 +200,6 @@ public partial class MainWindow : Window
     }
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsImported) && _viewModel.IsImported) SidebarTabs.SelectedIndex = 1;
         if (e.PropertyName == nameof(MainViewModel.IsScreenSelecting))
         {
             if (_viewModel.IsScreenSelecting) Viewport.Cursor = Cursors.Cross;

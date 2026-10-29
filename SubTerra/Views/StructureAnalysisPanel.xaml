@@ -35,5 +35,35 @@
             </StackPanel>
         
     </StackPanel></ScrollViewer>
-    </TabItem><TabItem Header="Комната" Style="{StaticResource SideTab}"><views:RoomPlanPanel/></TabItem></TabControl>
+    </TabItem><TabItem Header="Комната" Style="{StaticResource SideTab}"><views:RoomPlanPanel/></TabItem>
+    <TabItem Header="Предметы" Style="{StaticResource SideTab}"><ScrollViewer Padding="0,14,4,8"><StackPanel>
+        <TextBlock Text="Отдельные предметы в 3D" Style="{StaticResource Section}"/>
+        <TextBlock Text="{Binding ObjectCandidatesSummary}" Style="{StaticResource Hint}" Margin="0,8,0,10"/>
+        <StackPanel IsEnabled="{Binding CanAnalyzeObjects}">
+            <TextBlock Text="Размер ячейки, м" Style="{StaticResource Hint}"/>
+            <TextBox Text="{Binding ObjectCellSize, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Размер ячейки предметов" Margin="0,5,0,8"/>
+            <TextBlock Text="Минимум точек выборки" Style="{StaticResource Hint}"/>
+            <TextBox Text="{Binding ObjectMinimumPoints, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Минимум точек предмета" Margin="0,5,0,8"/>
+            <CheckBox Content="Исключить подтверждённые плоскости" IsChecked="{Binding ExcludeObjectPlanes}" FontSize="10" Margin="0,0,0,8"/>
+        </StackPanel>
+        <Button Content="Выделить предметы" Command="{Binding AnalyzeObjectsCommand}" FontSize="11" Margin="0,0,0,10"/>
+        <CheckBox Content="Цвета и рамка предметов" IsChecked="{Binding ShowObjectCandidates}" FontSize="11" Margin="0,0,0,10"/>
+        <ListBox ItemsSource="{Binding ObjectCandidates}" SelectedItem="{Binding SelectedObjectCandidate}" MaxHeight="180" Background="Transparent" BorderThickness="0" Foreground="#E4ECF4" AutomationProperties.Name="Группы предметов">
+            <ListBox.ItemTemplate><DataTemplate><DockPanel Margin="0,4">
+                <Border DockPanel.Dock="Left" Background="{Binding ColorHex}" Width="10" Height="10" CornerRadius="3" Margin="0,4,7,0" VerticalAlignment="Top"/>
+                <StackPanel><TextBlock Text="{Binding Label}" FontSize="12"/><TextBlock Text="{Binding StatusText}" Style="{StaticResource Hint}" Margin="0,3,0,0"/></StackPanel>
+            </DockPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Text="{Binding SelectedObjectCandidate.Details, FallbackValue=—, TargetNullValue=—}" Style="{StaticResource Hint}" Margin="0,8,0,8"/>
+        <Button Content="Приблизить выбранный предмет" Command="{Binding FocusObjectCandidateCommand}" FontSize="11" Margin="0,0,0,8"/>
+        <StackPanel IsEnabled="{Binding CanReviewObject}">
+            <TextBox Text="{Binding ObjectCandidateLabel, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" AutomationProperties.Name="Название предмета оператором"/>
+            <Button Content="Подтвердить название" Command="{Binding ConfirmObjectCandidateCommand}" FontSize="11" Margin="0,6,0,0"/>
+            <Button Content="Отклонить группу" Command="{Binding RejectObjectCandidateCommand}" FontSize="11" Margin="0,6,0,0"/>
+            <Button Content="Разделить пополам по длинной оси" Command="{Binding SplitObjectCandidateCommand}" FontSize="10" Margin="0,6,0,8"/>
+            <ComboBox ItemsSource="{Binding ObjectCandidates}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding MergeObjectId}" AutomationProperties.Name="Вторая группа для объединения"/>
+            <Button Content="Объединить с выбранной группой" Command="{Binding MergeObjectCandidatesCommand}" FontSize="10" Margin="0,6,0,0"/>
+        </StackPanel>
+        <TextBlock Text="Геометрические группы требуют проверки. Соприкасающиеся предметы могут объединяться. Цвета относятся к выборке; исходный RGB не меняется. Сохранение и отмена включают разметку, но нейросетевая классификация пока не подключена." Style="{StaticResource Hint}" Margin="0,12,0,0"/>
+    </StackPanel></ScrollViewer></TabItem></TabControl>
 </UserControl>

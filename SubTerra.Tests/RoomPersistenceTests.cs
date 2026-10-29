@@ -10,6 +10,43 @@ namespace SubTerra.Tests;
 public sealed class RoomPersistenceTests
 {
     [Fact]
+    public async Task MultipleRoomsPersistIdsFloorsAndTheActiveEditedRoom()
+    {
+        using var files = new Files(); var project = await RoomPlannerTests.TwoRooms(); var doc = project.Structure!;
+        doc = (doc with { Room = RoomPlanEditor.InsertVertex(doc, 0) }).NormalizeVersion();
+        project = project with { Structure = doc }; var path = Path.Combine(files.Directory, "rooms.subterra");
+        var storage = new SessionStorage(); await storage.SaveAsync(path, project.ToSession(), 1);
+        var restored = (await storage.LoadAsync(path)).Project!;
+        Assert.Equal(2, restored.Structure!.Rooms!.Length); Assert.Equal(doc.ActiveRoomId, restored.Structure.ActiveRoomId);
+        Assert.Equal(doc.Rooms!.Select(r => r.Id), restored.Structure.Rooms.Select(r => r.Id));
+        Assert.True(restored.Structure.Room!.IsManuallyEdited); Assert.Equal("Этаж 1", restored.Structure.Rooms[0].Floor);
+        Assert.True(RoomPlanValidation.Same(restored.Structure.Room, restored.Structure.Rooms[0].Plan));
+        using var zip = ZipFile.OpenRead(path); using var reader = new StreamReader(zip.GetEntry("manifest.json")!.Open());
+        Assert.Equal(10, JsonNode.Parse(reader.ReadToEnd())!["SchemaVersion"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task EditedRoomRoundTripKeepsAutomaticContourAndConfirmedOpenings()
+    {
+        using var files = new Files(); var project = await RoomPlannerTests.PlannedRoom(); var doc = project.Structure!;
+        var room = RoomPlanEditor.InsertVertex(doc, 0);
+        doc = doc with { Version = 3, Room = room };
+        room = RoomPlanEditor.AddOpening(doc, 1, .1, .4);
+        project = project with { Structure = doc with { Room = room } };
+        var path = Path.Combine(files.Directory, "edited.subterra"); var storage = new SessionStorage();
+        await storage.SaveAsync(path, project.ToSession(), 1);
+        var restored = (await storage.LoadAsync(path)).Project!;
+        Assert.True(restored.Structure!.Room!.IsManuallyEdited); Assert.True(RoomPlanner.IsCurrent(restored.Structure));
+        Assert.Equal(5, restored.Structure.Room.FloorContour.Length);
+        Assert.Equal(4, restored.Structure.Room.AutomaticPlan!.FloorContour.Length);
+        Assert.Equal(room.AutomaticPlan!.FloorContour, restored.Structure.Room.AutomaticPlan.FloorContour);
+        Assert.True(Assert.Single(restored.Structure.Room.Gaps).IsConfirmedOpening);
+        Assert.Equal(project.Active!.Source.Points, restored.Active!.Source.Points);
+        using var zip = ZipFile.OpenRead(path); using var reader = new StreamReader(zip.GetEntry("manifest.json")!.Open());
+        Assert.Equal(8, JsonNode.Parse(reader.ReadToEnd())!["SchemaVersion"]!.GetValue<int>());
+    }
+
+    [Fact]
     public async Task VersionSevenRoundTripKeepsRoomAndOriginalMeasurements()
     {
         using var files = new Files(); var project = await RoomPlannerTests.PlannedRoom(); var storage = new SessionStorage();

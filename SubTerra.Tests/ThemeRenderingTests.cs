@@ -110,6 +110,42 @@ public sealed class ThemeRenderingTests
         }
     });
 
+    [Fact]
+    public Task AnalysisTabSurvivesReviewsRoomChangesAndHistory() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+            access: new TestAccess(), interaction: new TestInteraction());
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        Assert.Equal(1, vm.SidebarTabIndex);
+        var shell = ShellPreview(vm); Layout(shell, 1440, 900);
+        var tabs = (TabControl)shell.FindName("SidebarTabs");
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(2, tabs.SelectedIndex);
+        await vm.AnalyzeStructureAsync();
+        foreach (var surface in vm.StructureSurfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown).ToArray())
+        { vm.SelectedStructureSurface = surface; vm.ConfirmStructureSurfaceCommand.Execute(null); }
+        await vm.BuildRoomAsync(); Assert.True(vm.HasRoom);
+        vm.RemoveRoomCommand.Execute(null); Assert.False(vm.HasRoom);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasRoom);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.False(vm.HasRoom);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasRoom);
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(2, tabs.SelectedIndex); Assert.Equal(2, vm.SidebarTabIndex);
+        tabs.SelectedIndex = 4;
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(4, vm.SidebarTabIndex);
+        vm.ClearStructureCommand.Execute(null); await vm.UndoProjectCommand.ExecuteAsync();
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(4, tabs.SelectedIndex);
+        await vm.LoadDemoAsync();
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(0, tabs.SelectedIndex); Assert.Equal(0, vm.SidebarTabIndex);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(1, tabs.SelectedIndex);
+        Assert.False(vm.HasNotification, vm.Notification);
+    });
+
     private static FrameworkElement ShellPreview(MainViewModel model)
     {
         XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -138,7 +174,7 @@ public sealed class ThemeRenderingTests
                 new XElement(p + "TextBlock", new XAttribute("Text", "Предпросмотр вёрстки · без GPU"), new XAttribute("Foreground", "#ACBFCD"), new XAttribute("Margin", "0,10,0,0")))));
         root.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "RightPanel").SetAttributeValue("Visibility", "Visible");
         root.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "RightColumn").SetAttributeValue("Width", "336");
-        if (model.IsImported) root.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SidebarTabs").SetAttributeValue("SelectedIndex", "2");
+        if (model.IsImported) model.SidebarTabIndex = 2;
         model.IsInspectorOpen = true;
         var control = (FrameworkElement)XamlReader.Parse(root.ToString()); control.DataContext = model;
         return control;

@@ -70,6 +70,7 @@ public sealed partial class MainViewModel
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator) return;
             _previewProject = next; _previewView = view;
+            _previewOperation = "очистка объекта";
             _previewDescription = $"{description}: останется {mask.Count:N0} из {o.PointCount:N0} точек. Удалится {o.PointCount - mask.Count:N0}.";
             ApplyProjectView(view); NotifySourceProperties();
             Status = "Предпросмотр очистки · примените результат или отмените";
@@ -82,9 +83,10 @@ public sealed partial class MainViewModel
     {
         if (!HasEditPreview || !IsAdministrator || !CanInteract || HasRecovery) return;
         var next = _previewProject!; var view = _previewView!; var description = _previewDescription;
-        _projectHistory.Commit(_scanProject!, next, "очистка объекта");
+        var operation = _previewOperation;
+        _projectHistory.Commit(_scanProject!, next, operation);
         _previewProject = null; _previewView = null; _previewDescription = "";
-        SetProject(next, view); MarkSessionDirty(); Status = "Очистка применена · исходник сохранён"; AddEvent(description);
+        SetProject(next, view); MarkSessionDirty(); Status = "Применено: " + operation + " · исходник сохранён"; AddEvent(description);
     }
     public void CancelCleanPreview()
     {

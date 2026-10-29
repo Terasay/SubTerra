@@ -15,6 +15,46 @@ namespace SubTerra.Tests;
 
 public sealed class RoomWorkflowTests
 {
+    [Fact]
+    public Task SwitchingRoomsPreservesOtherPlansAndGuestAccess() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var project = await RoomPlannerTests.TwoRooms(); var path = Path.Combine(files.Directory, "rooms.subterra");
+        await new SessionStorage().SaveAsync(path, project.ToSession(), 1);
+        using var vm = Vm(); await vm.OpenAsync(path); Assert.Equal(2, vm.SavedRooms.Count);
+        var firstId = vm.SelectedRoomId; var secondId = vm.SavedRooms.First(r => r.Id != firstId).Id;
+        var second = vm.SavedRooms.First(r => r.Id == secondId).Plan;
+        await vm.InsertRoomVertexCommand.ExecuteAsync(); Assert.Equal(5, vm.RoomVertices.Count);
+        vm.SelectedRoomId = secondId; Assert.Equal(4, vm.RoomVertices.Count);
+        vm.RoomName = "Лаборатория"; vm.RoomFloor = "Первый этаж"; vm.ApplyRoomIdentityCommand.Execute(null);
+        vm.SelectedRoomId = firstId; Assert.Equal(5, vm.RoomVertices.Count); Assert.True(vm.HasRoomEdits);
+        vm.ShowAllRooms = true; Assert.NotNull(vm.RoomOutline); Assert.True(vm.RoomOutline!.Positions!.Count > 24);
+        Assert.True(await vm.SaveAsync(path));
+        using var guest = Vm(new(false)); await guest.OpenAsync(path); guest.SelectedRoomId = secondId;
+        Assert.Equal("Лаборатория", guest.RoomName); Assert.Equal("Первый этаж", guest.RoomFloor);
+        Assert.False(guest.HasUnsavedChanges); Assert.False(guest.NewRoomCommand.CanExecute(null)); Assert.False(guest.ApplyRoomIdentityCommand.CanExecute(null));
+        Assert.False(guest.HasNotification, guest.Notification);
+        Assert.Equal(second.FloorContour, guest.SavedRooms.First(r => r.Id == secondId).Plan.FloorContour);
+    });
+
+    [Fact]
+    public Task ManualRoomEditingSupportsHistoryPersistenceAndExplicitReset() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(); await Prepare(vm); await vm.BuildRoomAsync();
+        var area = vm.RoomAreaText; vm.RoomVertexIndex = 0;
+        await vm.InsertRoomVertexCommand.ExecuteAsync(); Assert.True(vm.HasRoomEdits); Assert.Equal(5, vm.RoomVertices.Count);
+        await vm.BuildRoomAsync(); Assert.True(vm.HasRoomEdits); Assert.Equal(5, vm.RoomVertices.Count); Assert.NotEmpty(vm.RoomBuildMessage);
+        vm.RoomOpeningStart = .1; vm.RoomOpeningEnd = .4;
+        await vm.AddRoomOpeningCommand.ExecuteAsync(); Assert.Single(vm.RoomOpenings);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.Empty(vm.RoomOpenings);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.Single(vm.RoomOpenings);
+        var path = Path.Combine(files.Directory, "edited.subterra"); Assert.True(await vm.SaveAsync(path));
+        using var restored = Vm(); await restored.OpenAsync(path);
+        Assert.True(restored.HasRoomEdits); Assert.Equal(5, restored.RoomVertices.Count); Assert.Single(restored.RoomOpenings);
+        restored.ResetRoomEditsCommand.Execute(null); Assert.False(restored.HasRoomEdits); Assert.Equal(4, restored.RoomVertices.Count);
+        Assert.Equal(area, restored.RoomAreaText); await restored.UndoProjectCommand.ExecuteAsync(); Assert.True(restored.HasRoomEdits);
+        Assert.False(restored.HasNotification, restored.Notification);
+    });
+
     private static MainViewModel Vm(TestAccess? access = null, WorkspaceStateStore? store = null) => new(
         new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: access ?? new(), interaction: new TestInteraction(), workspaceStore: store);
     private static async Task Prepare(MainViewModel vm)
@@ -73,6 +113,12 @@ public sealed class RoomWorkflowTests
         Assert.True(restored.HasRoom); Assert.False(restored.RoomIsStale); Assert.False(restored.HasNotification, restored.Notification);
         var panel = new RoomPlanPanel { DataContext = restored, Width = 300, Height = 1000, Foreground = Brushes.White };
         panel.Measure(new Size(300, 1000)); panel.Arrange(new Rect(0, 0, 300, 1000)); panel.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.DataBind);
+        void Expand(DependencyObject element)
+        {
+            if (element is Expander expander) expander.IsExpanded = true;
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) Expand(VisualTreeHelper.GetChild(element, i));
+        }
+        Expand(panel); panel.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.DataBind);
         void Check(DependencyObject root)
         {
             var values = root.GetLocalValueEnumerator();

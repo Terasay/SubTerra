@@ -49,4 +49,30 @@ public sealed record StructureInputStamp(Guid ObjectId, int PointCount, int Incl
     string MaskHash, ScanTransform Transform, bool IsVisible);
 
 public sealed record StructureAnalysisDocument(int Version, string Algorithm, DateTimeOffset CreatedAtUtc,
-    StructureInputStamp[] Inputs, StructureAnalysisResult Result, bool IsStale = false, RoomPlan? Room = null);
+    StructureInputStamp[] Inputs, StructureAnalysisResult Result, bool IsStale = false, RoomPlan? Room = null,
+    StructureObject[]? Objects = null, ObjectGroupingOptions? ObjectOptions = null, string? ObjectSourceSignature = null,
+    SavedRoom[]? Rooms = null, Guid ActiveRoomId = default)
+{
+    public StructureAnalysisDocument NormalizeVersion() => this with
+    {
+        Version = Rooms is not null ? 5 : Objects is not null ? 4 : Room is null ? 1 : Room.IsManuallyEdited ? 3 : 2,
+        Rooms = Rooms?.Select(r => r.Id == ActiveRoomId && Room is not null ? r with { Plan = Room } : r).ToArray()
+    };
+}
+
+public sealed record ObjectGroupingOptions(double CellSize = .15, int MinimumPoints = 20, bool ExcludeConfirmedPlanes = true)
+{
+    public void Validate()
+    {
+        if (!double.IsFinite(CellSize) || CellSize is < .000001 or > 100 || MinimumPoints is < 3 or > 30_000)
+            throw new ArgumentOutOfRangeException(nameof(ObjectGroupingOptions), "Ячейка: 0,000001–100 м, минимум точек: 3–30000.");
+    }
+}
+
+public sealed record StructureObject(int Id, string Label, uint Color, StructureSample[] Samples,
+    Vector3 Minimum, Vector3 Maximum, StructureReviewState Review = StructureReviewState.Proposed)
+{
+    public string ColorHex => $"#{Color:X6}";
+    public string Details => $"{Samples.Length:N0} точек выборки · {(Maximum.X - Minimum.X):F2} × {(Maximum.Y - Minimum.Y):F2} × {(Maximum.Z - Minimum.Z):F2} м";
+    public string StatusText => Review switch { StructureReviewState.Confirmed => "Проверено оператором", StructureReviewState.Rejected => "Отклонено", _ => "Геометрическая группа" };
+}

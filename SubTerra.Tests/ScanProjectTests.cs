@@ -18,6 +18,59 @@ namespace SubTerra.Tests;
 
 public sealed class ScanProjectTests
 {
+    [Theory]
+    [InlineData(0)] [InlineData(37)] [InlineData(90)] [InlineData(-65)]
+    public void RigidAlignmentRecoversRotationAndTranslationWithoutChangingScale(float angle)
+    {
+        Vector3[] points = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(2,3,1)];
+        var expected = new ScanTransform(4, -2, 7, 20, angle, -35).Matrix;
+        var target = points.Select(p => Vector3.Transform(p, expected)).ToArray();
+        var fit = ScanAlignment.Fit(points, target);
+        var restored = ScanAlignment.Transform(fit).Matrix;
+        for (var i = 0; i < points.Length; i++)
+        {
+            Assert.InRange(Vector3.Distance(Vector3.Transform(points[i], fit), target[i]), 0, .00001);
+            Assert.InRange(Vector3.Distance(Vector3.Transform(points[i], restored), target[i]), 0, .00001);
+        }
+        Assert.Throws<InvalidDataException>(() => ScanAlignment.Fit([Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2], [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2]));
+    }
+
+    [Fact]
+    public void PointRefinementMeasuresOverlapAndRejectsMissingCorrespondences()
+    {
+        var points = (from x in Enumerable.Range(0, 6) from y in Enumerable.Range(0, 5) from z in Enumerable.Range(0, 4)
+            select new Vector3(x * .3f, y * .3f, z * .3f)).ToArray();
+        var target = points.Select(p => p + new Vector3(.02f, -.01f, .03f)).ToArray();
+        var result = ScanAlignment.Refine(points, target, Matrix4x4.Identity, .1, true);
+        Assert.Equal(points.Length, result.MatchedPoints); Assert.InRange(result.RmsMeters, 0, .00001);
+        Assert.Throws<InvalidDataException>(() => ScanAlignment.Refine(points, target.Select(p => p + new Vector3(100)).ToArray(), Matrix4x4.Identity, .1, true));
+        using var cts = new CancellationTokenSource(); cts.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => ScanAlignment.Refine(points, target, Matrix4x4.Identity, .1, true, cts.Token));
+    }
+
+    [Fact]
+    public Task AlignmentPreviewCanBeCancelledAppliedAndUndone() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(new());
+        var path = files.Write("first.asc", "0 0 0\n1 0 0\n0 1 0\n0 0 1\n1 1 1");
+        await vm.ImportAsync(path, new(ScanUnit.Meters, LocalOrigin:false));
+        var targetId = vm.SelectedScanObject!.Id;
+        await vm.ImportAsync(path, new(ScanUnit.Meters, LocalOrigin:false), true);
+        vm.ObjectX = 1; await vm.ApplyObjectCommand.ExecuteAsync(); vm.AlignmentTargetId = targetId; vm.RefineAlignment = false;
+        foreach (var p in new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY })
+        {
+            vm.BeginInspection(false); vm.SelectInspectionPoint(p + Vector3.UnitX); vm.CaptureAlignmentSourceCommand.Execute(null);
+            vm.SelectInspectionPoint(p); vm.CaptureAlignmentTargetCommand.Execute(null);
+        }
+        Assert.Equal(3, vm.AlignmentPairs.Count); Assert.True(vm.CanPreviewAlignment);
+        await vm.PreviewAlignmentAsync(); Assert.True(vm.HasEditPreview); Assert.False(vm.HasNotification, vm.Notification);
+        vm.CancelCleanPreview(); Assert.Equal(1, vm.ObjectX);
+        await vm.PreviewAlignmentAsync(); vm.ApplyCleanPreviewCommand.Execute(null); Assert.InRange(vm.ObjectX, -.00001, .00001);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.Equal(1, vm.ObjectX);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.InRange(vm.ObjectX, -.00001, .00001);
+        Assert.False(vm.HasNotification, vm.Notification);
+    });
+
     private static ImportedScan Cloud(params Vector3[] points) => new()
     {
         Metadata = new("test.asc", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),

@@ -63,7 +63,7 @@
                                       SelectionChanged="Scenario_SelectionChanged" IsEnabled="{Binding CanChangeScenario}" AutomationProperties.Name="Пространство"/>
                             <TextBlock Visibility="{Binding IsSimulation, Converter={StaticResource BoolVisibility}}" Text="{Binding SelectedScenario.Description}" Style="{StaticResource Muted}" LineHeight="17" Margin="0,10,0,0"/>
                         </StackPanel>
-                        <TabControl x:Name="SidebarTabs" Grid.Row="1" Style="{StaticResource SideTabs}">
+                        <TabControl x:Name="SidebarTabs" Grid.Row="1" Style="{StaticResource SideTabs}" SelectedIndex="{Binding SidebarTabIndex, Mode=TwoWay}">
                             <TabItem Header="Вид" Style="{StaticResource SideTab}">
                                 <ScrollViewer Padding="0,18,4,0"><StackPanel>
                                     <Border Background="#142A29" CornerRadius="8" Padding="12" Margin="0,0,0,16"><StackPanel>
@@ -186,6 +186,8 @@
                             <h:LineGeometryModel3D Geometry="{Binding ClipPlaneGuide}" Color="#8DABD2" Thickness="1" IsRendering="{Binding ClipGuideVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding StructureGeometry}" Color="White" Size="3.5,3.5" Figure="Ellipse" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding StructureOutline}" Color="#EFF9FF" Thickness="2" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding ObjectCandidateGeometry}" Color="White" Size="4,4" Figure="Ellipse" DepthBias="-30" IsRendering="{Binding ObjectCandidatesVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding ObjectCandidateOutline}" Color="#FFF0A0" Thickness="2" DepthBias="-30" IsRendering="{Binding ObjectCandidatesVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding RoomOutline}" Color="#A1E3C5" Thickness="2" DepthBias="-25" IsRendering="{Binding RoomVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding RoomGapOutline}" Color="#FFB46B" Thickness="4" DepthBias="-30" IsRendering="{Binding RoomVisible}" IsHitTestVisible="False"/>
                         </h:Viewport3DX>
@@ -193,7 +195,7 @@
                         <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,54,10,0" Padding="12,7" Background="#EE254535" CornerRadius="7" IsHitTestVisible="False" Visibility="{Binding IsScreenSelecting, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" Foreground="#D0EDBD"/></Border>
                         <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12,64,12,0" Padding="10" Background="#ED14212B" CornerRadius="8" MaxWidth="260" IsHitTestVisible="False" Visibility="{Binding ImportedMeshVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding MeshPreviewText}" TextWrapping="Wrap" FontSize="11" Foreground="#B9CFAB"/></Border>
                         <Border VerticalAlignment="Bottom" Margin="14,0,14,51" Padding="14" Background="#F0253B31" BorderBrush="#789C72" BorderThickness="1" CornerRadius="8" Visibility="{Binding HasEditPreview, Converter={StaticResource BoolVisibility}}"><StackPanel>
-                            <TextBlock Text="Предпросмотр очистки" FontWeight="SemiBold" Foreground="#D0EDBD"/><TextBlock Text="{Binding EditPreviewText}" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                            <TextBlock Text="Предпросмотр изменения" FontWeight="SemiBold" Foreground="#D0EDBD"/><TextBlock Text="{Binding EditPreviewText}" TextWrapping="Wrap" Margin="0,6,0,10"/>
                             <StackPanel Orientation="Horizontal"><Button Content="Применить" Command="{Binding ApplyCleanPreviewCommand}" Style="{StaticResource Primary}" Margin="0,0,8,0"/><Button Content="Отменить · Esc" Command="{Binding CancelCleanPreviewCommand}"/></StackPanel>
                         </StackPanel></Border>
                         <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="#EC14212B" CornerRadius="6" Padding="9,6" Margin="12" IsHitTestVisible="False" Visibility="{Binding IsOverview, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionStateText}" FontSize="11" Foreground="#C2DCAE"/></Border>

@@ -13,6 +13,78 @@ namespace SubTerra.Tests;
 
 public sealed class StructureWorkflowTests
 {
+    [Fact]
+    public Task CancelledGroupingAndGuestCommandsCannotReplaceAnAnalysis() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        var geometry = vm.StructureGeometry;
+        var pending = vm.AnalyzeObjectsAsync(); vm.CancelOperation(); await pending;
+        Assert.False(vm.HasObjectCandidates); Assert.Same(geometry, vm.StructureGeometry); Assert.False(vm.IsBusy);
+        await vm.AnalyzeObjectsAsync(); Assert.True(vm.HasObjectCandidates);
+        var path = Path.Combine(files.Directory, "groups.subterra"); Assert.True(await vm.SaveAsync(path));
+        using var guest = Vm(new(false)); await guest.OpenAsync(path);
+        var before = guest.ObjectCandidates.ToArray(); Assert.NotEmpty(before);
+        foreach (var command in new[] { guest.ConfirmObjectCandidateCommand, guest.RejectObjectCandidateCommand,
+            guest.SplitObjectCandidateCommand, guest.MergeObjectCandidatesCommand })
+        { Assert.False(command.CanExecute(null)); command.Execute(null); }
+        await guest.AnalyzeObjectsAsync(); Assert.Equal(before, guest.ObjectCandidates.ToArray()); Assert.False(guest.HasUnsavedChanges);
+        var panel = new StructureAnalysisPanel { DataContext = guest, Width = 268, Height = 1400 };
+        panel.Measure(new Size(268, 1400)); panel.Arrange(new Rect(0, 0, 268, 1400)); panel.UpdateLayout();
+        T? Find<T>(DependencyObject element) where T : DependencyObject
+        {
+            if (element is T match) return match;
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) if (Find<T>(VisualTreeHelper.GetChild(element, i)) is { } child) return child;
+            return null;
+        }
+        Find<System.Windows.Controls.TabControl>(panel)!.SelectedIndex = 2;
+        panel.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.DataBind);
+        void Check(DependencyObject element)
+        {
+            var properties = element.GetLocalValueEnumerator();
+            while (properties.MoveNext())
+            {
+                var binding = BindingOperations.GetBindingExpressionBase(element, properties.Current.Property);
+                if (binding is not null) Assert.False(binding.HasError, $"{element.GetType().Name}.{properties.Current.Property.Name}");
+            }
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) Check(VisualTreeHelper.GetChild(element, i));
+        }
+        Check(panel); Assert.False(guest.HasNotification, guest.Notification);
+    });
+
+    [Fact]
+    public Task ColoredObjectsCanBeReviewedSplitMergedSavedAndInvalidated() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        foreach (var s in vm.StructureSurfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown).ToArray())
+        { vm.SelectedStructureSurface = s; vm.ConfirmStructureSurfaceCommand.Execute(null); }
+        await vm.BuildRoomAsync(); await vm.AnalyzeObjectsAsync();
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasObjectCandidates); Assert.NotEmpty(vm.ObjectCandidates);
+        Assert.True(vm.ObjectCandidatesVisible); Assert.NotNull(vm.ObjectCandidateOutline);
+        var count = vm.ObjectCandidates.Count; var samples = vm.ObjectCandidates.Sum(o => o.Samples.Length);
+        vm.ObjectCandidateLabel = "Столешница"; vm.ConfirmObjectCandidateCommand.Execute(null);
+        Assert.Equal("Столешница", vm.SelectedObjectCandidate!.Label);
+        Assert.Equal(StructureReviewState.Confirmed, vm.SelectedObjectCandidate.Review);
+        vm.SplitObjectCandidateCommand.Execute(null); Assert.Equal(count + 1, vm.ObjectCandidates.Count);
+        Assert.Equal(samples, vm.ObjectCandidates.Sum(o => o.Samples.Length));
+        vm.MergeObjectId = vm.ObjectCandidates.First(o => o != vm.SelectedObjectCandidate).Id;
+        vm.MergeObjectCandidatesCommand.Execute(null); Assert.Equal(count, vm.ObjectCandidates.Count);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.Equal(count + 1, vm.ObjectCandidates.Count);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.Equal(count, vm.ObjectCandidates.Count);
+        var full = vm.ObjectCandidateGeometry!.Positions!.Count;
+        vm.ClipOffset = .5; vm.ClipEnabled = true;
+        Assert.All(vm.ObjectCandidateGeometry!.Positions!, p => Assert.True(p.Z <= .5001));
+        vm.ClipEnabled = false; Assert.Equal(full, vm.ObjectCandidateGeometry!.Positions!.Count);
+        var path = Path.Combine(files.Directory, "objects.subterra"); Assert.True(await vm.SaveAsync(path));
+        using var reopened = Vm(); await reopened.OpenAsync(path);
+        Assert.True(reopened.HasRoom); Assert.True(reopened.HasObjectCandidates); Assert.False(reopened.ObjectCandidatesAreStale);
+        Assert.Equal(samples, reopened.ObjectCandidates.Sum(o => o.Samples.Length));
+        Assert.Equal(vm.ObjectCandidateGeometry.Colors, reopened.ObjectCandidateGeometry!.Colors);
+        reopened.ObjectX = 1; await reopened.ApplyObjectCommand.ExecuteAsync();
+        Assert.True(reopened.ObjectCandidatesAreStale); Assert.Null(reopened.ObjectCandidateGeometry);
+        await reopened.UndoProjectCommand.ExecuteAsync(); Assert.False(reopened.ObjectCandidatesAreStale);
+        Assert.NotNull(reopened.ObjectCandidateGeometry); Assert.False(reopened.HasNotification, reopened.Notification);
+    });
+
     private static MainViewModel Vm(TestAccess? access = null, IStructureAnalyzer? analyzer = null) =>
         new(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: access ?? new(),
             interaction: new TestInteraction(), structureAnalyzer: analyzer);

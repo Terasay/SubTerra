@@ -57,7 +57,10 @@ public static class StructureProvenance
         static bool Hash(string? value) => value?.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F');
         static bool Point(Vector3 value) => InspectionPoint.From(value).IsValid;
         [DoesNotReturn] static void Invalid() => throw new System.IO.InvalidDataException("Некорректные данные анализа структуры.");
-        if (document.Version is not (1 or 2) || (document.Version == 2) != (document.Room is not null) || document.Algorithm != StructureAnalysisResult.Algorithm || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
+        if (document.Version is not (1 or 2 or 3 or 4 or 5) || (document.Version == 5) != (document.Rooms is not null) ||
+            (document.Version < 5 && (document.Version == 4) != (document.Objects is not null)) ||
+            (document.Version < 4 && ((document.Version >= 2) != (document.Room is not null) || (document.Version == 3) != (document.Room?.IsManuallyEdited == true))) ||
+            document.Algorithm != StructureAnalysisResult.Algorithm || document.CreatedAtUtc < DateTimeOffset.UnixEpoch ||
             document.Inputs is null || document.Inputs.Length > ScanProject.MaximumObjects || document.Inputs.Any(i => i is null) ||
             document.Inputs.Select(i => i.ObjectId).Distinct().Count() != document.Inputs.Length ||
             document.Inputs.Any(i => i.ObjectId == Guid.Empty || i.PointCount is < 1 or > ImportedScan.MaximumPoints ||
@@ -107,6 +110,41 @@ public static class StructureProvenance
                 }
             }
         }
+        if (document.Objects is { } groups)
+        {
+            if (document.ObjectOptions is null || !Hash(document.ObjectSourceSignature) || groups.Length > PointObjectAnalyzer.MaximumObjects ||
+                groups.Any(g => g is null) || groups.Select(g => g.Id).Distinct().Count() != groups.Length) Invalid();
+            try { document.ObjectOptions!.Validate(); }
+            catch (ArgumentOutOfRangeException ex) { throw new System.IO.InvalidDataException("Некорректные параметры предметов.", ex); }
+            var groupedReferences = new HashSet<SourcePointReference>();
+            foreach (var group in groups)
+            {
+                token.ThrowIfCancellationRequested();
+                if (group.Id < 1 || group.Id > 1_000_000 || string.IsNullOrWhiteSpace(group.Label) || group.Label.Length > 80 ||
+                    group.Color > 0xffffff || !Enum.IsDefined(group.Review) || group.Samples is null || group.Samples.Length < 3 ||
+                    !Point(group.Minimum) || !Point(group.Maximum)) Invalid();
+                var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
+                foreach (var sample in group.Samples)
+                {
+                    if (!Point(sample.Position) || !groupedReferences.Add(sample.Source) || groupedReferences.Count > PointObjectAnalyzer.MaximumSamples ||
+                        !inputs.TryGetValue(sample.Source.ObjectId, out var input) || !input.IsVisible || sample.Source.PointIndex < 0 || sample.Source.PointIndex >= input.PointCount) Invalid();
+                    if (!document.IsStale && (!objects.TryGetValue(sample.Source.ObjectId, out var obj) || !obj.IsVisible || sample.Source.PointIndex >= obj.Source.Points.Length || !obj.Includes(sample.Source.PointIndex) ||
+                        Vector3.DistanceSquared(sample.Position, Vector3.Transform(obj.Source.Points[sample.Source.PointIndex].Position, obj.Matrix)) > 1e-8f)) Invalid();
+                    min = Vector3.Min(min, sample.Position); max = Vector3.Max(max, sample.Position);
+                }
+                if (Vector3.DistanceSquared(min, group.Minimum) > 1e-8f || Vector3.DistanceSquared(max, group.Maximum) > 1e-8f) Invalid();
+            }
+        }
+        else if (document.ObjectOptions is not null || document.ObjectSourceSignature is not null) Invalid();
         RoomPlanValidation.Validate(document, token);
+        if (document.Rooms is { } rooms)
+        {
+            if (rooms.Length > 64 || rooms.Any(r => r is null || r.Plan is null || r.Id == Guid.Empty || string.IsNullOrWhiteSpace(r.Floor) || r.Floor.Length > 80) ||
+                rooms.Select(r => r.Id).Distinct().Count() != rooms.Length) Invalid();
+            foreach (var room in rooms) RoomPlanValidation.Validate(document with { Room = room.Plan }, token);
+            if (document.ActiveRoomId == Guid.Empty ? document.Room is not null :
+                document.Room is null || rooms.FirstOrDefault(r => r.Id == document.ActiveRoomId) is not { } active || !RoomPlanValidation.Same(active.Plan, document.Room)) Invalid();
+        }
+        else if (document.ActiveRoomId != Guid.Empty) Invalid();
     }
 }

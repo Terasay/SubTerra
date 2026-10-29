@@ -8,6 +8,27 @@ namespace SubTerra.Tests;
 
 public sealed class StructureAnalysisTests
 {
+    [Fact]
+    public async Task ObjectGroupingExcludesReviewedPlanesAndKeepsStableSourceReferences()
+    {
+        var project = await RoomPlannerTests.ReviewedRoom(); var doc = project.Structure!;
+        var first = PointObjectAnalyzer.Analyze(project, doc, new());
+        var second = PointObjectAnalyzer.Analyze(project, doc, new());
+        Assert.NotEmpty(first); Assert.Equal(first.Select(o => o.Id), second.Select(o => o.Id));
+        Assert.Equal(first.SelectMany(o => o.Samples), second.SelectMany(o => o.Samples));
+        Assert.Equal(first.Sum(o => o.Samples.Length), first.SelectMany(o => o.Samples).Select(s => s.Source).Distinct().Count());
+        Assert.All(first.SelectMany(o => o.Samples), sample =>
+        {
+            Assert.DoesNotContain(doc.Result.Surfaces.Where(s => s.Review == StructureReviewState.Confirmed),
+                s => Math.Abs(Vector3.Dot(s.Normal, sample.Position) + s.Offset) <= doc.Result.Options.DistanceTolerance);
+            Assert.Equal(project.Active!.Source.Points[sample.Source.PointIndex].Position, sample.Position);
+        });
+        Assert.True(first.Select(o => o.Color).Distinct().Count() == first.Length);
+        using var cts = new CancellationTokenSource(); cts.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => PointObjectAnalyzer.Analyze(project, doc, new(), cts.Token));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PointObjectAnalyzer.Analyze(project, doc, new(double.NaN)));
+    }
+
     internal static string ClassroomPath => Path.Combine(AppContext.BaseDirectory, "ScanExamples", "classroom-meters-zup.ply");
     internal static async Task<ScanProject> Classroom() => ScanProject.FromSession(
         (await new ScanImporter().ImportAsync(ClassroomPath, new(ScanUnit.Meters, LocalOrigin: false))).ToSession());

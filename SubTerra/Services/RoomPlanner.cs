@@ -12,14 +12,14 @@ public static class RoomPlanner
     private readonly record struct Point(double X, double Y);
     private sealed record Wall(StructureSurface Surface, double X, double Y, double Limit)
     { public double Distance(Point p) => X * p.X + Y * p.Y - Limit; }
-    public static string Signature(StructureAnalysisDocument document)
+    public static string Signature(StructureAnalysisDocument document, int[]? surfaceIds = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, true))
         {
             writer.Write(document.Algorithm); writer.Write(document.CreatedAtUtc.UtcTicks);
             writer.Write(document.Result.Options.DistanceTolerance);
-            foreach (var s in document.Result.Surfaces.Where(s => s.Review == StructureReviewState.Confirmed && s.Kind != StructureSurfaceKind.Unknown).OrderBy(s => s.Id))
+            foreach (var s in document.Result.Surfaces.Where(s => s.Review == StructureReviewState.Confirmed && s.Kind != StructureSurfaceKind.Unknown && (surfaceIds is null || surfaceIds.Contains(s.Id))).OrderBy(s => s.Id))
             {
                 writer.Write(s.Id); writer.Write((int)s.Kind); writer.Write(s.Normal.X); writer.Write(s.Normal.Y); writer.Write(s.Normal.Z);
                 writer.Write(s.Offset); writer.Write(s.Center.X); writer.Write(s.Center.Y); writer.Write(s.Center.Z); writer.Write(s.AreaSquareMeters);
@@ -30,15 +30,18 @@ public static class RoomPlanner
         return Convert.ToHexString(SHA256.HashData(stream.ToArray()));
     }
     public static bool IsCurrent(StructureAnalysisDocument document) =>
-        document.Room is { } room && !document.IsStale && room.SourceSignature == Signature(document);
+        document.Room is { } room && !document.IsStale && room.SourceSignature == Signature(document, room.SurfaceIds);
 
-    public static RoomBuildResult Build(StructureAnalysisDocument document, string name, CancellationToken token = default)
+    public static RoomBuildResult Build(StructureAnalysisDocument document, string name, CancellationToken token = default, int[]? surfaceIds = null, Vector3? interiorPoint = null)
     {
         token.ThrowIfCancellationRequested();
         RoomBuildResult Fail(string message) => new(null, message);
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 80) return Fail("Название комнаты: от 1 до 80 символов.");
         if (document.IsStale) return Fail("Анализ устарел. Повторите его или верните исходную геометрию.");
-        var confirmed = document.Result.Surfaces.Where(s => s.Review == StructureReviewState.Confirmed).ToArray();
+        if (surfaceIds is not null && (surfaceIds.Length > 24 || surfaceIds.Distinct().Count() != surfaceIds.Length || surfaceIds.Any(id => document.Result.Surfaces.All(s => s.Id != id))))
+            return Fail("Некорректный выбор поверхностей комнаты.");
+        if (interiorPoint is { } seed && !InspectionPoint.From(seed).IsValid) return Fail("Некорректная точка внутри комнаты.");
+        var confirmed = document.Result.Surfaces.Where(s => s.Review == StructureReviewState.Confirmed && (surfaceIds is null || surfaceIds.Contains(s.Id))).ToArray();
         var floors = confirmed.Where(s => s.Kind == StructureSurfaceKind.Floor).ToArray();
         var ceilings = confirmed.Where(s => s.Kind == StructureSurfaceKind.Ceiling).ToArray();
         var sides = confirmed.Where(s => s.Kind == StructureSurfaceKind.Wall).ToArray();
@@ -48,7 +51,7 @@ public static class RoomPlanner
         var floor = floors[0]; var ceiling = ceilings.FirstOrDefault();
         if (Math.Abs(floor.Normal.Z) < .9994 || ceiling is not null && Math.Abs(ceiling.Normal.Z) < .9994 || sides.Any(s => Math.Abs(s.Normal.Z) > .01))
             return Fail("Для первого варианта нужны почти горизонтальные пол/потолок и вертикальные стены. Проверьте вертикаль Z.");
-        var walls = new List<Wall>(); var center = new Point(floor.Center.X, floor.Center.Y);
+        var walls = new List<Wall>(); var center = new Point(interiorPoint?.X ?? floor.Center.X, interiorPoint?.Y ?? floor.Center.Y);
         foreach (var side in sides)
         {
             token.ThrowIfCancellationRequested();
@@ -98,14 +101,17 @@ public static class RoomPlanner
             edgeWalls[i] = closest.Surface.Id;
         }
         if (sides.Any(s => !edgeWalls.Contains(s.Id))) return Fail("Есть лишние или дублирующиеся стены. Уточните поверхности одной комнаты.");
-        var room = new RoomPlan(name.Trim(), 1, Signature(document), floor.Id, ceiling?.Id, edgeWalls, bottom, top, [], []);
-        if (room.AreaSquareMeters is < .5 or > 1_000_000 || floor.AreaSquareMeters < room.AreaSquareMeters * .5)
+        var room = new RoomPlan(name.Trim(), 1, Signature(document, surfaceIds), floor.Id, ceiling?.Id, edgeWalls, bottom, top, [], [],
+            SurfaceIds: surfaceIds?.Order().ToArray(), InteriorPoint: interiorPoint);
+        if (room.AreaSquareMeters is < .5 or > 1_000_000)
             return Fail("Опорный участок пола слишком мал для этого контура. Проверьте класс пола и полноту сканирования.");
         foreach (var support in new[] { floor, ceiling }.OfType<StructureSurface>())
         {
-            if (support.Samples.Length == 0 || support.Samples.Count(s => walls.All(w => w.Distance(new(s.Position.X, s.Position.Y)) <= tolerance)) < support.Samples.Length * .9)
+            var inside = support.Samples.Where(s => walls.All(w => w.Distance(new(s.Position.X, s.Position.Y)) <= tolerance)).Select(s => s.Position).ToArray();
+            if (support.Samples.Length == 0 || (interiorPoint is null && inside.Length < support.Samples.Length * .9))
                 return Fail("Опорные точки выходят за контур. Поверхности могут относиться к разным помещениям или содержать перегородку.");
-            if (support.AreaSquareMeters < room.AreaSquareMeters * .5) return Fail("Недостаточно опорных точек потолка. Уточните потолок или оставьте высоту неизвестной.");
+            var area = interiorPoint is null ? support.AreaSquareMeters : inside.Length < 3 ? 0 : PlanePatch.Boundary(new(support.Normal, support.Offset, support.Center), inside).Area;
+            if (area < room.AreaSquareMeters * .5) return Fail("Недостаточно опорных точек пола или потолка в выбранной комнате.");
         }
         var gaps = new List<RoomGap>(); var incomplete = new List<int>();
         var minimumHeight = room.MinimumHeight; var bandTop = Math.Min(1.8, minimumHeight * .7 ?? 1.8);
@@ -148,5 +154,135 @@ public static class RoomPlanner
         var lower = hull.Count + 1;
         for (var i = distinct.Count - 2; i >= 0; i--) { var p = distinct[i]; while (hull.Count >= lower && Cross(hull[^2], hull[^1], p) <= 1e-7) hull.RemoveAt(hull.Count - 1); hull.Add(p); }
         hull.RemoveAt(hull.Count - 1); return hull.ToArray();
+    }
+}
+
+/// <summary>Operator edits preserve the automatic result and never modify source measurements.</summary>
+public static class RoomPlanEditor
+{
+    private static RoomPlan Current(StructureAnalysisDocument document)
+    {
+        if (document.Room is not { } room || !RoomPlanner.IsCurrent(document))
+            throw new InvalidDataException("Сначала постройте актуальный план комнаты.");
+        return room;
+    }
+    private static void Index(RoomPlan room, int index)
+    {
+        if ((uint)index >= room.FloorContour.Length) throw new InvalidDataException("Выберите вершину контура.");
+    }
+    private static RoomPlan Commit(StructureAnalysisDocument document, RoomPlan changed, CancellationToken token)
+    {
+        var original = Current(document);
+        changed = changed with { Version = 2, AutomaticPlan = original.AutomaticPlan ?? original };
+        RoomPlanValidation.Validate(document with { Version = 3, Room = changed }, token);
+        return changed;
+    }
+    public static RoomPlan MoveVertex(StructureAnalysisDocument document, int index, double x, double y, CancellationToken token = default)
+    {
+        var room = Current(document); Index(room, index);
+        if (!double.IsFinite(x) || !double.IsFinite(y) || Math.Abs(x) > 100_000 || Math.Abs(y) > 100_000)
+            throw new InvalidDataException("Координаты вершины должны быть конечными, в пределах ±100 км.");
+        Vector3 Position(int surfaceId)
+        {
+            var plane = document.Result.Surfaces.Single(s => s.Id == surfaceId);
+            var z = -(plane.Offset + plane.Normal.X * x + plane.Normal.Y * y) / plane.Normal.Z;
+            return new((float)x, (float)y, (float)z);
+        }
+        var bottom = room.FloorContour.ToArray(); bottom[index] = Position(room.FloorSurfaceId);
+        var top = room.CeilingContour.ToArray();
+        if (room.CeilingSurfaceId is { } ceiling) top[index] = Position(ceiling);
+        return Commit(document, room with { FloorContour = bottom, CeilingContour = top }, token);
+    }
+    public static RoomPlan InsertVertex(StructureAnalysisDocument document, int index, CancellationToken token = default)
+    {
+        var room = Current(document); Index(room, index);
+        if (room.FloorContour.Length >= 24) throw new InvalidDataException("Лимит контура — 24 вершины.");
+        var next = (index + 1) % room.FloorContour.Length;
+        var bottom = room.FloorContour.ToList(); bottom.Insert(index + 1, (bottom[index] + bottom[next]) * .5f);
+        var top = room.CeilingContour.ToList();
+        if (room.HasHeight) top.Insert(index + 1, (top[index] + top[next]) * .5f);
+        var walls = room.WallSurfaceIds.ToList(); walls.Insert(index + 1, walls[index]);
+        var gaps = new List<RoomGap>();
+        foreach (var gap in room.Gaps)
+        {
+            if (gap.EdgeIndex != index) { gaps.Add(gap with { EdgeIndex = gap.EdgeIndex > index ? gap.EdgeIndex + 1 : gap.EdgeIndex }); continue; }
+            if (gap.Start < .5) gaps.Add(gap with { Start = gap.Start * 2, End = Math.Min(1, gap.End * 2) });
+            if (gap.End > .5) gaps.Add(gap with { EdgeIndex = index + 1, Start = Math.Max(0, gap.Start * 2 - 1), End = gap.End * 2 - 1 });
+        }
+        return Commit(document, room with { FloorContour = bottom.ToArray(), CeilingContour = top.ToArray(), WallSurfaceIds = walls.ToArray(), Gaps = gaps.ToArray() }, token);
+    }
+    public static RoomPlan RemoveVertex(StructureAnalysisDocument document, int index, CancellationToken token = default)
+    {
+        var room = Current(document); Index(room, index);
+        if (room.FloorContour.Length <= 3) throw new InvalidDataException("В контуре должны остаться минимум три вершины.");
+        var previous = (index + room.FloorContour.Length - 1) % room.FloorContour.Length;
+        if (room.Gaps.Any(g => g.EdgeIndex == previous || g.EdgeIndex == index))
+            throw new InvalidDataException("Сначала удалите проёмы и разрывы на двух смежных рёбрах.");
+        var bottom = room.FloorContour.Where((_, i) => i != index).ToArray();
+        var top = room.CeilingContour.Where((_, i) => i != index).ToArray();
+        var walls = room.WallSurfaceIds.Where((_, i) => i != index).ToArray();
+        return Commit(document, room with { FloorContour = bottom, CeilingContour = top, WallSurfaceIds = walls,
+            Gaps = room.Gaps.Select(g => g with { EdgeIndex = g.EdgeIndex > index ? g.EdgeIndex - 1 : g.EdgeIndex }).ToArray(),
+            IncompleteWallIds = room.IncompleteWallIds.Where(walls.Contains).ToArray() }, token);
+    }
+    public static RoomPlan AddOpening(StructureAnalysisDocument document, int edge, double startMeters, double endMeters, CancellationToken token = default)
+    {
+        var room = Current(document); Index(room, edge);
+        var a = room.FloorContour[edge]; var b = room.FloorContour[(edge + 1) % room.FloorContour.Length];
+        var length = Vector2.Distance(new(a.X, a.Y), new(b.X, b.Y));
+        if (!double.IsFinite(startMeters) || !double.IsFinite(endMeters) || startMeters < 0 || endMeters > length || endMeters - startMeters < .01)
+            throw new InvalidDataException($"Проём задаётся вдоль ребра: от 0 до {length:F3} м, длиной не меньше 0,01 м.");
+        var gap = new RoomGap(room.WallSurfaceIds[edge], edge, startMeters / length, endMeters / length, true);
+        if (room.Gaps.Any(g => g.IsConfirmedOpening && g.EdgeIndex == edge && g.Start < gap.End && g.End > gap.Start))
+            throw new InvalidDataException("Проём пересекает уже добавленный проём.");
+        return Commit(document, room with { Gaps = [.. room.Gaps, gap] }, token);
+    }
+    public static RoomPlan RemoveGap(StructureAnalysisDocument document, RoomGap gap, CancellationToken token = default)
+    {
+        var room = Current(document);
+        if (!room.Gaps.Contains(gap)) throw new InvalidDataException("Выбранный проём отсутствует в плане.");
+        return Commit(document, room with { Gaps = room.Gaps.Where(g => g != gap).ToArray() }, token);
+    }
+}
+
+public static class RoomTopology
+{
+    public static RoomConnection[] Connections(StructureAnalysisDocument document)
+    {
+        var rooms = (document.Rooms ?? []).Where(r => RoomPlanner.IsCurrent(document with { Room = r.Plan })).ToArray();
+        var result = new List<RoomConnection>();
+        for (var i = 0; i < rooms.Length; i++) for (var j = i + 1; j < rooms.Length; j++)
+        {
+            if (!string.Equals(rooms[i].Floor, rooms[j].Floor, StringComparison.OrdinalIgnoreCase)) continue;
+            var first = rooms[i].Plan; var second = rooms[j].Plan; var connected = false; var opening = false;
+            for (var edge = 0; edge < first.FloorContour.Length; edge++) for (var other = 0; other < second.FloorContour.Length; other++)
+            {
+                var a = first.FloorContour[edge]; var b = first.FloorContour[(edge + 1) % first.FloorContour.Length];
+                var c = second.FloorContour[other]; var d = second.FloorContour[(other + 1) % second.FloorContour.Length];
+                var direction = new Vector2(b.X - a.X, b.Y - a.Y); var length = direction.Length(); direction /= length;
+                double Projection(Vector3 p) => (p.X - a.X) * direction.X + (p.Y - a.Y) * direction.Y;
+                double Off(Vector3 p) => Math.Abs((p.X - a.X) * direction.Y - (p.Y - a.Y) * direction.X);
+                if (Off(c) > .1 || Off(d) > .1 || Math.Abs(a.Z - c.Z) > .3) continue;
+                var start = Math.Max(0, Math.Min(Projection(c), Projection(d))); var end = Math.Min(length, Math.Max(Projection(c), Projection(d)));
+                if (end - start < .2) continue;
+                connected = true;
+                opening |= first.Gaps.Any(g => g.IsConfirmedOpening && g.EdgeIndex == edge && Math.Min(end, g.End * length) - Math.Max(start, g.Start * length) > .1) ||
+                    second.Gaps.Any(g => g.IsConfirmedOpening && g.EdgeIndex == other &&
+                    Math.Min(end, Math.Max(Projection(Vector3.Lerp(c, d, (float)g.Start)), Projection(Vector3.Lerp(c, d, (float)g.End)))) -
+                    Math.Max(start, Math.Min(Projection(Vector3.Lerp(c, d, (float)g.Start)), Projection(Vector3.Lerp(c, d, (float)g.End)))) > .1);
+            }
+            if (connected) result.Add(new(rooms[i].Id, rooms[j].Id, opening));
+        }
+        return result.ToArray();
+    }
+    public static bool Contains(RoomPlan room, Vector3 point)
+    {
+        if (!room.HasHeight || point.Z < room.FloorContour.Min(p => p.Z) - .1f || point.Z > room.CeilingContour.Max(p => p.Z) + .1f) return false;
+        for (var i = 0; i < room.FloorContour.Length; i++)
+        {
+            var a = room.FloorContour[i]; var b = room.FloorContour[(i + 1) % room.FloorContour.Length];
+            if ((b.X - a.X) * (point.Y - a.Y) - (b.Y - a.Y) * (point.X - a.X) < -.0001f) return false;
+        }
+        return true;
     }
 }

@@ -54,6 +54,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isPresentationMode;
     private bool _isInspectorOpen;
     private bool _isSidebarOpen = true;
+    private int _sidebarTabIndex;
     private bool _showShadows = true;
     private double _range = 20;
     private double _speed = 1;
@@ -117,6 +118,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public PerspectiveCamera Camera { get; } = new()
     { FieldOfView = 47, NearPlaneDistance = .05, FarPlaneDistance = 1200 };
+    public int SidebarTabIndex
+    {
+        get => _sidebarTabIndex;
+        set { if (value is >= 0 and <= 4) Set(ref _sidebarTabIndex, value); }
+    }
     // A separate light camera keeps shadows aligned with the lamp without altering
     // the user's view. The small offset reveals shadows alongside nearby rocks.
     public PerspectiveCamera LampCamera { get; } = new()
@@ -610,6 +616,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             AssignImported(dataset, preparedProject);
             NotifySourceProperties();
             NotifyState();
+            SidebarTabIndex = 1;
             return;
         }
         _importedGeometry = null;
@@ -636,6 +643,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(PlannedDurationText));
         ResetScannerPreview();
         NotifySourceProperties();
+        SidebarTabIndex = 0;
     }
 
     private void SetCapture(int count)
