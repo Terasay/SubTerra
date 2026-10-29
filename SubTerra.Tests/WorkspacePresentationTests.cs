@@ -138,6 +138,11 @@ public sealed class WorkspacePresentationTests
         var style = Descendants(settings).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "Оформление предварительных поверхностей");
         style.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.DataBind); Assert.Equal(vm.IndoorStyles[1], vm.IndoorStyle);
         CheckBindings(settings); Assert.False(vm.HasNotification, vm.Notification);
+        foreach (var expander in Descendants(settings).OfType<Expander>().ToArray()) expander.IsExpanded = true;
+        await vm.ReconstructRoomAsync(); ThemeRenderingTests.Layout(settings, 320, 1900);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); settings.UpdateLayout();
+        Assert.True(vm.HasReconstruction); Assert.False(vm.HasNotification, vm.Notification);
+        CheckBindings(settings); ThemeRenderingTests.CheckReadableText(settings); SavePreview(settings, "reconstruction-settings.png");
     });
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

@@ -121,8 +121,18 @@ public sealed class ImportedGeometry(ImportedScan scan)
     }
 }
 
-public enum IndoorSurfaceStyle { SourceColors, Materials, Classes }
-public sealed record IndoorSurfacePreview(ImportedScan Scan, uint[] MaterialColors, uint[] ClassColors, int[] FloorTriangles);
+public enum IndoorSurfaceStyle { SourceColors, Materials, Classes, Completion }
+public sealed record IndoorSurfacePreview(ImportedScan Scan, uint[] MaterialColors, uint[] ClassColors, int[] FloorTriangles)
+{
+    public RoomReconstructionOptions? ReconstructionOptions { get; init; }
+    public ImportedScan? RemainingPoints { get; init; }
+    public uint[] CompletionColors { get; init; } = [];
+    public int FilledCells { get; init; }
+    public int MeasuredCells { get; init; }
+    public int LeveledSurfaces { get; init; }
+    public int SuppressedPoints { get; init; }
+    public int SkippedHoleRegions { get; init; }
+}
 
 /// <summary>Observed planar surface preview. Empty grid cells are never filled with a convex hull.</summary>
 public static class IndoorSurfaceBuilder
@@ -213,7 +223,7 @@ public static class IndoorSurfaceBuilder
             Points = points.ToArray(), Colors = colors.ToArray(), Triangles = triangles.ToArray()
         }, materials.ToArray(), classes.ToArray(), floorTriangles.ToArray());
     }
-    private static uint Material(StructureSurfaceKind kind, Vector3 p)
+    internal static uint Material(StructureSurfaceKind kind, Vector3 p)
     {
         if (kind == StructureSurfaceKind.Ceiling) return 0xEBE9E0;
         if (kind == StructureSurfaceKind.Wall) return 0xD9D5C9;

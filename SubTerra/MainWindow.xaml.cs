@@ -135,6 +135,12 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog { Title = "Экспорт облака точек", Filter = "Облако точек PLY (*.ply)|*.ply", DefaultExt = ".ply", FileName = "Subterra_scan" };
         if (dialog.ShowDialog(this) == true) await _viewModel.ExportAsync(dialog.FileName);
     }
+    private async void ExportReconstruction_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.CanExportReconstruction) return;
+        var dialog = new SaveFileDialog { Title = "Экспорт реконструкции · содержит достроенные поверхности", Filter = "Модель PLY (*.ply)|*.ply", DefaultExt = ".ply", FileName = "Subterra_reconstruction" };
+        if (dialog.ShowDialog(this) == true) await _viewModel.ExportReconstructionAsync(dialog.FileName);
+    }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && _viewModel.IsSettingsOpen && !_viewModel.IsBusy)

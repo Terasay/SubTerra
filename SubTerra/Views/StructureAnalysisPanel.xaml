@@ -27,6 +27,12 @@
         <CheckBox Content="Подсвечивать классы в сцене" IsChecked="{Binding ShowStructure}" Margin="0,0,0,16"/>
         <TextBlock Text="03  Получить план комнаты" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <Button Content="Далее: результаты →" Command="{Binding SelectSectionCommand}" CommandParameter="Результаты"/>
+        <Border Style="{StaticResource InsetCard}" Margin="0,14,0,0"><StackPanel>
+            <TextBlock Text="Восстановить вид помещения" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Text="Плоский пол, стены и небольшие пропуски. Предметы остаются в исходных цветах; достройка помечена как гипотеза." Style="{StaticResource Muted}" Margin="0,8,0,10"/>
+            <Button Content="Реконструировать помещение" Command="{Binding ReconstructRoomCommand}"/>
+            <Button Content="Настроить реконструкцию →" Command="{Binding ToggleSettingsCommand}" Style="{StaticResource Ghost}" Margin="0,6,0,0"/>
+        </StackPanel></Border>
         <TextBlock Text="{Binding StructureSummary}" Style="{StaticResource Muted}" Margin="0,12,0,0" Visibility="{Binding StructureIsStale, Converter={StaticResource BoolVisibility}}"/>
         <Expander  Header="Предметы · геометрические группы" Margin="0,18,0,0"><StackPanel Margin="0,10,0,0"><TextBlock Text="{Binding ObjectCandidatesSummary}" Style="{StaticResource Muted}" Margin="0,8,0,10" />
         <StackPanel IsEnabled="{Binding CanAnalyzeObjects}">

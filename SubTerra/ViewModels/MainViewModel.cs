@@ -146,7 +146,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (IsPoints || IsImported) RefreshGeometry();
         }
     }
-    public int RenderedPointCount => IsPoints ? Cloud?.Positions?.Count ?? 0 : 0;
+    public int RenderedPointCount => IsPoints ? Cloud?.Positions?.Count ?? 0 : CloudOnly?.Positions?.Count ?? 0;
     public string CloudDisplayText => $"На экране {RenderedPointCount:N0} из {(_viewFrames > 0 ? _pointOffsets[_viewFrames - 1] : 0):N0} точек";
     public double GeometryMilliseconds => _geometryMilliseconds;
     public double GenerationMilliseconds => _generationMilliseconds;

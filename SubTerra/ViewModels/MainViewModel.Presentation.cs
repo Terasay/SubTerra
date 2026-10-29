@@ -35,7 +35,7 @@ public sealed partial class MainViewModel
     public bool ShowObjectInspector => IsImported && _inspectorSubject == "Предмет";
     public bool ShowSimulationInspector => IsSimulation;
     public RoomPlan? CurrentRoomPlan => RoomPlanVisible ? _structureDocument?.Room : null;
-    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
+    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : IsIndoorSurfaceView && HasReconstruction ? "Реконструкция · гипотеза геометрии" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
     public string SurfaceAnalysisMethodText => _structureDocument?.Result.Options.UseNeuralClasses == true ? "Классы предложены экспериментальной MLP · требуется проверка" : "Геометрические классы · требуется проверка";
     public string AnalysisProgressText => StructureIsStale ? "Данные изменились · повторите поиск поверхностей" : !HasStructureAnalysis ? "01 / Обнаружение поверхностей" :
         StructureSurfaces.Any(s => s.Review == StructureReviewState.Proposed) ? "02 / Проверка кандидатов оператором" : HasRoom ? "04 / План готов к просмотру" : "03 / Построение плана комнаты";
@@ -53,11 +53,12 @@ public sealed partial class MainViewModel
         ToggleSettingsCommand = new(() => IsSettingsOpen = !IsSettingsOpen, () => CanInteract);
         PropertyChanged += (_, e) =>
         {
+            if (e.PropertyName == nameof(CanExport)) Raise(nameof(CanExportReconstruction));
             if (e.PropertyName == nameof(IsNavigating) && IsNavigating && !Is3DView)
             {
                 _workspaceView = "3D"; NotifyPresentationState();
             }
-            if (e.PropertyName is nameof(HasStructureAnalysis) or nameof(StructureIsStale) or nameof(SelectedStructureSurface) or nameof(HasRoom) or nameof(RoomIsStale) or nameof(RoomPlanPoints) or nameof(HasSyntheticScans))
+            if (e.PropertyName is nameof(HasStructureAnalysis) or nameof(StructureIsStale) or nameof(SelectedStructureSurface) or nameof(HasRoom) or nameof(RoomIsStale) or nameof(RoomPlanPoints) or nameof(HasSyntheticScans) or nameof(HasReconstruction) or nameof(IsIndoorSurfaceView))
                 NotifyPresentationState();
             if (e.PropertyName == nameof(IsImported))
             {

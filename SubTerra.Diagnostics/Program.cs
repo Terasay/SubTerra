@@ -26,6 +26,8 @@ internal static class Program
                 return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
             if (args.Length == 3 && args[0] == "--prepare-indoor")
                 return PrepareIndoor(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "--reconstruct-indoor")
+                return ReconstructIndoor(args[1], args[2]);
             var passes = 12;
             var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
@@ -95,6 +97,41 @@ internal static class Program
             Model = document.Algorithm, PreviewTriangles = preview.Scan.Triangles.Length / 3, FloorTriangles = preview.FloorTriangles.Length / 3,
             Surfaces = result.Surfaces.Select(s => new { s.Id, s.KindText, s.AreaSquareMeters, s.RmsMeters, s.NeuralScore }),
             ElapsedSeconds = clock.Elapsed.TotalSeconds
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
+
+    private static int ReconstructIndoor(string input, string output)
+    {
+        if (!Path.GetExtension(output).Equals(".ply", StringComparison.OrdinalIgnoreCase) || File.Exists(output) ||
+            Path.GetFullPath(input).Equals(Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Укажите новый выходной PLY; существующие файлы не заменяются.");
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        var token = cancellation.Token; var clock = Stopwatch.StartNew();
+        string HashSource() { using var file = File.OpenRead(input); return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(file)); }
+        var sourceHash = HashSource();
+        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z, LocalOrigin: false), token).GetAwaiter().GetResult();
+        var originalPoints = scan.Points.ToArray(); var originalColors = scan.Colors.ToArray();
+        var project = ScanProject.FromSession(scan.ToSession());
+        var result = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(DistanceTolerance: .035, MaximumPlanes: 24,
+            UseNeuralClasses: true), null, token).GetAwaiter().GetResult();
+        var document = StructureProvenance.Create(project, result, token);
+        var preview = RoomReconstructionBuilder.Build(project, document, new(), token);
+        var exported = RoomReconstructionBuilder.ExportModel(preview, token);
+        new SessionStorage().ExportImportedPlyAsync(output, exported, token).GetAwaiter().GetResult();
+        var restored = new ScanImporter().ImportAsync(output, new(ScanUnit.Meters, ScanUpAxis.Z, LocalOrigin: false), token).GetAwaiter().GetResult();
+        if (!scan.Points.SequenceEqual(originalPoints) || !scan.Colors.SequenceEqual(originalColors) || sourceHash != HashSource())
+            throw new InvalidDataException("Изменились исходные измерения или файл.");
+        if (!restored.Metadata.IsSynthetic || !restored.Points.SequenceEqual(exported.Points) || !restored.Colors.SequenceEqual(exported.Colors) || !restored.Triangles.SequenceEqual(exported.Triangles))
+            throw new InvalidDataException("Реконструкция не прошла проверку повторного импорта.");
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            Output = Path.GetFullPath(output), OriginalPoints = scan.Points.Length, SourceSha256 = sourceHash, OriginalUnchanged = true,
+            ReconstructionTriangles = preview.Scan.Triangles.Length / 3, FloorTriangles = preview.FloorTriangles.Length / 3,
+            preview.MeasuredCells, preview.FilledCells, preview.LeveledSurfaces, preview.SuppressedPoints, preview.SkippedHoleRegions,
+            ObjectPoints = preview.RemainingPoints?.Points.Length ?? 0, ExportedPoints = exported.Points.Length,
+            Hypothesis = true, ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local CPU processing; no neural retraining or GPU benchmark"
         }, new JsonSerializerOptions { WriteIndented = true }));
         return 0;
     }

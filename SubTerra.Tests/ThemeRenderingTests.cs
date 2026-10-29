@@ -144,7 +144,7 @@ public sealed class ThemeRenderingTests
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
         var document = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "ThemeExamples", "MainWindow.xaml"));
         var root = document.Root!; root.Name = p + "Border";
-        var events = new HashSet<string> { "Loaded", "Closing", "Closed", "PreviewKeyDown", "StateChanged", "SizeChanged", "MouseLeftButtonDown", "Click", "SelectionChanged", "KeyDown", "SaveAsRequested", "ExportRequested" };
+        var events = new HashSet<string> { "Loaded", "Closing", "Closed", "PreviewKeyDown", "StateChanged", "SizeChanged", "MouseLeftButtonDown", "Click", "SelectionChanged", "KeyDown", "SaveAsRequested", "ExportRequested", "ExportReconstructionRequested" };
         foreach (var attribute in root.DescendantsAndSelf().Attributes().ToArray())
             if (attribute.Name == x + "Class" || events.Contains(attribute.Name.LocalName)) attribute.Remove();
         foreach (var attribute in root.Attributes().Where(a => !a.IsNamespaceDeclaration).ToArray())

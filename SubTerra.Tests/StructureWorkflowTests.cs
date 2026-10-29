@@ -14,6 +14,29 @@ namespace SubTerra.Tests;
 public sealed class StructureWorkflowTests
 {
     [Fact]
+    public Task ReconstructionIsASeparateViewWithRgbObjectsAndAdminOnlyExport() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        var path = Path.Combine(files.Directory, "source.subterra"); Assert.True(await vm.SaveAsync(path));
+        await vm.ReconstructRoomAsync(); Assert.False(vm.HasNotification, vm.Notification);
+        Assert.True(vm.HasReconstruction); Assert.True(vm.IsIndoorSurfaceView); Assert.NotNull(vm.CloudOnly);
+        Assert.Equal(vm.CloudOnly.Positions!.Count, vm.RenderedPointCount); Assert.True(vm.Surface!.Positions!.Count < vm.Surface.Indices!.Count);
+        Assert.Contains("Реконструкция", vm.SourceBadge); Assert.False(vm.HasUnsavedChanges); Assert.True(vm.CanExportReconstruction);
+        var rgb = vm.Surface; vm.IndoorStyle = vm.IndoorStyles.Single(s => s.Style == SubTerra.Rendering.IndoorSurfaceStyle.Completion);
+        Assert.NotSame(rgb, vm.Surface); Assert.Same(rgb.Positions, vm.Surface!.Positions); Assert.Same(rgb.Indices, vm.Surface.Indices);
+        vm.FloorHoleSize = .5; Assert.True(vm.ReconstructionSettingsPending);
+        vm.PointsCommand.Execute(null); Assert.NotNull(vm.Cloud); Assert.False(vm.IsIndoorSurfaceView); Assert.DoesNotContain("Реконструкция", vm.SourceBadge);
+        var rawPath = Path.Combine(files.Directory, "raw.ply"); await vm.ExportAsync(rawPath);
+        var raw = await new ScanImporter().ImportAsync(rawPath, new(ScanUnit.Meters, LocalOrigin: false)); Assert.False(raw.HasMesh); Assert.False(raw.Metadata.IsSynthetic);
+        var derivedPath = Path.Combine(files.Directory, "reconstructed.ply"); await vm.ExportReconstructionAsync(derivedPath);
+        var derived = await new ScanImporter().ImportAsync(derivedPath, new(ScanUnit.Meters, LocalOrigin: false)); Assert.True(derived.HasMesh); Assert.True(derived.Metadata.IsSynthetic);
+        using var guest = Vm(new(false)); await guest.OpenAsync(path); await guest.ReconstructRoomAsync();
+        Assert.True(guest.HasReconstruction); Assert.False(guest.HasUnsavedChanges); Assert.False(guest.CanExportReconstruction);
+        var denied = Path.Combine(files.Directory, "denied.ply"); await guest.ExportReconstructionAsync(denied); Assert.False(File.Exists(denied));
+        vm.SelectedStructureSurface = vm.StructureSurfaces.First(); vm.ConfirmStructureSurfaceCommand.Execute(null);
+        Assert.False(vm.HasReconstruction); Assert.Null(vm.CloudOnly); Assert.False(vm.CanExportReconstruction);
+    });
+    [Fact]
     public Task NeuralSurfacePreviewCanBeViewedByGuestsAndWalkedWithoutChangingSources() => ScanControlTests.OnSta(async () =>
     {
         using var files = new Files(); using var vm = Vm(); await Import(vm);

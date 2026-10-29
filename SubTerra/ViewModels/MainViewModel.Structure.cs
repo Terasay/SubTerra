@@ -233,11 +233,12 @@ public sealed partial class MainViewModel
 {
     private Rendering.IndoorSurfacePreview? _indoorPreview;
     private StructureAnalysisDocument? _indoorDocument;
+    private Rendering.ImportedGeometry? _indoorRemaining;
     private readonly Dictionary<Rendering.IndoorSurfaceStyle, MeshGeometry3D> _indoorMeshes = [];
     private Simulation.TriangleIndex? _indoorCollisions, _indoorFloor;
     private Vector3 _indoorStart;
     public IReadOnlyList<IndoorStyleChoice> IndoorStyles { get; } =
-        [new("Условная отделка", Rendering.IndoorSurfaceStyle.Materials), new("Цвета скана", Rendering.IndoorSurfaceStyle.SourceColors), new("Классы поверхностей", Rendering.IndoorSurfaceStyle.Classes)];
+        [new("Условная отделка", Rendering.IndoorSurfaceStyle.Materials), new("Цвета скана", Rendering.IndoorSurfaceStyle.SourceColors), new("Классы поверхностей", Rendering.IndoorSurfaceStyle.Classes), new("Подсветить достроенное", Rendering.IndoorSurfaceStyle.Completion)];
     private IndoorStyleChoice? _indoorStyle;
     public IndoorStyleChoice IndoorStyle
     {
@@ -247,7 +248,10 @@ public sealed partial class MainViewModel
     public bool HasIndoorPreview => _indoorPreview is not null;
     public bool IsIndoorSurfaceView => IsImported && IsSurface && HasIndoorPreview;
     public bool CanPrepareIndoorPreview => IsImported && CanInteract && IsOverview && !HasEditPreview && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
-    public string IndoorPreviewSummary => HasIndoorPreview ?
+    public string IndoorPreviewSummary => HasReconstruction ?
+        $"Реконструкция · гипотеза: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. " +
+        $"Достроено ячеек: {_indoorPreview.FilledCells:N0}; точек предметов: {_indoorPreview.RemainingPoints?.Points.Length ?? 0:N0}. " +
+        $"Скрыто изолированных / внешних точек: {_indoorPreview.SuppressedPoints:N0}. Исходные измерения сохранены." : HasIndoorPreview ?
         $"Предварительная сетка: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. Непросканированные участки остаются открытыми; отделка условная." :
         "Построение поверхностей по наблюдаемым точкам пола, стен и потолка. Исходные точки и RGB сохраняются.";
     public AsyncRelayCommand PrepareIndoorPreviewCommand { get; private set; } = null!;
@@ -255,6 +259,7 @@ public sealed partial class MainViewModel
     private void InitializeIndoorCommands()
     {
         PrepareIndoorPreviewCommand = new(PrepareIndoorPreviewAsync, () => CanPrepareIndoorPreview, ex => ReportError("Не удалось построить поверхности", ex));
+        ReconstructRoomCommand = new(ReconstructRoomAsync, () => CanPrepareIndoorPreview, ex => ReportError("Не удалось реконструировать помещение", ex));
         AnalyzeIndoorCommand = new(async () =>
         {
             if (!CanAnalyzeStructure) return;
@@ -264,25 +269,43 @@ public sealed partial class MainViewModel
             if (_structureDocument is not null && !ReferenceEquals(previous, _structureDocument)) await PrepareIndoorPreviewAsync();
         }, () => CanAnalyzeStructure, ex => ReportError("Не удалось подготовить осмотр", ex));
     }
-    public async Task PrepareIndoorPreviewAsync()
+    public Task PrepareIndoorPreviewAsync() => PrepareIndoorViewAsync(false);
+    public Task ReconstructRoomAsync() => PrepareIndoorViewAsync(true);
+    private async Task PrepareIndoorViewAsync(bool reconstruct)
     {
         if (!CanPrepareIndoorPreview || _scanProject is not { } project || _structureDocument is not { } document) return;
-        var token = BeginOperation("Предварительные поверхности · исходные точки сохраняются");
+        var options = ReconstructionOptions;
+        var token = BeginOperation(reconstruct ? "Реконструкция комнаты · исходные точки сохраняются" : "Предварительные поверхности · исходные точки сохраняются");
         try
         {
             var prepared = await Task.Run(() =>
             {
-                var preview = Rendering.IndoorSurfaceBuilder.Build(project, document, token);
-                var original = new Rendering.ImportedGeometry(preview.Scan).Mesh(false);
+                var preview = reconstruct ? Rendering.RoomReconstructionBuilder.Build(project, document, options, token) : Rendering.IndoorSurfaceBuilder.Build(project, document, token);
+                // Planar patches already own their vertices. Keep indexed geometry shared by all color modes.
+                var positions = preview.Scan.Points.Select(p => p.Position).ToArray();
+                var normals = new Vector3[positions.Length];
+                for (var i = 0; i < preview.Scan.Triangles.Length; i += 3)
+                {
+                    if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
+                    var a = preview.Scan.Triangles[i]; var b = preview.Scan.Triangles[i + 1]; var c = preview.Scan.Triangles[i + 2];
+                    var n = Vector3.Cross(positions[b] - positions[a], positions[c] - positions[a]);
+                    normals[a] += n; normals[b] += n; normals[c] += n;
+                }
+                for (var i = 0; i < normals.Length; i++) normals[i] = normals[i].LengthSquared() > 1e-16f ? Vector3.Normalize(normals[i]) : Vector3.UnitZ;
+                var vertices = new Vector3Collection(positions); var sharedNormals = new Vector3Collection(normals);
+                var indices = new IntCollection(preview.Scan.Triangles);
                 MeshGeometry3D WithColors(uint[] rgb)
                 {
                     token.ThrowIfCancellationRequested();
-                    var colors = new Color4Collection(preview.Scan.Triangles.Length);
-                    foreach (var i in preview.Scan.Triangles) colors.Add(new((rgb[i] >> 16 & 255) / 255f, (rgb[i] >> 8 & 255) / 255f, (rgb[i] & 255) / 255f, 1));
-                    return new() { Positions = original.Positions, Normals = original.Normals, Indices = original.Indices, Colors = colors };
+                    var colors = new Color4Collection(rgb.Length);
+                    foreach (var color in rgb) colors.Add(new((color >> 16 & 255) / 255f, (color >> 8 & 255) / 255f, (color & 255) / 255f, 1));
+                    return new() { Positions = vertices, Normals = sharedNormals, Indices = indices, Colors = colors };
                 }
+                var original = WithColors(preview.Scan.Colors);
                 var materials = WithColors(preview.MaterialColors); var classes = WithColors(preview.ClassColors);
-                var positions = preview.Scan.Points.Select(p => p.Position).ToArray();
+                var completed = preview.CompletionColors.Length == 0 ? original : WithColors(preview.CompletionColors);
+                var remaining = preview.RemainingPoints is null ? null : new Rendering.ImportedGeometry(preview.RemainingPoints);
+                remaining?.Cloud(EffectivePointLimit, null);
                 var collisions = new Simulation.TriangleIndex(positions, preview.Scan.Triangles);
                 var floor = preview.FloorTriangles.Length == 0 ? null : new Simulation.TriangleIndex(positions, preview.FloorTriangles);
                 var start = Vector3.Zero; var distance = float.MaxValue;
@@ -293,7 +316,7 @@ public sealed partial class MainViewModel
                     var d = Vector3.DistanceSquared(center, support!.Center);
                     if (d < distance) { distance = d; start = center + Vector3.UnitZ * 1.65f; }
                 }
-                return (preview, original, materials, classes, collisions, floor, start);
+                return (preview, original, materials, classes, completed, remaining, collisions, floor, start);
             }, token);
             token.ThrowIfCancellationRequested();
             if (_disposed || !ReferenceEquals(project, _scanProject) || !ReferenceEquals(document, _structureDocument)) return;
@@ -301,9 +324,13 @@ public sealed partial class MainViewModel
             _indoorMeshes[Rendering.IndoorSurfaceStyle.SourceColors] = prepared.original;
             _indoorMeshes[Rendering.IndoorSurfaceStyle.Materials] = prepared.materials;
             _indoorMeshes[Rendering.IndoorSurfaceStyle.Classes] = prepared.classes;
+            _indoorMeshes[Rendering.IndoorSurfaceStyle.Completion] = prepared.completed;
+            _indoorRemaining = prepared.remaining;
             _indoorCollisions = prepared.collisions; _indoorFloor = prepared.floor; _indoorStart = prepared.start;
+            if (reconstruct) { _indoorStyle = IndoorStyles.First(s => s.Style == Rendering.IndoorSurfaceStyle.SourceColors); Raise(nameof(IndoorStyle)); }
             NotifyIndoorState(); SetView(true, false);
-            Status = "Поверхности готовы · условная отделка · доступна прогулка по наблюдаемому полу"; AddEvent(Status);
+            Status = reconstruct ? "Реконструкция готова · достроенные участки являются гипотезой" : "Поверхности готовы · условная отделка · доступна прогулка по наблюдаемому полу";
+            Notification = ""; AddEvent(Status);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось построить поверхности", ex); }
@@ -312,7 +339,7 @@ public sealed partial class MainViewModel
     private void InvalidateIndoorPreview(StructureAnalysisDocument? next)
     {
         if (!HasIndoorPreview || ReferenceEquals(next, _indoorDocument) && next?.IsStale == false) return;
-        _indoorPreview = null; _indoorDocument = null; _indoorMeshes.Clear(); _indoorCollisions = null; _indoorFloor = null;
+        _indoorPreview = null; _indoorDocument = null; _indoorMeshes.Clear(); _indoorRemaining = null; _indoorCollisions = null; _indoorFloor = null;
         Surface = null; CloudOnly = null;
         if (IsImported && !CanShowSurface) IsSurface = false;
         if (IsNavigating && IsImported) ReturnToOverview();
@@ -322,6 +349,7 @@ public sealed partial class MainViewModel
     private void NotifyIndoorState()
     {
         foreach (var property in new[] { nameof(HasIndoorPreview), nameof(IsIndoorSurfaceView), nameof(CanPrepareIndoorPreview), nameof(IndoorPreviewSummary),
+            nameof(HasReconstruction), nameof(ReconstructionSettingsPending), nameof(CanExportReconstruction),
             nameof(CanShowSurface), nameof(SurfaceModeText), nameof(MeshPreviewText), nameof(CanWalk), nameof(CanFly), nameof(ExploreText) }) Raise(property);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }

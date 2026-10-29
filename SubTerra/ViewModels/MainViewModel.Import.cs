@@ -24,7 +24,7 @@ public sealed partial class MainViewModel
     public AsyncRelayCommand LoadCollegeBuildingCommand { get; private set; } = null!;
     private ScanProjectView? CurrentProjectView => _previewView ?? _projectView;
     public bool CanShowSurface => !IsImported || HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
-    public string SurfaceModeText => IsImported ? HasIndoorPreview ? "Поверхности" : "Сетка" : "Пещера";
+    public string SurfaceModeText => IsImported ? HasReconstruction ? "Реконструкция" : HasIndoorPreview ? "Поверхности" : "Сетка" : "Пещера";
     public string DataSourceText => IsImported ? HasSyntheticScans ? "Проект содержит синтетическую модель · метры · Z вверх" :
         "Сканы проекта · метры · локальные координаты" : "Симуляция LiDAR · данные на этом компьютере";
     public string DistanceMetricTitle => IsImported ? "ГАБАРИТ X" : "ПРОЙДЕНО";
@@ -138,7 +138,7 @@ public sealed partial class MainViewModel
         var clock = Stopwatch.StartNew();
         if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry?.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight);
         else Surface = _viewFrames == 0 ? null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
-        CloudOnly = IsSurface && !IsIndoorSurfaceView ? CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight) : null;
+        CloudOnly = !IsSurface ? null : IsIndoorSurfaceView ? _indoorRemaining?.Cloud(EffectivePointLimit, null, IsHeight) : CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight);
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
     }
