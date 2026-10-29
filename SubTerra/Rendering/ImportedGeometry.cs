@@ -20,8 +20,8 @@ public sealed class ImportedGeometry(ImportedScan scan)
     public void PrepareMeshPreviews(CancellationToken token = default)
     {
         if (!scan.HasMesh) return;
-        _meshPreview = MeshPreviewBuilder.Build(scan, 250_000, token);
-        _coarsePreview = MeshPreviewBuilder.Build(_meshPreview, 50_000, token);
+        _meshPreview = MeshPreviewBuilder.Build(scan, 1_000_000, token);
+        _coarsePreview = MeshPreviewBuilder.Build(_meshPreview, 250_000, token);
         foreach (var coarse in new[] { false, true }) foreach (var height in new[] { false, true })
         { token.ThrowIfCancellationRequested(); _ = Mesh(height, coarse); }
     }
@@ -30,6 +30,7 @@ public sealed class ImportedGeometry(ImportedScan scan)
     public PointGeometry3D Cloud(int limit, PointClipPlane? clip, bool height = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        limit = Math.Min(limit, scan.Points.Length);
         var key = (limit, clip, height);
         if (_clouds.TryGetValue(key, out var cached)) return cached;
         // Count and sample in two passes; clipping never creates an array of millions of indices.
@@ -61,8 +62,17 @@ public sealed class ImportedGeometry(ImportedScan scan)
     public MeshGeometry3D Mesh(bool height, bool coarse = false)
     {
         if (_meshes.TryGetValue((height, coarse), out var cached)) return cached;
+        if (coarse && ReferenceEquals(_coarsePreview ?? scan, _meshPreview ?? scan))
+            return _meshes[(height, true)] = Mesh(height);
         var data = coarse ? _coarsePreview ?? scan : _meshPreview ?? scan;
         var count = data.Triangles.Length / 3;
+        if (_meshes.TryGetValue((!height, coarse), out var shared))
+        {
+            var vertexColors = new Color4Collection(count * 3);
+            foreach (var index in data.Triangles) vertexColors.Add(Color(data, index, height));
+            return _meshes[(height, coarse)] = new()
+                { Positions = shared.Positions, Normals = shared.Normals, Indices = shared.Indices, Colors = vertexColors };
+        }
         var positions = new Vector3Collection(count * 3); var normals = new Vector3Collection(count * 3);
         var colors = new Color4Collection(count * 3); var indices = new IntCollection(count * 3);
         for (var i = 0; i < count; i++)

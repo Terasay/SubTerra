@@ -48,6 +48,7 @@ public sealed class WorkspaceFeatureTests
                 await vm.LoadDemoAsync();
                 vm.MouseSensitivity = 1.8; vm.InvertMouseY = true; vm.WalkSpeed = 4; vm.FlightSpeed = 12;
                 vm.FastMultiplier = 2; vm.AdaptiveQuality = false;
+                vm.LevelFlight = false; vm.PointQuality = PointCloudQuality.All[^1];
                 Assert.True(await vm.SaveAsync(path));
                 await vm.FlushPreferencesAsync();
             }
@@ -55,6 +56,7 @@ public sealed class WorkspaceFeatureTests
             Assert.Equal(1.8, restored.MouseSensitivity); Assert.True(restored.InvertMouseY);
             Assert.Equal(4, restored.WalkSpeed); Assert.Equal(12, restored.FlightSpeed);
             Assert.Equal(2, restored.FastMultiplier); Assert.False(restored.AdaptiveQuality);
+            Assert.False(restored.LevelFlight); Assert.Equal(5_000_000, restored.PointQuality.PointLimit);
             Assert.Equal(path, Assert.Single(restored.RecentSessions).Path);
             File.WriteAllText(store.PreferencesPath, "{broken");
             Assert.Equal(1, store.LoadPreferences().MouseSensitivity);
@@ -104,19 +106,23 @@ public sealed class WorkspaceFeatureTests
     });
 
     [Fact]
-    public Task MovingPreviewIsBoundedAndRestoresTheCachedFullCloud() => ScanControlTests.OnSta(async () =>
+    public Task MovingPreviewKeepsTheSelectedDensityAndCachedCloud() => ScanControlTests.OnSta(async () =>
     {
-        using var vm = new MainViewModel(new MemoryScanSource(40, 1000), new SessionStorage());
+        using var vm = new MainViewModel(new MemoryScanSource(180, 2000), new SessionStorage());
+        vm.CutRoof = false;
         await vm.LoadDemoAsync(); vm.PointsCommand.Execute(null);
+        Assert.False(vm.HasNotification, vm.Notification);
         var full = vm.Cloud;
-        Assert.Equal(40_000, vm.RenderedPointCount);
+        Assert.Equal(360_000, vm.RenderedPointCount);
         vm.NotifyCameraInteraction();
         Assert.True(vm.IsCameraMoving);
-        Assert.Equal(15_000, vm.RenderedPointCount);
+        Assert.Equal(360_000, vm.RenderedPointCount); Assert.Same(full, vm.Cloud);
+        vm.FlyCommand.Execute(null);
+        Assert.Equal(360_000, vm.RenderedPointCount); Assert.Same(full, vm.Cloud);
         await Task.Delay(300);
         vm.SettleCameraInteraction();
         Assert.False(vm.IsCameraMoving);
-        Assert.Equal(40_000, vm.RenderedPointCount);
+        Assert.Equal(360_000, vm.RenderedPointCount);
         Assert.Same(full, vm.Cloud);
     });
 

@@ -33,6 +33,7 @@ public sealed partial class MainViewModel
     public double WalkSpeed { get => _preferences.WalkSpeed; set => ChangePreferences(_preferences with { WalkSpeed = value }); }
     public double FlightSpeed { get => _preferences.FlightSpeed; set => ChangePreferences(_preferences with { FlightSpeed = value }); }
     public double FastMultiplier { get => _preferences.FastMultiplier; set => ChangePreferences(_preferences with { FastMultiplier = value }); }
+    public bool LevelFlight { get => _preferences.LevelFlight; set => ChangePreferences(_preferences with { LevelFlight = value }); }
     public bool AutoSaveEnabled { get => _preferences.AutoSaveEnabled; set => ChangePreferences(_preferences with { AutoSaveEnabled = value }); }
     public bool AdaptiveQuality
     {
@@ -44,6 +45,7 @@ public sealed partial class MainViewModel
     {
         _preferences = _workspaceStore?.LoadPreferences() ?? new();
         _flightSpeed = (float)_preferences.FlightSpeed;
+        _pointQuality = PointCloudQuality.All.First(q => q.PointLimit == _preferences.DisplayPointLimit);
         foreach (var path in _preferences.RecentFiles) RecentSessions.Add(new(path));
         HasRecovery = _workspaceStore?.HasRecovery == true;
     }
@@ -52,7 +54,7 @@ public sealed partial class MainViewModel
         _preferences = preferences.Normalize();
         _flightSpeed = (float)_preferences.FlightSpeed;
         foreach (var name in new[] { nameof(MouseSensitivity), nameof(InvertMouseY), nameof(WalkSpeed), nameof(FlightSpeed),
-                     nameof(FastMultiplier), nameof(AutoSaveEnabled), nameof(AdaptiveQuality), nameof(NavigationSpeedText) }) Raise(name);
+                     nameof(FastMultiplier), nameof(LevelFlight), nameof(PointQuality), nameof(AutoSaveEnabled), nameof(AdaptiveQuality), nameof(NavigationSpeedText) }) Raise(name);
         _preferenceSave?.Cancel();
         _preferenceSave?.Dispose();
         _preferenceSave = new();

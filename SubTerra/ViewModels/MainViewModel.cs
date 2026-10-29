@@ -58,7 +58,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private double _range = 20;
     private double _speed = 1;
     private int _densityIndex = 1;
-    private PointCloudQuality _pointQuality = PointCloudQuality.All[1];
+    private PointCloudQuality _pointQuality = PointCloudQuality.All[2];
     private double _geometryMilliseconds;
     private double _generationMilliseconds;
     private long _privateMemoryBytes;
@@ -142,7 +142,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         set
         {
             if (value is null || !PointQualities.Contains(value) || !Set(ref _pointQuality, value)) return;
-            if (IsPoints) RefreshGeometry();
+            ChangePreferences(_preferences with { DisplayPointLimit = value.PointLimit });
+            if (IsPoints || IsImported) RefreshGeometry();
         }
     }
     public int RenderedPointCount => IsPoints ? Cloud?.Positions?.Count ?? 0 : 0;
@@ -230,7 +231,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public string WalkPrompt => IsFlying ? "Щёлкните по сцене для полёта · Q / E — вниз / вверх" : "Щёлкните по сцене, чтобы идти · мышь — осмотр";
     public float WalkTargetProgress => _walkTargetProgress;
     public string ControlsHint => IsFlying
-        ? "WASD — полёт · Q / E — вниз / вверх · Shift — быстрее · колесо — скорость · Tab — курсор · Esc — обзор"
+        ? "WASD — полёт · Q / E — высота · Shift — быстрее · колесо — скорость · Tab — курсор · Home — весь объект · Esc — обзор"
         : IsWalking ? "WASD — идти · мышь — осмотр · Shift — быстрее · Tab — курсор · Esc — обзор"
         : "ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб · Home — общий вид";
     public WalkNavigator CreateNavigator() => new(_dataset!.Scene!, WalkCoverage.End, WalkCoverage.Start)
@@ -239,7 +240,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
         new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z), EffectiveFlightSpeed,
         .5f * FlightSpeedScale)
-        { FastMultiplier = (float)FastMultiplier };
+        { FastMultiplier = (float)FastMultiplier, KeepAltitude = LevelFlight };
     public bool IsSurface
     {
         get => _isSurface;
@@ -792,6 +793,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _isHeight = false;
         IsSurface = true;
         _isWalking = true;
+        ConfigureNavigationClipping();
         Camera.FieldOfView = 72;
         CameraLabel = "Прогулка · высота глаз 1,65 м";
         RefreshGeometry();
@@ -808,7 +810,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Pause();
         FollowScanner = false;
         _isFlying = true;
+        ConfigureNavigationClipping();
         Camera.FieldOfView = 72;
+        if (IsImported) RefreshGeometry();
         NotifyWalking();
     }
     private void ExitWalking()
@@ -823,6 +827,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void NotifyWalking()
     {
         Raise(nameof(IsWalking)); Raise(nameof(IsFlying)); Raise(nameof(IsNavigating)); Raise(nameof(IsOverview));
+        Raise(nameof(SceneLightingVisible));
         Raise(nameof(NavigationTitle)); Raise(nameof(NavigationSpeedText)); Raise(nameof(WalkPrompt));
         Raise(nameof(ShadowCamera)); Raise(nameof(ShadowsVisible));
         Raise(nameof(SsaoEnabled)); Raise(nameof(ClipGuideVisible)); Raise(nameof(IsPicking)); Raise(nameof(CloudQualityVisible));

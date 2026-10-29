@@ -150,11 +150,11 @@ public sealed class ScanControlTests
         var recording = vm.RecordingText;
         var points = vm.PointCountText;
         vm.PointsCommand.Execute(null);
-        Assert.InRange(vm.RenderedPointCount, 1, 60_000);
+        Assert.InRange(vm.RenderedPointCount, 1, 1_000_000);
         vm.PointQuality = PointCloudQuality.All[0];
-        Assert.Equal(25_000, vm.RenderedPointCount);
+        Assert.Equal(100_000, vm.RenderedPointCount);
         vm.PointQuality = PointCloudQuality.All[2];
-        Assert.True(vm.RenderedPointCount > 60_000);
+        Assert.True(vm.RenderedPointCount > 100_000);
         Assert.Equal(frames, vm.CapturedFrameCount);
         Assert.Equal(recording, vm.RecordingText);
         Assert.Equal(points, vm.PointCountText);
@@ -168,7 +168,7 @@ public sealed class ScanControlTests
             new SimulatedScanSource().ReadFramesAsync(request, cancellationToken);
         public Task<ScanDataset> GenerateAsync(ScenarioDefinition scenario, ScanSettings settings,
             IProgress<double>? progress, CancellationToken cancellationToken) => new SimulatedScanSource().GenerateAsync(
-                scenario, settings with { FrameCount = 60 }, progress, cancellationToken);
+                scenario, settings with { FrameCount = 120 }, progress, cancellationToken);
     }
 
     internal static Task OnSta(Func<Task> test)

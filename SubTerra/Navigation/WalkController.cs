@@ -165,7 +165,11 @@ public sealed class WalkController : IDisposable
         var right = (Down(Key.D, Key.Right) ? 1 : 0) - (Down(Key.A, Key.Left) ? 1 : 0);
         var up = (Down(Key.E, Key.Space) ? 1 : 0) - (Down(Key.Q, Key.C) || Keyboard.IsKeyDown(Key.Z) ? 1 : 0);
         var previousPosition = _navigator.Position;
-        if (_navigator is FlyNavigator flight) { flight.SetSpeed(_viewModel.EffectiveFlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier; }
+        if (_navigator is FlyNavigator flight)
+        {
+            flight.SetSpeed(_viewModel.EffectiveFlightSpeed); flight.FastMultiplier = (float)_viewModel.FastMultiplier;
+            flight.KeepAltitude = _viewModel.LevelFlight;
+        }
         if (_navigator is WalkNavigator walk) { walk.Speed = (float)_viewModel.WalkSpeed; walk.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if (_navigator is IndoorNavigator indoor) { indoor.Speed = (float)_viewModel.WalkSpeed; indoor.FastMultiplier = (float)_viewModel.FastMultiplier; }
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)

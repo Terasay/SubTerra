@@ -13,6 +13,7 @@ public sealed class FlyNavigator : ICameraNavigator
     public float Pitch { get; private set; }
     public float Speed { get; private set; } = 6;
     public float FastMultiplier { get; set; } = 3;
+    public bool KeepAltitude { get; set; }
     public float DistanceTravelled { get; private set; }
     public Vector3 Forward => new(MathF.Cos(Yaw) * MathF.Cos(Pitch), MathF.Sin(Yaw) * MathF.Cos(Pitch), MathF.Sin(Pitch));
 
@@ -55,7 +56,8 @@ public sealed class FlyNavigator : ICameraNavigator
         if (!float.IsFinite(deltaSeconds) || deltaSeconds <= 0 || !float.IsFinite(forward) ||
             !float.IsFinite(right) || !float.IsFinite(up)) return;
         var sideways = new Vector3(MathF.Sin(Yaw), -MathF.Cos(Yaw), 0);
-        var direction = Forward * forward + sideways * right + Vector3.UnitZ * up;
+        var heading = KeepAltitude ? new Vector3(MathF.Cos(Yaw), MathF.Sin(Yaw), 0) : Forward;
+        var direction = heading * forward + sideways * right + Vector3.UnitZ * up;
         if (direction.LengthSquared() > 1) direction = Vector3.Normalize(direction);
         var step = direction * Speed * (fast ? FastMultiplier : 1) * Math.Min(deltaSeconds, .1f);
         Position += step;

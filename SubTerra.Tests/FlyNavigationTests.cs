@@ -7,6 +7,21 @@ namespace SubTerra.Tests;
 
 public sealed class FlyNavigationTests
 {
+    [Theory]
+    [InlineData(-1.3f)]
+    [InlineData(1.3f)]
+    public void LevelFlightSeparatesHorizontalMovementFromLookAndVerticalKeys(float pitch)
+    {
+        var flight = new FlyNavigator("imported", new(2, 3, 1.65f), Vector3.UnitX) { KeepAltitude = true };
+        flight.Look(.3f, pitch);
+        for (var i = 0; i < 60; i++) flight.Move(1, .5f, 1f / 60, false);
+        Assert.Equal(1.65f, flight.Position.Z); Assert.True(flight.DistanceTravelled > 5);
+        flight.Move(0, 0, .1f, false, 1); Assert.InRange(flight.Position.Z, 2.249f, 2.251f);
+        flight.Move(0, 0, .1f, false, -1); Assert.InRange(flight.Position.Z, 1.649f, 1.651f);
+        flight.KeepAltitude = false;
+        var height = flight.Position.Z; flight.Move(1, 0, .1f, false);
+        Assert.Equal(Math.Sign(pitch), Math.Sign(flight.Position.Z - height));
+    }
     [Fact]
     public void IndoorWalkKeepsEyeHeightAndCannotCrossObservedWallsOrMissingFloor()
     {

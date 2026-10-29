@@ -8,10 +8,11 @@ public sealed partial class MainViewModel
     private bool _isCameraMoving;
     private string _frameRateText = "Кадры: ожидание движения";
     public bool IsCameraMoving => _isCameraMoving;
+    public bool SceneLightingVisible => !IsWalking;
     public bool SsaoEnabled => IsCave && (!AdaptiveQuality || !IsCameraMoving);
     public string FrameRateText { get => _frameRateText; private set => Set(ref _frameRateText, value); }
-    public string QualityStateText => AdaptiveQuality && IsCameraMoving ? "Движение · облегчённый просмотр" : "Полная детализация";
-    private int EffectivePointLimit => AdaptiveQuality && IsCameraMoving ? Math.Min(PointQuality.PointLimit, 15_000) : PointQuality.PointLimit;
+    public string QualityStateText => IsCameraMoving ? "Движение · плотность точек сохранена" : "Плотность по выбранному лимиту";
+    private int EffectivePointLimit => PointQuality.PointLimit;
 
     public void NotifyCameraInteraction()
     {
@@ -30,7 +31,8 @@ public sealed partial class MainViewModel
     private void RefreshAdaptiveQuality()
     {
         Raise(nameof(IsCameraMoving)); Raise(nameof(QualityStateText)); Raise(nameof(SsaoEnabled)); Raise(nameof(ShadowsVisible));
-        if (IsPoints || IsImported) RefreshGeometry();
+        // Motion only changes lighting effects. Reuse the point buffers, including millions of points.
+        if (IsImported && IsSurface) RefreshGeometry();
     }
     public void UpdateFrameTiming((double Fps, double FrameMilliseconds)? timing) => FrameRateText = timing is { } value
         ? $"{value.Fps:F0} FPS · кадр {value.FrameMilliseconds:F1} мс" : "Кадры: покой";

@@ -7,6 +7,8 @@ public sealed record WorkspacePreferences
     public double WalkSpeed { get; init; } = 2.5;
     public double FlightSpeed { get; init; } = 6;
     public double FastMultiplier { get; init; } = 3;
+    public bool LevelFlight { get; init; } = true;
+    public int DisplayPointLimit { get; init; } = 1_000_000;
     public bool AdaptiveQuality { get; init; } = true;
     public bool AutoSaveEnabled { get; init; } = true;
     public string[] RecentFiles { get; init; } = [];
@@ -17,6 +19,7 @@ public sealed record WorkspacePreferences
         WalkSpeed = Bounded(WalkSpeed, .5, 8, 2.5),
         FlightSpeed = Bounded(FlightSpeed, .5, 40, 6),
         FastMultiplier = Bounded(FastMultiplier, 1, 5, 3),
+        DisplayPointLimit = PointCloudQuality.All.Any(q => q.PointLimit == DisplayPointLimit) ? DisplayPointLimit : 1_000_000,
         RecentFiles = (RecentFiles ?? []).Where(path => !string.IsNullOrWhiteSpace(path) && path.Length <= 1024)
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray()
     };

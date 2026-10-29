@@ -39,8 +39,8 @@ public sealed partial class MainViewModel
     private PointGeometry3D? _cloudOnly;
     public PointGeometry3D? CloudOnly { get => _cloudOnly; private set => Set(ref _cloudOnly, value); }
     public bool ImportedMeshVisible => IsImported && IsSurface;
-    private bool CoarseMesh => AdaptiveQuality && (IsCameraMoving || Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
-        (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4);
+    private bool CoarseMesh => AdaptiveQuality && IsOverview && Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
+        (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4;
     public string MeshPreviewText => IsIndoorSurfaceView ? IndoorPreviewSummary : $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
     public bool CanExport => CanSave && (!IsImported || CurrentProjectView?.Data.VisibleScan is not null);
 
@@ -141,6 +141,13 @@ public sealed partial class MainViewModel
         CloudOnly = IsSurface && !IsIndoorSurfaceView ? CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight) : null;
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
+    }
+    private void ConfigureNavigationClipping()
+    {
+        if (!IsImported) return;
+        var size = Math.Max(.001, (_importedBounds.Maximum - _importedBounds.Minimum).Length());
+        Camera.NearPlaneDistance = Math.Clamp(size / 20_000, .00001, .01);
+        Camera.FarPlaneDistance = Math.Max(Camera.FarPlaneDistance, size * 12);
     }
     private void FitImported(bool top = false)
     {

@@ -104,10 +104,10 @@
                                        EnableSwapChainRendering="False" EnableSSAO="{Binding SsaoEnabled}" SSAOIntensity=".80" SSAOSamplingRadius=".45"
                                        IsShadowMappingEnabled="{Binding ShadowsVisible}" CameraRotationMode="Turntable" RotationSensitivity=".45" ZoomSensitivity=".7"
                                        IsInertiaEnabled="False" UseDefaultGestures="False" Focusable="True" RenderExceptionOccurred="Viewport_RenderExceptionOccurred">
-                            <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding IsOverview}"/>
+                            <h:AmbientLight3D Color="#4A505A" IsRendering="{Binding SceneLightingVisible}"/>
                             <h:AmbientLight3D Color="{Binding WalkAmbientColor}" IsRendering="{Binding IsWalking}"/>
-                            <h:DirectionalLight3D Direction="-.6,.8,-1.6" Color="#D7CABB" IsRendering="{Binding IsOverview}"/>
-                            <h:DirectionalLight3D Direction="1,-.7,-.3" Color="#7C8FA1" IsRendering="{Binding IsOverview}"/>
+                            <h:DirectionalLight3D Direction="-.6,.8,-1.6" Color="#D7CABB" IsRendering="{Binding SceneLightingVisible}"/>
+                            <h:DirectionalLight3D Direction="1,-.7,-.3" Color="#7C8FA1" IsRendering="{Binding SceneLightingVisible}"/>
                             <h:SpotLight3D Position="{Binding LampCamera.Position}" Direction="{Binding LampCamera.LookDirection}" Color="#FFF0D9" Attenuation="1,.025,.009" Range="36" OuterAngle="96" InnerAngle="48" Falloff="1.4" IsRendering="{Binding IsWalking}"/>
                             <h:PointLight3D Position="{Binding Camera.Position}" Color="#475667" Attenuation="1,.20,.09" Range="10" IsRendering="{Binding IsWalking}"/>
                             <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
@@ -146,7 +146,10 @@
                                 <TextBlock Text="{Binding NavigationSpeedText}" FontSize="11" Foreground="#BCD5AB" Margin="0,4,0,0" Visibility="{Binding IsFlying, Converter={StaticResource BoolVisibility}}" /></StackPanel></Border>
                         </StackPanel>
 
-<Button  Command="{Binding ReturnOverviewCommand}" Content="В обзор · Esc" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Background="#EF1C2C36" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}" />
+<StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0" Visibility="{Binding IsNavigating, Converter={StaticResource BoolVisibility}}">
+    <Button Command="{Binding ReturnOverviewCommand}" Content="Осмотреться · Esc" Background="#EF1C2C36"/>
+    <Button Command="{Binding HomeCommand}" Content="Весь объект · Home" Background="#EF1C2C36" Margin="0,7,0,0" ToolTip="Выйти из полёта и отдалить камеру, если потеряли сцену или оказались в стене"/>
+</StackPanel>
 
 <Border  HorizontalAlignment="Left" VerticalAlignment="Bottom" MaxWidth="360" Margin="12,0,12,42" Padding="10" CornerRadius="8" Background="#E61D323B" Visibility="{Binding IsPicking, Converter={StaticResource BoolVisibility}}"><DockPanel>
                             <Button DockPanel.Dock="Right" Command="{Binding EndInspectionCommand}" Content="Готово · Esc" Padding="9,6" />
