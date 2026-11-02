@@ -10,6 +10,15 @@ namespace SubTerra.Rendering;
 /// <summary>Bounded display buffers, independent of the complete imported measurements.</summary>
 public sealed class ImportedGeometry(ImportedScan scan)
 {
+    public sealed record MaterialMesh(MeshGeometry3D Geometry, HelixToolkit.Wpf.SharpDX.Material Material,
+        SharpDX.Direct3D11.CullMode CullMode, bool IsTransparent);
+    private IReadOnlyList<MaterialMesh>? _materialMeshes;
+    private sealed class MaterialTextureCache
+    {
+        public Dictionary<(int, int, float, float), TextureModel> Models { get; } = [];
+        public long Pixels;
+    }
+    public IReadOnlyList<MaterialMesh> MaterialMeshes => _materialMeshes ??= CreateMaterialMeshes();
     private readonly (Vector3 Minimum, Vector3 Maximum) _bounds = scan.Bounds;
     public (Vector3 Minimum, Vector3 Maximum) Bounds => _bounds;
     private readonly Dictionary<(int Limit, PointClipPlane? Clip, bool Height), PointGeometry3D> _clouds = [];
@@ -20,6 +29,11 @@ public sealed class ImportedGeometry(ImportedScan scan)
     public void PrepareMeshPreviews(CancellationToken token = default)
     {
         if (!scan.HasMesh) return;
+        if (scan.Appearance is not null)
+        {
+            _meshPreview = _coarsePreview = scan;
+            _materialMeshes = CreateMaterialMeshes(token); _ = Mesh(true); return;
+        }
         _meshPreview = MeshPreviewBuilder.Build(scan, 1_000_000, token);
         _coarsePreview = MeshPreviewBuilder.Build(_meshPreview, 250_000, token);
         foreach (var coarse in new[] { false, true }) foreach (var height in new[] { false, true })
@@ -65,6 +79,13 @@ public sealed class ImportedGeometry(ImportedScan scan)
         if (coarse && ReferenceEquals(_coarsePreview ?? scan, _meshPreview ?? scan))
             return _meshes[(height, true)] = Mesh(height);
         var data = coarse ? _coarsePreview ?? scan : _meshPreview ?? scan;
+        if (data.Appearance is { } appearance)
+        {
+            var vertexColors = new Color4Collection(data.Points.Length);
+            for (var i = 0; i < data.Points.Length; i++) vertexColors.Add(Color(data, i, height));
+            return _meshes[(height, coarse)] = new() { Positions = new(data.Points.Select(p => p.Position)), Normals = new(appearance.Normals),
+                Indices = new(data.Triangles), Colors = vertexColors };
+        }
         var count = data.Triangles.Length / 3;
         if (_meshes.TryGetValue((!height, coarse), out var shared))
         {
@@ -90,6 +111,88 @@ public sealed class ImportedGeometry(ImportedScan scan)
             }
         }
         return _meshes[(height, coarse)] = new() { Positions = positions, Normals = normals, Colors = colors, Indices = indices };
+    }
+    private IReadOnlyList<MaterialMesh> CreateMaterialMeshes(CancellationToken token = default)
+    {
+        if (scan.Appearance is not { } appearance) return [];
+        var result = new List<MaterialMesh>();
+        var materialCache = new Dictionary<int, HelixToolkit.Wpf.SharpDX.Material>();
+        var textureCache = new MaterialTextureCache();
+        foreach (var part in appearance.Parts)
+        {
+            token.ThrowIfCancellationRequested(); var material = appearance.Materials[part.MaterialIndex];
+            var positions = new Vector3Collection(); var normals = new Vector3Collection(); var uv = new Vector2Collection();
+            var colors = new Color4Collection(); var indices = new IntCollection(); var remap = new Dictionary<int, int>();
+            for (var j = part.IndexOffset; j < part.IndexOffset + part.IndexCount; j++)
+            {
+                if ((j & 4095) == 0) token.ThrowIfCancellationRequested();
+                var source = scan.Triangles[j];
+                if (!remap.TryGetValue(source, out var index))
+                {
+                    remap[source] = index = positions.Count; positions.Add(scan.Points[source].Position); normals.Add(appearance.Normals[source]); uv.Add(appearance.TextureCoordinates[source]);
+                    var c = appearance.VertexColors[source];
+                    colors.Add(new(c.X * material.Red, c.Y * material.Green, c.Z * material.Blue,
+                        material.AlphaMode == "OPAQUE" ? 1 : material.AlphaMode == "MASK" ? c.W * material.Alpha >= material.AlphaCutoff ? 1 : 0 : c.W));
+                }
+                indices.Add(index);
+            }
+            if (!materialCache.TryGetValue(part.MaterialIndex, out var renderMaterial)) materialCache[part.MaterialIndex] = renderMaterial = CreateMaterial(appearance, material, textureCache);
+            result.Add(new(new() { Positions = positions, Normals = normals, TextureCoordinates = uv, Colors = colors, Indices = indices }, renderMaterial,
+                material.DoubleSided ? SharpDX.Direct3D11.CullMode.None : SharpDX.Direct3D11.CullMode.Back, material.AlphaMode != "OPAQUE"));
+        }
+        return result;
+    }
+    private static HelixToolkit.Wpf.SharpDX.Material CreateMaterial(MeshAppearance appearance, MeshMaterial source, MaterialTextureCache cache)
+    {
+        var sampler = HelixToolkit.SharpDX.Shaders.DefaultSamplers.LinearSamplerWrapAni8;
+        var textureId = new[] { source.BaseColorTexture, source.NormalTexture, source.MetallicRoughnessTexture, source.EmissiveTexture, source.OcclusionTexture }.FirstOrDefault(i => i >= 0, -1);
+        static SharpDX.Direct3D11.TextureAddressMode Address(int value) => value switch { 33071 => SharpDX.Direct3D11.TextureAddressMode.Clamp, 33648 => SharpDX.Direct3D11.TextureAddressMode.Mirror, _ => SharpDX.Direct3D11.TextureAddressMode.Wrap };
+        if (textureId >= 0) { sampler.AddressU = Address(appearance.Textures[textureId].WrapS); sampler.AddressV = Address(appearance.Textures[textureId].WrapT); }
+        TextureModel? Texture(int i, bool albedo = false, bool normal = false, bool occlusion = false)
+        {
+            if (i < 0) return null;
+            var kind = albedo ? source.AlphaMode == "OPAQUE" ? 1 : source.AlphaMode == "MASK" ? 2 : 0 : normal && source.NormalScale != 1 ? 3 : occlusion && source.OcclusionStrength != 1 ? 4 : 0;
+            var key = (i, kind, kind == 2 ? source.Alpha : kind == 3 ? source.NormalScale : kind == 4 ? source.OcclusionStrength : 0, kind == 2 ? source.AlphaCutoff : 0);
+            if (cache.Models.TryGetValue(key, out var cached)) return cached;
+            var pixels = MeshTextureSampler.Decode(appearance.Textures[i]); var bytes = pixels.Bgra;
+            cache.Pixels += (long)pixels.Width * pixels.Height;
+            if (cache.Pixels > 134_217_728) throw new System.IO.InvalidDataException("Слишком много вариантов текстур материалов. Уменьшите размер изображений.");
+            if (albedo && source.AlphaMode is "OPAQUE" or "MASK")
+            {
+                bytes = (byte[])bytes.Clone();
+                for (var p = 3; p < bytes.Length; p += 4) bytes[p] = source.AlphaMode == "OPAQUE" || bytes[p] / 255f * source.Alpha >= source.AlphaCutoff ? (byte)255 : (byte)0;
+            }
+            if (normal && source.NormalScale != 1)
+            {
+                bytes = (byte[])bytes.Clone();
+                for (var p = 0; p < bytes.Length; p += 4)
+                {
+                    var n = new Vector3((bytes[p + 2] / 127.5f - 1) * source.NormalScale, (bytes[p + 1] / 127.5f - 1) * source.NormalScale, bytes[p] / 127.5f - 1);
+                    n = n.LengthSquared() > 1e-12f ? Vector3.Normalize(n) : Vector3.UnitZ;
+                    bytes[p] = (byte)Math.Clamp((n.Z + 1) * 127.5f, 0, 255); bytes[p + 1] = (byte)Math.Clamp((n.Y + 1) * 127.5f, 0, 255); bytes[p + 2] = (byte)Math.Clamp((n.X + 1) * 127.5f, 0, 255);
+                }
+            }
+            if (occlusion && source.OcclusionStrength != 1)
+            {
+                bytes = (byte[])bytes.Clone();
+                for (var p = 2; p < bytes.Length; p += 4) bytes[p] = (byte)Math.Clamp(255 + (bytes[p] - 255) * source.OcclusionStrength, 0, 255);
+            }
+            return cache.Models[key] = new TextureModel(bytes, SharpDX.DXGI.Format.B8G8R8A8_UNorm, pixels.Width, pixels.Height);
+        }
+        var alpha = source.AlphaMode == "OPAQUE" ? 1 : source.AlphaMode == "MASK" ? source.BaseColorTexture >= 0 || source.Alpha >= source.AlphaCutoff ? 1 : 0 : source.Alpha;
+        HelixToolkit.Wpf.SharpDX.Material material;
+        if (source.Unlit)
+            material = new HelixToolkit.Wpf.SharpDX.DiffuseMaterial { Name = source.Name, DiffuseColor = new(source.Red, source.Green, source.Blue, alpha),
+                DiffuseMap = Texture(source.BaseColorTexture, true), DiffuseMapSampler = sampler, EnableUnLit = true, VertexColorBlendingFactor = source.BaseColorTexture < 0 ? 1 : 0 };
+        else
+            material = new HelixToolkit.Wpf.SharpDX.PBRMaterial { Name = source.Name, AlbedoColor = new(source.Red, source.Green, source.Blue, alpha),
+                MetallicFactor = source.Metallic, RoughnessFactor = source.Roughness, AlbedoMap = Texture(source.BaseColorTexture, true),
+                NormalMap = Texture(source.NormalTexture, normal: true), RenderNormalMap = source.NormalTexture >= 0, EnableAutoTangent = true,
+                RoughnessMetallicMap = Texture(source.MetallicRoughnessTexture), RenderRoughnessMetallicMap = source.MetallicRoughnessTexture >= 0,
+                AmbientOcculsionMap = Texture(source.OcclusionTexture, occlusion: true), RenderAmbientOcclusionMap = source.OcclusionTexture >= 0,
+                EmissiveColor = new(source.EmissiveRed, source.EmissiveGreen, source.EmissiveBlue, 1), EmissiveMap = Texture(source.EmissiveTexture), RenderEmissiveMap = source.EmissiveTexture >= 0,
+                SurfaceMapSampler = sampler, VertexColorBlendingFactor = source.BaseColorTexture < 0 ? 1 : 0 };
+        material.Freeze(); return material;
     }
     private Color4 Color(int index, bool height) => Color(scan, index, height);
     private Color4 Color(ImportedScan data, int index, bool height)
@@ -119,6 +222,49 @@ public sealed class ImportedGeometry(ImportedScan scan)
         }
         return SceneGeometry.Lines(points);
     }
+}
+
+public static class MeshTextureSampler
+{
+    public sealed record Pixels(int Width, int Height, byte[] Bgra);
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MeshTexture, Pixels> Cache = new();
+    public static Pixels Decode(MeshTexture texture) => Cache.GetValue(texture, t =>
+    {
+        using var stream = new System.IO.MemoryStream(t.Data, writable: false);
+        try
+        {
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(stream,
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnDemand);
+            var frame = decoder.Frames[0];
+            if (frame.PixelWidth < 1 || frame.PixelHeight < 1 || frame.PixelWidth > 8192 || frame.PixelHeight > 8192 || (long)frame.PixelWidth * frame.PixelHeight > 16_777_216)
+                throw new System.IO.InvalidDataException("Текстура превышает лимит 16 млн пикселей.");
+            var image = new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            var bytes = new byte[checked(image.PixelWidth * image.PixelHeight * 4)]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
+            return new Pixels(image.PixelWidth, image.PixelHeight, bytes);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or System.IO.IOException or ArgumentException)
+        { throw new System.IO.InvalidDataException("Не удалось прочитать PNG/JPEG-текстуру GLB.", ex); }
+    });
+    public static Vector4 Sample(MeshTexture texture, Vector2 uv)
+    {
+        static float Wrap(float x, int mode) => mode switch { 33071 => Math.Clamp(x, 0, 1), 33648 => 1 - Math.Abs((x % 2 + 2) % 2 - 1), _ => x - MathF.Floor(x) };
+        var image = Decode(texture);
+        var x = Math.Clamp((int)(Wrap(uv.X, texture.WrapS) * image.Width), 0, image.Width - 1);
+        var y = Math.Clamp((int)(Wrap(uv.Y, texture.WrapT) * image.Height), 0, image.Height - 1);
+        var i = (y * image.Width + x) * 4; var p = image.Bgra;
+        return new(p[i + 2] / 255f, p[i + 1] / 255f, p[i] / 255f, p[i + 3] / 255f);
+    }
+    public static float Linear(float value) => value <= .04045f ? value / 12.92f : MathF.Pow((value + .055f) / 1.055f, 2.4f);
+    public static float Srgb(float value) => value <= .0031308f ? value * 12.92f : 1.055f * MathF.Pow(value, 1 / 2.4f) - .055f;
+    public static Vector4 Color(MeshAppearance appearance, MeshMaterial material, Vector2 uv, Vector4 vertex)
+    {
+        var texel = material.BaseColorTexture < 0 ? Vector4.One : Sample(appearance.Textures[material.BaseColorTexture], uv);
+        return new(Math.Clamp(Srgb(material.Red * vertex.X * Linear(texel.X)), 0, 1),
+            Math.Clamp(Srgb(material.Green * vertex.Y * Linear(texel.Y)), 0, 1),
+            Math.Clamp(Srgb(material.Blue * vertex.Z * Linear(texel.Z)), 0, 1),
+            material.AlphaMode == "OPAQUE" ? 1 : material.Alpha * vertex.W * texel.W);
+    }
+    public static uint Pack(Vector4 color) => (uint)Math.Round(color.X * 255) << 16 | (uint)Math.Round(color.Y * 255) << 8 | (uint)Math.Round(color.Z * 255);
 }
 
 public enum IndoorSurfaceStyle { SourceColors, Materials, Classes, Completion }

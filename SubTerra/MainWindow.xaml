@@ -92,12 +92,17 @@
                     <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding SourceBadge}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="#ACBFCD"/><TextBlock Text="{Binding PointCountText, StringFormat={}{0} точек}" FontSize="13" FontWeight="SemiBold" Margin="0,2,0,0"/></StackPanel>
                 </DockPanel>
                 <Grid x:Name="WorkspaceViews" Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition x:Name="Scene3DColumn"/><ColumnDefinition x:Name="ViewDividerColumn" Width="0"/><ColumnDefinition x:Name="PlanColumn" Width="0"/></Grid.ColumnDefinitions>
-                    <Border x:Name="Scene3DHost" Style="{StaticResource Panel}" ClipToBounds="True" Visibility="{Binding Show3DWorkspace, Converter={StaticResource BoolVisibility}}"><Grid><Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition/></Grid.RowDefinitions>
-                        <DockPanel Background="#14232E" LastChildFill="False">
+                    <Border x:Name="Scene3DHost" Style="{StaticResource Panel}" ClipToBounds="True" Visibility="{Binding Show3DWorkspace, Converter={StaticResource BoolVisibility}}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" MinHeight="44"/><RowDefinition/></Grid.RowDefinitions>
+                        <DockPanel Background="#14232E" LastChildFill="True">
                             <Button DockPanel.Dock="Right" Command="{Binding HomeCommand}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="Общий вид · Home"><TextBlock Style="{StaticResource Icon}" Text="&#xE80F;"/></Button>
                             <Button DockPanel.Dock="Right" Command="{Binding MeasureCommand}" Content="↔" Style="{StaticResource Ghost}" Padding="10,6" FontSize="18" ToolTip="Измерить расстояние" AutomationProperties.Name="Измерить расстояние"/>
                             <Button DockPanel.Dock="Right" Command="{Binding CoordinatesCommand}" Content="⌖" Style="{StaticResource Ghost}" Padding="10,6" FontSize="18" ToolTip="Координаты точки" AutomationProperties.Name="Координаты точки"/>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0"><RadioButton Content="{Binding SurfaceModeText}" Style="{StaticResource Segment}" Padding="9,6" IsEnabled="{Binding CanSelectSurface}" ToolTip="{Binding SurfaceModeHint}" ToolTipService.ShowOnDisabled="True" IsChecked="{Binding IsSurfaceMode, Mode=OneWay}" Command="{Binding SurfaceCommand}" GroupName="RenderMode"/><RadioButton Content="Высота" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsHeight, Mode=OneWay}" Command="{Binding HeightCommand}" GroupName="RenderMode"/><RadioButton Content="Точки" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsPointMode, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/></StackPanel>
+                            <WrapPanel VerticalAlignment="Center" Margin="6,0">
+                                <RadioButton Content="{Binding SurfaceModeText}" Style="{StaticResource Segment}" Padding="9,6" IsEnabled="{Binding CanOpenSurface}" ToolTip="{Binding SurfaceModeHint}" ToolTipService.ShowOnDisabled="True" IsChecked="{Binding IsSurfaceMode, Mode=OneWay}" Command="{Binding SurfaceCommand}" GroupName="RenderMode"/>
+                                <RadioButton Content="Высота" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsHeight, Mode=OneWay}" Command="{Binding HeightCommand}" GroupName="RenderMode"/>
+                                <RadioButton Content="Точки" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsPointMode, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/>
+                                <Button Content="Найти людей" Command="{Binding FindPeopleCommand}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Padding="10,6" Margin="8,0,0,0" ToolTip="Запустить поиск людей и открыть результат. Ракурсы помещения подготавливаются автоматически."/>
+                            </WrapPanel>
                         </DockPanel>
                         <Grid Grid.Row="1">                        <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
                                        BackgroundColor="#0B131B" ShowViewCube="False" ShowCoordinateSystem="False" ModelUpDirection="0,0,1"
@@ -113,9 +118,15 @@
                             <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Grid}" Color="#253B48" Thickness=".5" IsRendering="{Binding GridVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>
-                            <h:LineGeometryModel3D Geometry="{Binding PersonOutline}" Color="#F5B84D" Thickness="2" IsRendering="{Binding PersonBoxesVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding PeopleProposedOutline}" Color="#F5B84D" Thickness="1.5" IsRendering="{Binding PersonBoxesVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding PeopleConfirmedOutline}" Color="#A1E3C5" Thickness="1.5" IsRendering="{Binding PersonBoxesVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding PeopleRejectedOutline}" Color="#E78D8D" Thickness="1.5" IsRendering="{Binding PersonBoxesVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding PersonOutline}" Color="#F1F6FA" Thickness="3" IsRendering="{Binding PersonBoxesVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding CloudOnly}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding ImportedMeshVisible}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>
                             <h:MeshGeometryModel3D Geometry="{Binding Surface}" Material="{Binding SurfaceMaterial}" IsRendering="{Binding IsSurface}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
+                            <h:ItemsModel3D ItemsSource="{Binding TexturedMeshParts}" IsRendering="{Binding ImportedMeshVisible}" IsHitTestVisible="{Binding IsPicking}"><h:ItemsModel3D.ItemTemplate><DataTemplate>
+                                <h:MeshGeometryModel3D Geometry="{Binding Geometry}" Material="{Binding Material}" CullMode="{Binding CullMode}" IsTransparent="{Binding IsTransparent}" IsThrowingShadow="True"/>
+                            </DataTemplate></h:ItemsModel3D.ItemTemplate></h:ItemsModel3D>
                             <h:MeshGeometryModel3D Geometry="{Binding FloorSurface}" Material="{Binding FloorMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
                             <h:MeshGeometryModel3D Geometry="{Binding DampSurface}" Material="{Binding DampMaterial}" IsRendering="{Binding IsCave}" IsThrowingShadow="True" CullMode="None" IsHitTestVisible="{Binding IsPicking}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Route}" Color="#81C7B4" Thickness="1.4" IsRendering="{Binding RouteVisible}" IsHitTestVisible="False"/>
@@ -174,6 +185,34 @@
 
 <StackPanel  HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False"><TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" /><TextBlock Text="{Binding EmptyHint}" Foreground="#A1B7C7" Margin="0,9,0,0" TextWrapping="Wrap" TextAlignment="Center" /></StackPanel>
 
+                        <Border x:Name="PeopleResultHost" Background="#0B131B" Visibility="{Binding IsPeoplePreviewVisible, Converter={StaticResource BoolVisibility}}" Padding="16">
+                            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <Button DockPanel.Dock="Right" Content="3D · Esc" Command="{Binding ClosePeoplePreviewCommand}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="Вернуться к свободному просмотру 3D"/>
+                                        <TextBlock Text="Результат поиска" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <WrapPanel Margin="0,0,0,12">
+                                        <ComboBox ItemsSource="{Binding PersonViews}" SelectedItem="{Binding SelectedPersonView}" DisplayMemberPath="Label" MinWidth="210" AutomationProperties.Name="Ракурс результата ИИ" Margin="0,0,10,6"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                                <Border Grid.Row="1" Background="#111E28" CornerRadius="8" ClipToBounds="True">
+                                    <Grid>
+                                        <Image x:Name="PeopleResultImage" Source="{Binding PersonPreview}" Stretch="Uniform" MouseLeftButtonDown="PeopleResult_Click" Cursor="Hand" AutomationProperties.Name="Результат распознавания людей"/>
+                                        <Border VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12" Padding="12,8" CornerRadius="6" Background="#E615252F" IsHitTestVisible="False" Visibility="{Binding PeopleViewIsEmpty, Converter={StaticResource BoolVisibility}}"><TextBlock Text="Кандидатов в этом ракурсе не найдено" TextWrapping="Wrap" TextAlignment="Center"/></Border>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                                    <TextBlock Text="{Binding PersonViewSummary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button Content="Это человек" Command="{Binding ConfirmPersonCommand}" Style="{StaticResource Primary}" Padding="12,7" Margin="0,0,8,0"/>
+                                        <Button Content="Ошибка" Command="{Binding RejectPersonCommand}" Padding="12,7" Margin="0,0,8,0"/>
+                                        <Button Content="Показать в 3D" Command="{Binding FocusPersonViewCommand}" Style="{StaticResource Ghost}" Padding="12,7"/>
+                                    </WrapPanel>
+                                    <TextBlock Text="Нажмите на рамку, чтобы выбрать кандидата. Находки требуют проверки." Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                         </Grid>
                     </Grid></Border>
                     <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="#304653" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Visibility="{Binding IsSplitView, Converter={StaticResource BoolVisibility}}"/>
@@ -196,7 +235,7 @@
             <TextBlock Text="От облака точек — к цифровой модели пространства." FontSize="17" Foreground="#ACBFCD" TextWrapping="Wrap" Margin="0,0,0,30"/>
             <UniformGrid Columns="3">
                 <Button Click="Open_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}" Margin="0,0,12,0"><StackPanel><TextBlock Text="01 / ПРОЕКТ" Style="{StaticResource Label}"/><TextBlock Text="Открыть проект" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Продолжить работу с файлом .subterra" Style="{StaticResource Muted}"/></StackPanel></Button>
-                <Button Click="Import_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}" Margin="0,0,12,0"><StackPanel><TextBlock Text="02 / ДАННЫЕ" Style="{StaticResource Label}" Foreground="{StaticResource AccentBrush}"/><TextBlock Text="Импортировать скан" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Облака и сетки · PLY, ASC, XYZ, TXT" Style="{StaticResource Muted}"/></StackPanel></Button>
+                <Button Click="Import_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}" Margin="0,0,12,0"><StackPanel><TextBlock Text="02 / ДАННЫЕ" Style="{StaticResource Label}" Foreground="{StaticResource AccentBrush}"/><TextBlock Text="Импортировать скан" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="GLB с текстурами · PLY, ASC, XYZ, TXT" Style="{StaticResource Muted}"/></StackPanel></Button>
                 <Button Click="Demo_Click" IsEnabled="{Binding CanInteract}" Style="{StaticResource WelcomeAction}"><StackPanel><TextBlock Text="03 / ДЕМОНСТРАЦИЯ" Style="{StaticResource Label}"/><TextBlock Text="Исследовать пещеру" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,22,0,12"/><TextBlock Text="Виртуальное сканирование · синтетическая сцена" Style="{StaticResource Muted}"/></StackPanel></Button>
             </UniformGrid>
             <Button Content="Открыть учебный корпус · 3 этажа, 18 аудиторий →" Command="{Binding LoadCollegeBuildingCommand}" HorizontalAlignment="Left" Margin="0,16,0,0" ToolTip="Синтетическая геометрия для проверки анализа, без заранее готовой разметки"/>

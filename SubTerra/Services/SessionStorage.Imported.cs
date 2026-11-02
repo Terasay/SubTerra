@@ -15,13 +15,14 @@ public sealed partial class SessionStorage
         ValidateAnnotations(session.Annotations);
         if (frameCount != 1 || session.Frames.Length != 0 || session.Adjustments.Length != 0)
             throw new InvalidDataException("Импортированный скан не содержит кадров виртуального датчика.");
-        var manifest = new Manifest(4, "import", "m", "imported", new(), 0, scan.Points.Length,
-            Annotations: session.Annotations, ImportMetadata: scan.Metadata, TriangleCount: scan.Triangles.Length / 3, HasColors: scan.Colors.Length > 0);
+        var manifest = new Manifest(scan.Appearance is null ? 4 : 12, "import", "m", "imported", new(), 0, scan.Points.Length,
+            Annotations: session.Annotations, ImportMetadata: scan.Metadata, TriangleCount: scan.Triangles.Length / 3, HasColors: scan.Colors.Length > 0, HasAppearance: scan.Appearance is not null);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         AtomicWrite(path, temporary =>
         {
             using var archive = ZipFile.Open(temporary, ZipArchiveMode.Create);
             using (var metadata = archive.CreateEntry("manifest.json").Open()) metadata.Write(bytes);
+            if (scan.Appearance is not null) SaveAppearance(archive, "", scan.Appearance, token);
             using (var writer = new BinaryWriter(archive.CreateEntry("points.bin", CompressionLevel.Fastest).Open()))
                 for (var i = 0; i < scan.Points.Length; i++)
                 {
@@ -68,7 +69,8 @@ public sealed partial class SessionStorage
                 if ((i & 4095) == 0) { token.ThrowIfCancellationRequested(); progress?.Report(65 + i * 30d / Math.Max(1, triangles.Length)); }
                 triangles[i] = reader.ReadInt32();
             }
-        var scan = new ImportedScan { Metadata = manifest.ImportMetadata, Points = points, Colors = colors, Triangles = triangles };
+        var scan = new ImportedScan { Metadata = manifest.ImportMetadata, Points = points, Colors = colors, Triangles = triangles,
+            Appearance = manifest.HasAppearance ? LoadAppearance(archive, prefix, points.Length, triangles.Length, token) : null };
         scan.Validate(token);
         progress?.Report(100);
         return scan.ToSession(annotations);
@@ -120,5 +122,62 @@ public sealed partial class SessionStorage
             else File.Move(temporary, destination);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    private sealed record TextureInfo(string MimeType, int WrapS, int WrapT, int ByteLength);
+    private sealed record AppearanceManifest(MeshPart[] Parts, MeshMaterial[] Materials, TextureInfo[] Textures);
+    private static void SaveAppearance(ZipArchive archive, string prefix, MeshAppearance appearance, CancellationToken token)
+    {
+        var info = new AppearanceManifest(appearance.Parts, appearance.Materials,
+            appearance.Textures.Select(t => new TextureInfo(t.MimeType, t.WrapS, t.WrapT, t.Data.Length)).ToArray());
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(info);
+        if (bytes.Length > 2 * 1024 * 1024) throw new InvalidDataException("Слишком большое описание материалов.");
+        using (var stream = archive.CreateEntry(prefix + "appearance.json").Open()) stream.Write(bytes);
+        using (var writer = new BinaryWriter(archive.CreateEntry(prefix + "appearance.bin", CompressionLevel.Fastest).Open()))
+            for (var i = 0; i < appearance.TextureCoordinates.Length; i++)
+            {
+                if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
+                var uv = appearance.TextureCoordinates[i]; var n = appearance.Normals[i]; var c = appearance.VertexColors[i];
+                writer.Write(uv.X); writer.Write(uv.Y); writer.Write(n.X); writer.Write(n.Y); writer.Write(n.Z);
+                writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Z); writer.Write(c.W);
+            }
+        for (var i = 0; i < appearance.Textures.Length; i++)
+        {
+            using var stream = archive.CreateEntry(prefix + $"textures/{i}.bin", CompressionLevel.NoCompression).Open();
+            var data = appearance.Textures[i].Data;
+            for (var offset = 0; offset < data.Length; offset += 65536)
+            { token.ThrowIfCancellationRequested(); stream.Write(data, offset, Math.Min(65536, data.Length - offset)); }
+        }
+    }
+    private static MeshAppearance LoadAppearance(ZipArchive archive, string prefix, int count, int indexCount, CancellationToken token)
+    {
+        var metadata = archive.GetEntry(prefix + "appearance.json") ?? throw new InvalidDataException("Нет описания материалов.");
+        if (metadata.Length > 2 * 1024 * 1024) throw new InvalidDataException("Слишком большое описание материалов.");
+        AppearanceManifest info;
+        using (var stream = metadata.Open()) info = JsonSerializer.Deserialize<AppearanceManifest>(stream) ?? throw new InvalidDataException("Повреждено описание материалов.");
+        if (info.Textures is null || info.Textures.Length > 512 || info.Textures.Any(t => t is null || t.ByteLength is < 1 or > MeshAppearance.MaximumTextureBytes) ||
+            info.Textures.Sum(t => (long)t.ByteLength) > MeshAppearance.MaximumTotalTextureBytes) throw new InvalidDataException("Превышен размер текстур.");
+        var geometry = archive.GetEntry(prefix + "appearance.bin") ?? throw new InvalidDataException("Нет UV-координат сетки.");
+        if (geometry.Length != count * 36L) throw new InvalidDataException("Размер атрибутов сетки не совпадает.");
+        var uv = new System.Numerics.Vector2[count]; var normals = new System.Numerics.Vector3[count]; var colors = new System.Numerics.Vector4[count];
+        using (var reader = new BinaryReader(geometry.Open()))
+            for (var i = 0; i < count; i++)
+            {
+                if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
+                uv[i] = new(ReadFinite(reader), ReadFinite(reader)); normals[i] = new(ReadFinite(reader), ReadFinite(reader), ReadFinite(reader));
+                colors[i] = new(ReadFinite(reader), ReadFinite(reader), ReadFinite(reader), ReadFinite(reader));
+            }
+        var textures = new MeshTexture[info.Textures.Length]; long pixels = 0;
+        for (var i = 0; i < textures.Length; i++)
+        {
+            token.ThrowIfCancellationRequested(); var t = info.Textures[i];
+            var entry = archive.GetEntry(prefix + $"textures/{i}.bin") ?? throw new InvalidDataException("Нет изображения текстуры.");
+            if (entry.Length != t.ByteLength) throw new InvalidDataException("Размер текстуры не совпадает.");
+            var data = new byte[t.ByteLength]; using (var stream = entry.Open()) stream.ReadExactly(data);
+            textures[i] = new(data, t.MimeType, t.WrapS, t.WrapT);
+            var image = Rendering.MeshTextureSampler.Decode(textures[i]); pixels += (long)image.Width * image.Height;
+            if (pixels > 33_554_432) throw new InvalidDataException("Превышено число пикселей текстур.");
+        }
+        var result = new MeshAppearance(uv, normals, colors, info.Parts, info.Materials, textures); result.Validate(count, indexCount, token); return result;
     }
 }

@@ -38,13 +38,13 @@ public partial class MainWindow : Window
 
     public MainWindow() : this(new AdminAccessService()) { }
 
-    public MainWindow(AdminAccessService access)
+    public MainWindow(AdminAccessService access, WorkspaceStateStore? workspaceStore = null)
     {
         _access = access;
         EffectsManager = new DefaultEffectsManager();
         _interaction = new WpfSessionInteraction(() => this);
         _viewModel = new MainViewModel(new SimulatedScanSource(), new SessionStorage(), access: _access, interaction: _interaction,
-            workspaceStore: new WorkspaceStateStore());
+            workspaceStore: workspaceStore ?? new WorkspaceStateStore());
         InitializeComponent();
         DataContext = _viewModel;
         _walk = new WalkController(this, Viewport, _viewModel);
@@ -66,6 +66,7 @@ public partial class MainWindow : Window
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.RightClick)));
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.LeftClick, ModifierKeys.Shift)));
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        _viewModel.AdministratorAccessRequested += RequestAdminAccess;
     }
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -91,6 +92,15 @@ public partial class MainWindow : Window
         if (hit is not null) _viewModel.SelectInspectionPoint(hit.PointHit);
         e.Handled = true;
     }
+    private void PeopleResult_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Image image) return;
+        var size = Math.Min(image.ActualWidth, image.ActualHeight);
+        if (size <= 0) return;
+        var point = e.GetPosition(image);
+        _viewModel.SelectPersonAt((point.X - (image.ActualWidth - size) / 2) / size, (point.Y - (image.ActualHeight - size) / 2) / size);
+        e.Handled = true;
+    }
     private async void Start_Click(object sender, RoutedEventArgs e) => await _viewModel.StartAsync();
     private async void Scenario_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -107,7 +117,7 @@ public partial class MainWindow : Window
     private async void Open_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanInteract) return;
-        var dialog = new OpenFileDialog { Title = "Открыть сеанс или скан", Filter = "Сеансы и сканы|*.subterra;*.ply;*.asc;*.xyz;*.txt|Сеанс SubTerra|*.subterra|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = "Открыть проект или 3D-скан", Filter = "Проекты и 3D-сканы|*.subterra;*.glb;*.ply;*.asc;*.xyz;*.txt|Проект SubTerra|*.subterra|Модель GLB с текстурами|*.glb|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
         if (dialog.ShowDialog(this) != true) return;
         if (System.IO.Path.GetExtension(dialog.FileName).Equals(".subterra", StringComparison.OrdinalIgnoreCase)) await _viewModel.OpenAsync(dialog.FileName);
         else await ImportScanFileAsync(dialog.FileName);
@@ -115,7 +125,7 @@ public partial class MainWindow : Window
     private async void Import_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanInteract) return;
-        var dialog = new OpenFileDialog { Title = "Импорт скана 3DeVOK MQ", Filter = "Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = "Импорт 3D-скана или модели", Filter = "3D-сканы и модели|*.glb;*.ply;*.asc;*.xyz;*.txt|Модель GLB с текстурами|*.glb|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
         if (dialog.ShowDialog(this) == true) await ImportScanFileAsync(dialog.FileName);
     }
     private async Task ImportScanFileAsync(string path)
@@ -143,6 +153,10 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _viewModel.IsPeoplePreviewVisible && !_viewModel.IsSettingsOpen && !_viewModel.IsBusy && Keyboard.FocusedElement is not ComboBox { IsDropDownOpen: true })
+        {
+            _viewModel.ClosePeoplePreviewCommand.Execute(null); e.Handled = true; return;
+        }
         if (e.Key == Key.Escape && _viewModel.IsSettingsOpen && !_viewModel.IsBusy)
         {
             _viewModel.IsSettingsOpen = false; e.Handled = true; return;
@@ -258,7 +272,13 @@ public partial class MainWindow : Window
         if (!_viewModel.CanInteract) return;
         _viewModel.Pause();
         if (_viewModel.IsAdministrator) await _viewModel.LogoutAsync();
-        else new AdminLoginWindow(_access) { Owner = this }.ShowDialog();
+        else RequestAdminAccess(sender, e);
+    }
+    private void RequestAdminAccess(object? sender, EventArgs e)
+    {
+        if (!_viewModel.CanInteract || _viewModel.IsAdministrator) return;
+        _viewModel.Pause();
+        new AdminLoginWindow(_access) { Owner = this }.ShowDialog();
     }
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
@@ -284,6 +304,7 @@ public partial class MainWindow : Window
     private void Window_Closed(object? sender, EventArgs e)
     {
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        _viewModel.AdministratorAccessRequested -= RequestAdminAccess;
         _diagnosticsTimer.Stop();
         _interactionTimer.Stop(); _autosaveTimer.Stop();
         Viewport.OnRendered -= Viewport_OnRendered;

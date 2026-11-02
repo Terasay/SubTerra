@@ -1,6 +1,8 @@
 using System.IO;
 using System.Numerics;
 using System.Windows.Controls;
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using SubTerra.Models;
 using SubTerra.Rendering;
@@ -44,6 +46,31 @@ public sealed class PeopleDetectionTests
     }
 
     [Fact]
+    public void StrongerChairClassIsNotReportedAsPersonAndSeatedAspectRatioRemainsEligible()
+    {
+        var output = new float[3549 * 85];
+        void Box(int row, float person, float chair)
+        {
+            var i = row * 85; output[i] = 10 + row * 12; output[i + 1] = 12;
+            output[i + 2] = MathF.Log(6); output[i + 3] = MathF.Log(7); // A seated person need not be a tall, narrow box.
+            output[i + 4] = 1; output[i + 5] = person; output[i + 5 + 56] = chair;
+        }
+        Box(0, .7f, .9f); Box(1, .85f, .2f);
+        var boxes = OnnxPersonDetector.Decode(output, .3f);
+        Assert.Single(boxes); Assert.Equal(.85f, boxes[0].Score);
+    }
+
+    [Fact]
+    public void CloseUpRejectsWholeChairEvidenceWithoutRejectingASeatedPersonOrChairBelowThem()
+    {
+        var target = new ImageBox(90, 50, 320, 365, .8f);
+        Assert.True(OnnxPersonDetector.ChairExplainsCandidate(target, [], [new(92, 52, 318, 360, .9f)]));
+        Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [new(90, 50, 320, 365, .5f)], [new(92, 52, 318, 360, .95f)]));
+        Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [], [new(100, 240, 310, 360, .95f)]));
+        Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [], [])); // Missing person evidence alone is not a rejection.
+    }
+
+    [Fact]
     public void BundledOfficialModelRunsLocallyAndDoesNotInventPeopleOnBlankImage()
     {
         using var detector = new OnnxPersonDetector();
@@ -64,6 +91,152 @@ public sealed class PeopleDetectionTests
         using var guest = Vm(new TestAccess(false)); await guest.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
         Assert.False(guest.CanSelectSurface); Assert.False(guest.CanDetectPeople);
         await guest.ShowSurfaceAsync(); await guest.DetectPeopleAsync(); Assert.False(guest.HasStructureAnalysis); Assert.False(guest.HasPeopleDetection);
+    });
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public Task MeshButtonRequestsLoginAndBuildsOnlyAfterAccessIsGranted(bool login) => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess(false); using var vm = Vm(access);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var prompts = 0; var dirty = vm.HasUnsavedChanges;
+        vm.AdministratorAccessRequested += (_, _) => { prompts++; if (login) access.Login(); };
+        Assert.True(vm.CanOpenSurface); Assert.False(vm.CanSelectSurface);
+        Assert.True(vm.SurfaceCommand.CanExecute(null)); Assert.Contains("Нажмите", vm.SurfaceModeHint);
+        await vm.SurfaceCommand.ExecuteAsync();
+        Assert.Equal(1, prompts); Assert.Equal(login, vm.IsAdministrator);
+        Assert.Equal(login, vm.HasStructureAnalysis); Assert.Equal(login, vm.HasReconstruction);
+        Assert.Equal(login, vm.IsIndoorSurfaceView); Assert.False(vm.HasNotification, vm.Notification);
+        if (!login) { Assert.True(vm.IsPointMode); Assert.Equal(dirty, vm.HasUnsavedChanges); }
+    });
+
+    [Fact]
+    public Task PeopleAvailabilityExplainsMissingFloorAndUpdatesAfterAnalysisAndLogout() => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess(); using var vm = Vm(access);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        Assert.True(vm.CanDetectPeople); Assert.False(vm.CanSearchPeople); Assert.True(vm.PeopleNeedFloor);
+        Assert.Contains("автоматически", vm.PeopleAvailabilityHint);
+        vm.OpenPeopleAnalysisCommand.Execute(null);
+        var panel = new StructureAnalysisPanel { DataContext = vm }; ThemeRenderingTests.Layout(panel, 252, 450);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); panel.UpdateLayout();
+        var buttons = WorkspacePresentationTests.Descendants(panel).OfType<Button>()
+            .Where(b => b.Command == vm.DetectPeopleCommand || b.Command == vm.FindPeopleCommand).ToArray();
+        Assert.Equal(2, buttons.Length);
+        foreach (var button in buttons)
+            Assert.InRange(button.TransformToAncestor(panel).TransformBounds(new System.Windows.Rect(button.RenderSize)).Bottom, 1, 450);
+        await vm.SearchPeopleCommand.ExecuteAsync(); Assert.False(vm.HasPeopleDetection);
+        await vm.AnalyzeStructureAsync();
+        Assert.True(vm.CanSearchPeople); Assert.False(vm.PeopleNeedFloor);
+        Assert.Contains("восемь", vm.PeopleAvailabilityHint);
+        access.Logout(); Assert.False(vm.CanDetectPeople); Assert.False(vm.PeopleNeedFloor);
+        Assert.Contains("войти", vm.PeopleAvailabilityHint);
+    });
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public Task FindPeopleButtonRunsInferenceOnlyAfterLoginAndKeepsPlaneAnalysisUnchanged(bool login) => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess(false); var analyzer = new FakeAnalyzer(); using var vm = Vm(access, analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var dirty = vm.HasUnsavedChanges; var prompts = 0;
+        vm.AdministratorAccessRequested += (_, _) => { prompts++; if (login) access.Login(); };
+        vm.IsSidebarOpen = false; vm.IsInspectorOpen = true;
+        Assert.True(vm.FindPeopleCommand.CanExecute(null));
+        await vm.FindPeopleCommand.ExecuteAsync();
+        Assert.Equal(1, prompts); Assert.Equal(login ? 1 : 0, analyzer.Calls);
+        Assert.True(vm.IsPeopleAnalysis); Assert.True(vm.IsSidebarOpen); Assert.False(vm.IsInspectorOpen);
+        Assert.Equal(login, vm.HasPeopleDetection); Assert.Equal(login, vm.IsPeoplePreviewVisible);
+        Assert.False(vm.HasStructureAnalysis); Assert.Equal(dirty, vm.HasUnsavedChanges);
+        Assert.False(vm.HasNotification, vm.Notification);
+        if (login) { Assert.Equal(8, analyzer.Poses!.Length); Assert.Contains("8 ракурсов", vm.PeopleRunMode); }
+    });
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public Task CancelOrLogoutDuringAutomaticViewPreparationNeverStartsInference(bool logout) => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess(); var planes = new BlockingPlaneAnalyzer(); var analyzer = new FakeAnalyzer();
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: access,
+            interaction: new TestInteraction(), structureAnalyzer: planes, personAnalyzer: analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var running = vm.FindPeopleCommand.ExecuteAsync(); Assert.True(vm.IsBusy);
+        if (logout) access.Logout(); else vm.CancelOperation();
+        planes.Pending.SetResult(new([], 0, 0, new())); await running;
+        Assert.Equal(0, analyzer.Calls); Assert.False(vm.HasPeopleDetection); Assert.False(vm.HasStructureAnalysis); Assert.False(vm.IsBusy);
+    });
+
+    [Fact]
+    public Task ResultsCanBeSelectedInTheImageAndAllBoxesFollowTheChosenViewAndReview() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(analyzer: new MultipleViewsAnalyzer());
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        await vm.FindPeopleCommand.ExecuteAsync();
+        Assert.True(vm.IsPeoplePreviewVisible); Assert.Equal(2, vm.CurrentPersonFindings.Count);
+        Assert.Equal(48, vm.PeopleProposedOutline!.Positions!.Count); // Two complete 3D boxes.
+        vm.SelectPersonAt(290d / 416, 150d / 416); Assert.Equal(2, vm.SelectedPerson!.Id);
+        vm.ConfirmPersonCommand.Execute(null); Assert.NotNull(vm.PeopleConfirmedOutline); Assert.NotNull(vm.PeopleProposedOutline);
+        vm.RejectPersonCommand.Execute(null); Assert.Null(vm.PeopleConfirmedOutline); Assert.NotNull(vm.PeopleRejectedOutline);
+        vm.SelectedPersonView = vm.PersonViews[1]; Assert.Single(vm.CurrentPersonFindings); Assert.Equal(3, vm.SelectedPerson!.Id);
+        vm.SelectedPersonView = vm.PersonViews[2]; Assert.True(vm.PeopleViewIsEmpty); Assert.Null(vm.SelectedPerson);
+        Assert.Null(vm.PersonOutline); Assert.Null(vm.PeopleProposedOutline); Assert.Null(vm.PeopleRejectedOutline);
+        Assert.NotNull(vm.PersonPreview); Assert.True(vm.IsPeoplePreviewVisible);
+        vm.FocusPersonViewCommand.Execute(null); Assert.False(vm.IsPeoplePreviewVisible); Assert.Equal("Ракурс проверки людей", vm.CameraLabel);
+        vm.ShowPeoplePreviewCommand.Execute(null); Assert.True(vm.IsPeoplePreviewVisible);
+        vm.ClosePeoplePreviewCommand.Execute(null); Assert.False(vm.IsPeoplePreviewVisible);
+    });
+
+    [Theory]
+    [InlineData(1040, 640)] [InlineData(1440, 900)] [InlineData(1920, 1080)]
+    public Task DetectionResultOccupiesTheMainViewportAndToolbarRunsTheDetector(int width, int height) => ScanControlTests.OnSta(async () =>
+    {
+        var analyzer = new FakeAnalyzer(); using var vm = Vm(analyzer: analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var root = ThemeRenderingTests.ShellPreview(vm); ThemeRenderingTests.Layout(root, width, height);
+        var toolbar = WorkspacePresentationTests.Descendants((DependencyObject)root.FindName("Scene3DHost")).OfType<Button>().Single(b => Equals(b.Content, "Найти людей"));
+        Assert.Same(vm.FindPeopleCommand, toolbar.Command);
+        await ((AsyncRelayCommand)toolbar.Command!).ExecuteAsync();
+        WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); root.UpdateLayout();
+        Assert.Equal(1, analyzer.Calls); Assert.True(vm.IsPeoplePreviewVisible); Assert.False(vm.IsInspectorOpen);
+        var host = (Border)root.FindName("PeopleResultHost"); var image = (Image)root.FindName("PeopleResultImage");
+        Assert.Equal(Visibility.Visible, host.Visibility); Assert.True(host.ActualWidth >= 500);
+        Assert.True(image.ActualWidth >= 150 && image.ActualHeight >= 150, $"Result image: {image.ActualWidth:F0} × {image.ActualHeight:F0}");
+        Assert.Same(vm.PersonPreview, image.Source); ThemeRenderingTests.CheckReadableText(root);
+        var list = WorkspacePresentationTests.Descendants(root).OfType<ListBox>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "Кандидаты людей");
+        Assert.Same(vm.SelectedPerson, list.SelectedItem);
+        vm.ConfirmPersonCommand.Execute(null); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); root.UpdateLayout();
+        Assert.Equal(StructureReviewState.Confirmed, vm.SelectedPerson?.Review); Assert.Same(vm.SelectedPerson, list.SelectedItem);
+        Assert.NotNull(vm.PeopleConfirmedOutline); Assert.Null(vm.PeopleProposedOutline);
+        WorkspacePresentationTests.SavePreview(root, $"people-result-{width}.png");
+        vm.ClosePeoplePreviewCommand.Execute(null); await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(Visibility.Collapsed, host.Visibility); Assert.Equal(1, analyzer.Calls);
+    });
+
+    [Fact]
+    public Task FindPeopleRunsTheBundledModelAcrossRoomViewsWithoutChangingTheScan() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+            access: new TestAccess(), interaction: new TestInteraction());
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var dirty = vm.HasUnsavedChanges;
+        await vm.FindPeopleCommand.ExecuteAsync();
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasPeopleDetection); Assert.Equal(8, vm.PersonViews.Count);
+        Assert.NotNull(vm.PersonPreview); Assert.True(vm.IsPeoplePreviewVisible);
+        Assert.False(vm.HasStructureAnalysis); Assert.False(vm.CanUndoProject); Assert.Equal(dirty, vm.HasUnsavedChanges);
+    });
+
+    [Fact]
+    public Task AutomaticSearchRespectsRejectedFloorsAndPreservesTheOperatorsAnalysis() => ScanControlTests.OnSta(async () =>
+    {
+        var analyzer = new FakeAnalyzer(); using var vm = Vm(analyzer: analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters)); await vm.AnalyzeStructureAsync();
+        foreach (var floor in vm.StructureSurfaces.Where(s => s.Kind == StructureSurfaceKind.Floor).ToArray())
+        { vm.SelectedStructureSurface = floor; vm.RejectStructureSurfaceCommand.Execute(null); }
+        Assert.False(vm.CanSearchPeople); var surfaces = vm.StructureSurfaces.ToArray();
+        await vm.FindPeopleCommand.ExecuteAsync();
+        Assert.Single(analyzer.Poses!); Assert.Contains("пол для обзора не найден", vm.PeopleRunMode);
+        Assert.Equal(surfaces, vm.StructureSurfaces.ToArray()); Assert.True(vm.HasPeopleDetection);
     });
 
     [Fact]
@@ -108,7 +281,22 @@ public sealed class PeopleDetectionTests
     }
     private sealed class FakeAnalyzer : IPersonScanAnalyzer
     {
-        public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) => Task.FromResult(FakeResult(project, poses));
+        public int Calls; public ScanViewPose[]? Poses;
+        public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token)
+        { Calls++; Poses = poses; return Task.FromResult(FakeResult(project, poses)); }
+    }
+    private sealed class MultipleViewsAnalyzer : IPersonScanAnalyzer
+    {
+        public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) => Task.FromResult(new PersonDetectionResult(
+            poses.Take(3).Select(p => ScanImageRenderer.Render(project, p)).ToArray(),
+            [new(1, 0, new(70, 30, 180, 340, .8f), new(1, 1, 0), new(2, 2, 1.8f)),
+             new(2, 0, new(240, 30, 340, 340, .7f), new(3, 1, 0), new(4, 2, 1.8f)),
+             new(3, 1, new(70, 30, 180, 340, .9f), null, null)], "test detector"));
+    }
+    private sealed class BlockingPlaneAnalyzer : IStructureAnalyzer
+    {
+        public TaskCompletionSource<StructureAnalysisResult> Pending { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<StructureAnalysisResult> AnalyzeAsync(ScanProject project, StructureAnalysisOptions options, IProgress<double>? progress, CancellationToken token) => Pending.Task;
     }
     private sealed class BlockingAnalyzer : IPersonScanAnalyzer
     {

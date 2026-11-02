@@ -57,7 +57,7 @@ public static partial class RoomReconstructionBuilder
         return new(polygon.Select(p => new Vector3(p.X, p.Y, floor.Center.Z)).ToArray(), floor.Center.Z, ceiling.Center.Z);
     }
 
-    private static void CompleteSupport(Patch patch, double step, Func<Vector3, bool> excluded, ref int total, ref int filled, CancellationToken token)
+    private static void CompleteSupport(Patch patch, double step, double maximumDistance, Func<Vector3, bool> excluded, ref int total, ref int filled, CancellationToken token)
     {
         if (patch.Cells.Count == 0) return;
         var boundary = patch.Boundaries.SelectMany(p => p).ToArray();
@@ -75,18 +75,7 @@ public static partial class RoomReconstructionBuilder
             }
         }
         if (total + pending.Count > MaximumCells) throw new InvalidDataException("Превышен размер реконструкции контура комнаты.");
-        var queue = new Queue<(int X, int Y)>();
-        foreach (var p in pending) if (Neighbors.Any(d => patch.Cells.ContainsKey((p.X + d.X, p.Y + d.Y)))) queue.Enqueue(p);
-        while (queue.TryDequeue(out var p))
-        {
-            if ((filled & 1023) == 0) token.ThrowIfCancellationRequested();
-            if (!pending.Remove(p)) continue;
-            var cell = new Cell { Inferred = true };
-            foreach (var d in Neighbors) if (patch.Cells.TryGetValue((p.X + d.X, p.Y + d.Y), out var neighbor)) cell.Add(neighbor.Color);
-            if (cell.Count == 0) continue;
-            patch.Cells.Add(p, cell); total++; filled++;
-            foreach (var d in Neighbors) if (pending.Contains((p.X + d.X, p.Y + d.Y))) queue.Enqueue((p.X + d.X, p.Y + d.Y));
-        }
+        GrowFromMeasurements(patch, pending, Math.Max(1, (int)Math.Ceiling(maximumDistance / step)), ref total, ref filled, token);
     }
 
     private static bool IsWindow(Patch patch, double step, int x0, int x1, int y0, int y1, int cells, RoomShell shell)

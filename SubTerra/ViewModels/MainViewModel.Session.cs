@@ -23,6 +23,7 @@ public sealed partial class MainViewModel
 
     public bool IsAdministrator => _access.IsAdministrator;
     public bool IsGuest => !IsAdministrator;
+    public event EventHandler? AdministratorAccessRequested;
     public string AccessLabel => IsAdministrator ? "Администратор · admin" : "Гость · просмотр";
     public string AccessButtonText => IsAdministrator ? "Выйти" : "Вход администратора";
     public bool CanStart => IsSimulation && IsAdministrator && CanInteract && !IsRunning && !HasRecovery;

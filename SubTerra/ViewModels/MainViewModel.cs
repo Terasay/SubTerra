@@ -106,7 +106,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ExploreCommand = new RelayCommand(() => { if (CanWalk && (IsImported || !IsPoints)) Inside(); else Fly(); }, () => CanWalk || CanFly);
         NavigateMarkerCommand = new RelayCommand<SceneMarker>(NavigateToMarker, marker => CanInteract && VisibleMarkers.Contains(marker));
         PointsCommand = new RelayCommand(() => SetView(false, false));
-        SurfaceCommand = new AsyncRelayCommand(ShowSurfaceAsync, () => CanSelectSurface, ex => ReportError("Не удалось построить сетку", ex));
+        SurfaceCommand = new AsyncRelayCommand(OpenSurfaceAsync, () => CanOpenSurface, ex => ReportError("Не удалось построить сетку", ex));
         HeightCommand = new RelayCommand(() => SetView(true, true));
         LatestCommand = new RelayCommand(ShowLatest, () => !IsBusy && IsReviewing);
         PreviewScannerCommand = new RelayCommand(PreviewScanner, () => CanEditSettings && IsOverview);

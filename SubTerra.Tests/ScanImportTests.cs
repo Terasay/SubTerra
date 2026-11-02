@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Text;
+using System.Text.Json.Nodes;
 using SubTerra.Models;
 using SubTerra.Rendering;
 using SubTerra.Services;
@@ -346,6 +347,136 @@ public sealed class ScanImportTests
         Assert.True(vm.HasNotification); Assert.True(vm.IsImported); Assert.True(vm.HasUnsavedChanges);
         Assert.Equal(points, vm.PointCountText); Assert.Single(vm.UserAnnotations);
     });
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task GlbImportsEmbeddedTextureUvNodeTransformsAndSparseAccessors(bool sparse)
+    {
+        using var files = new Files(); var path = Path.Combine(files.Directory, "textured.glb"); CreateGlb(path, sparse: sparse);
+        var scan = await new ScanImporter().ImportAsync(path, new()); // GLB units/axis are format-defined, independent of ASC defaults.
+        Assert.Equal(ScanUnit.Meters, scan.Metadata.Unit); Assert.Equal(ScanUpAxis.Y, scan.Metadata.UpAxis);
+        Assert.Equal(new Vector3(10, 20, 30), new((float)scan.Metadata.OriginX, (float)scan.Metadata.OriginY, (float)scan.Metadata.OriginZ));
+        Assert.Equal(new Vector3(-2, 0, 0), scan.Bounds.Minimum); Assert.Equal(new Vector3(0, 0, 3), scan.Bounds.Maximum);
+        Assert.Equal(new uint[] { 0xff0000, 0x00ff00, 0xffffff, 0x0000ff }, scan.Colors);
+        var appearance = Assert.IsType<MeshAppearance>(scan.Appearance); Assert.Single(appearance.Parts); Assert.Single(appearance.Textures);
+        Assert.Equal(new Vector2(.25f, .25f), appearance.TextureCoordinates[0]); Assert.Equal(new Vector3(0, -1, 0), appearance.Normals[0]);
+        var cross = Vector3.Cross(scan.Points[scan.Triangles[1]].Position - scan.Points[scan.Triangles[0]].Position,
+            scan.Points[scan.Triangles[2]].Position - scan.Points[scan.Triangles[0]].Position);
+        Assert.True(Vector3.Dot(cross, appearance.Normals[0]) > 0); // Mirrored node winding follows transformed normals.
+        var absolute = await new ScanImporter().ImportAsync(path, new(LocalOrigin: false));
+        Assert.Equal(new Vector3(8, -30, 20), absolute.Bounds.Minimum); Assert.Equal(new Vector3(10, -30, 23), absolute.Bounds.Maximum);
+        var geometry = new ImportedGeometry(scan); geometry.PrepareMeshPreviews();
+        var part = Assert.Single(geometry.MaterialMeshes); Assert.Equal(4, part.Geometry.TextureCoordinates!.Count);
+        Assert.NotNull(Assert.IsType<HelixToolkit.Wpf.SharpDX.PBRMaterial>(part.Material).AlbedoMap); Assert.True(part.Material.IsFrozen);
+        Assert.Same(scan, MeshPreviewBuilder.Build(scan, 1));
+    }
+
+    [Fact]
+    public Task GlbRoundTripAndGuestViewKeepTexturesAfterMasksTransformsAndMixedPlyObjects() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var source = Path.Combine(files.Directory, "model.glb"); CreateGlb(source);
+        var scan = await new ScanImporter().ImportAsync(source, new()); var storage = new SessionStorage();
+        var single = Path.Combine(files.Directory, "single.subterra"); await storage.SaveAsync(single, scan.ToSession(), 1);
+        var restored = (await storage.LoadAsync(single)).ImportedScan!;
+        Assert.Equal(scan.Appearance!.Textures[0].Data, restored.Appearance!.Textures[0].Data);
+        Assert.Equal(scan.Appearance.TextureCoordinates, restored.Appearance.TextureCoordinates); Assert.Equal(scan.Appearance.Normals, restored.Appearance.Normals);
+        var id = Guid.NewGuid(); var other = Guid.NewGuid();
+        var project = new ScanProject([new(id, "GLB", scan, Transform: new(2, 0, 0), Mask: new([true, true, true, false])),
+            new(other, "PLY", new ImportedScan { Metadata = new("test.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0), Points = [new(0, 0, 0, 1), new(1, 0, 0, 1), new(0, 1, 0, 1)], Triangles = [0, 1, 2] })], id, scan.Metadata);
+        var evaluated = ScanProjectEvaluator.Evaluate(project).VisibleScan!;
+        Assert.Equal(2, evaluated.Appearance!.Parts.Length); Assert.Equal(6, evaluated.Triangles.Length);
+        Assert.Equal(6, evaluated.Appearance.TextureCoordinates.Length);
+        project = project with { Structure = StructureProvenance.Create(project, new([], project.PointCount, project.PointCount, new())) };
+        var combined = Path.Combine(files.Directory, "combined.subterra"); await storage.SaveAsync(combined, project.ToSession(), 1);
+        using var guest = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage, access: new TestAccess(false));
+        await guest.OpenAsync(combined); Assert.False(guest.HasNotification, guest.Notification); Assert.True(guest.IsSurfaceMode);
+        Assert.True(guest.HasStructureAnalysis); Assert.True(guest.UsesOriginalMaterials);
+        Assert.Equal(2, guest.TexturedMeshParts.Count); Assert.False(guest.CanManageProject);
+        guest.PointsCommand.Execute(null); Assert.Empty(guest.TexturedMeshParts);
+        await guest.SurfaceCommand.ExecuteAsync(); Assert.Equal(2, guest.TexturedMeshParts.Count);
+    });
+
+    [Theory]
+    [InlineData("external")] [InlineData("cycle")] [InlineData("accessor")] [InlineData("missing_uv")] [InlineData("draco")]
+    public async Task MalformedOrUnsupportedGlbFailsBeforeReplacingTheScene(string kind)
+    {
+        using var files = new Files(); var path = Path.Combine(files.Directory, "invalid.glb");
+        CreateGlb(path, root =>
+        {
+            if (kind == "external") root["images"]![0]!["uri"] = "https://example.invalid/private-texture.png";
+            if (kind == "cycle") root["nodes"]![1]!["children"] = JsonNode.Parse("[0]");
+            if (kind == "accessor") root["accessors"]![0]!["count"] = 5_000_001;
+            if (kind == "missing_uv") ((JsonObject)root["meshes"]![0]!["primitives"]![0]!["attributes"]!).Remove("TEXCOORD_0");
+            if (kind == "draco") root["meshes"]![0]!["primitives"]![0]!["extensions"] = JsonNode.Parse("{\"KHR_draco_mesh_compression\":{}}");
+        });
+        await Assert.ThrowsAsync<InvalidDataException>(() => new ScanImporter().ImportAsync(path, new()));
+    }
+
+    [Fact]
+    public async Task GlbAiViewsRasterizeTextureInsideTrianglesAndRespectMasksClippingAndDepth()
+    {
+        using var files = new Files(); var path = Path.Combine(files.Directory, "room.glb"); CreateGlb(path);
+        var scan = await new ScanImporter().ImportAsync(path, new()); var project = ScanProject.FromSession(scan.ToSession());
+        var pose = new ScanViewPose(new(-1, -3, 1.5f), Vector3.UnitY, Vector3.UnitZ, 60);
+        var image = ScanImageRenderer.Render(project, pose, 128); var slot = 64 * 128 + 64;
+        Assert.True(image.Coverage > .45); Assert.InRange(image.Depth[slot], 2.999f, 3.001f); Assert.InRange(image.Positions[slot].Y, -.001f, .001f);
+        var masked = project.Replace(project.Active! with { Mask = new([true, true, true, false]) });
+        Assert.True(ScanImageRenderer.Render(masked, pose, 128).Coverage < image.Coverage * .6);
+        var clipped = ScanImageRenderer.Render(project, pose, 128, new(Vector3.UnitX, -1));
+        Assert.InRange(clipped.Coverage, image.Coverage * .4, image.Coverage * .6);
+        Assert.ThrowsAny<OperationCanceledException>(() => ScanImageRenderer.Render(project, pose, token: new(true)));
+    }
+
+    [Fact]
+    public Task GlbImportDialogUsesMetersAndYUpAndHidesTextColumnSettings() => ScanControlTests.OnSta(() =>
+    {
+        var dialog = new SubTerra.Views.ScanImportWindow("model.glb");
+        Assert.Equal(ScanUnit.Meters, dialog.Options.Unit); Assert.Equal(ScanUpAxis.Y, dialog.Options.UpAxis);
+        Assert.False(((System.Windows.Controls.ComboBox)dialog.FindName("Units")).IsEnabled);
+        Assert.Equal(System.Windows.Visibility.Collapsed, ((System.Windows.Controls.StackPanel)dialog.FindName("TextOptions")).Visibility);
+        return Task.CompletedTask;
+    });
+
+    internal static void CreateGlb(string path, Action<JsonObject>? edit = null, bool sparse = false)
+    {
+        var views = new JsonArray(); using var binary = new MemoryStream();
+        int Add(byte[] data, int? stride = null)
+        {
+            while (binary.Length % 4 != 0) binary.WriteByte(0);
+            var index = views.Count; var view = new JsonObject { ["buffer"] = 0, ["byteOffset"] = binary.Length, ["byteLength"] = data.Length };
+            if (stride.HasValue) view["byteStride"] = stride.Value;
+            views.Add(view); binary.Write(data); return index;
+        }
+        static byte[] Floats(float[] values) { using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream); foreach (var v in values) writer.Write(v); return stream.ToArray(); }
+        var position = Add(Floats([0,0,0,0,0,1, 1,0,0,0,0,1, 1,1,0,0,0,1, 0,1,0,0,0,1]), 24);
+        var uv = Add(Floats([.25f,.25f, .75f,.25f, .75f,.75f, .25f,.75f])); var indices = Add([0,0,1,0,2,0,0,0,2,0,3,0]);
+        var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null,
+            new byte[] {0,0,255,255, 0,255,0,255, 255,0,0,255, 255,255,255,255}, 8);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var image = new MemoryStream(); encoder.Save(image); var texture = Add(image.ToArray());
+        var root = JsonNode.Parse("""
+        {"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"translation":[10,20,30],"children":[1]},{"mesh":0,"scale":[-2,3,1]}],
+        "meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":3,"material":0}]}],
+        "materials":[{"name":"Paint","pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0,"roughnessFactor":0.8}}],
+        "textures":[{"source":0,"sampler":0}],"samplers":[{"wrapS":33071,"wrapT":33071}],"images":[{"mimeType":"image/png"}]}
+        """)!.AsObject();
+        root["images"]![0]!["bufferView"] = texture;
+        var accessors = new JsonArray(new JsonObject { ["bufferView"] = position, ["componentType"] = 5126, ["count"] = 4, ["type"] = "VEC3" },
+            new JsonObject { ["bufferView"] = position, ["byteOffset"] = 12, ["componentType"] = 5126, ["count"] = 4, ["type"] = "VEC3" },
+            new JsonObject { ["bufferView"] = uv, ["componentType"] = 5126, ["count"] = 4, ["type"] = "VEC2" },
+            new JsonObject { ["bufferView"] = indices, ["componentType"] = 5123, ["count"] = 6, ["type"] = "SCALAR" });
+        if (sparse)
+        {
+            ((JsonObject)accessors[0]!).Remove("bufferView"); var ids = Add([0,1,2,3]); var values = Add(Floats([0,0,0,1,0,0,1,1,0,0,1,0]));
+            accessors[0]!["sparse"] = new JsonObject { ["count"] = 4, ["indices"] = new JsonObject { ["bufferView"] = ids, ["componentType"] = 5121 }, ["values"] = new JsonObject { ["bufferView"] = values } };
+        }
+        root["accessors"] = accessors; root["bufferViews"] = views; root["buffers"] = new JsonArray(new JsonObject { ["byteLength"] = binary.Length }); edit?.Invoke(root);
+        var json = Encoding.UTF8.GetBytes(root.ToJsonString()); var jsonLength = (json.Length + 3) & ~3; var binLength = ((int)binary.Length + 3) & ~3;
+        using var file = File.Create(path); using var output = new BinaryWriter(file);
+        output.Write(0x46546C67u); output.Write(2u); output.Write(12 + 8 + jsonLength + 8 + binLength);
+        output.Write(jsonLength); output.Write(0x4E4F534Au); output.Write(json); for (var i = json.Length; i < jsonLength; i++) output.Write((byte)32);
+        output.Write(binLength); output.Write(0x004E4942u); output.Write(binary.ToArray()); for (var i = binary.Length; i < binLength; i++) output.Write((byte)0);
+    }
 
     private sealed class DirectProgress(Action<double> report) : IProgress<double> { public void Report(double value) => report(value); }
     private sealed class Files : IDisposable

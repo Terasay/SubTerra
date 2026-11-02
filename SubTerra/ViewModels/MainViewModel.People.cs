@@ -20,27 +20,58 @@ public sealed partial class MainViewModel
     private PersonViewChoice? _selectedPersonView;
     private ImageSource? _personPreview;
     private LineGeometry3D? _personOutline;
+    private LineGeometry3D? _peopleProposedOutline, _peopleConfirmedOutline, _peopleRejectedOutline;
     private double _personThreshold = .3;
-    private bool _showPeople = true;
+    private bool _showPeople = true, _isPeoplePreviewOpen;
+    private string _peopleRunMode = "";
     public ObservableCollection<PersonFinding> PersonFindings { get; } = [];
     public ObservableCollection<PersonViewChoice> PersonViews { get; } = [];
     public AsyncRelayCommand DetectPeopleCommand { get; private set; } = null!;
     public AsyncRelayCommand SearchPeopleCommand { get; private set; } = null!;
+    public AsyncRelayCommand FindPeopleCommand { get; private set; } = null!;
+    public RelayCommand ShowPeoplePreviewCommand { get; private set; } = null!;
+    public RelayCommand ClosePeoplePreviewCommand { get; private set; } = null!;
     public RelayCommand ConfirmPersonCommand { get; private set; } = null!;
     public RelayCommand RejectPersonCommand { get; private set; } = null!;
     public RelayCommand ResetPersonReviewCommand { get; private set; } = null!;
     public RelayCommand FocusPersonViewCommand { get; private set; } = null!;
-    public bool CanDetectPeople => IsAdministrator && IsImported && CanInteract && !HasEditPreview && !HasRecovery && !IsScreenSelecting &&
+    public bool CanFindPeople => IsImported && CanInteract && !HasEditPreview && !HasRecovery && !IsScreenSelecting &&
         _scanProject?.Objects.Any(o => o.IsVisible && o.Source.Colors.Length > 0) == true;
+    public bool CanDetectPeople => IsAdministrator && CanFindPeople;
     public bool CanSearchPeople => CanDetectPeople && HasStructureAnalysis && !StructureIsStale && StructureSurfaces.Any(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected);
+    public bool PeopleNeedFloor => CanDetectPeople && !CanSearchPeople;
+    public string PeopleAvailabilityHint => !IsImported ? "Импортируйте цветной скан для поиска людей." : IsGuest ? "Нажмите «Найти людей», чтобы войти и запустить поиск." :
+        !CanInteract ? "Дождитесь завершения текущей операции." : HasRecovery ? "Сначала восстановите или отклоните автосохранение." :
+        HasEditPreview ? "Примените или отмените предварительную очистку." : IsScreenSelecting ? "Завершите выделение точек." :
+        !CanDetectPeople ? "Нужен хотя бы один видимый скан с исходными RGB-цветами." : PeopleNeedFloor ?
+        "Поиск подготовит ракурсы автоматически. Если пол не найдётся, будет проверен текущий вид." :
+        "Обзор помещения: восемь ракурсов изнутри скана.";
     public bool CanReviewPerson => CanDetectPeople && SelectedPerson is not null;
     public bool HasPeopleDetection => _people is not null;
-    public bool PersonBoxesVisible => HasPeopleDetection && ShowPeople && PersonOutline is not null;
+    public bool PersonBoxesVisible => HasPeopleDetection && ShowPeople;
+    public bool IsPeoplePreviewOpen { get => _isPeoplePreviewOpen; private set { if (Set(ref _isPeoplePreviewOpen, value)) Raise(nameof(IsPeoplePreviewVisible)); } }
+    public bool IsPeoplePreviewVisible => IsPeoplePreviewOpen && HasPeopleDetection && IsAnalysisSection && IsPeopleAnalysis && Is3DView && !IsPresentationMode;
+    public string PeopleRunMode => _peopleRunMode;
+    public IReadOnlyList<PersonFinding> CurrentPersonFindings => PersonFindings.Where(p => p.ViewIndex == SelectedPersonView?.Index).ToArray();
+    public bool HasCurrentPersonFindings => CurrentPersonFindings.Count > 0;
+    public bool PeopleViewIsEmpty => HasPeopleDetection && !HasCurrentPersonFindings;
     public bool ShowPeople { get => _showPeople; set { if (Set(ref _showPeople, value)) Raise(nameof(PersonBoxesVisible)); } }
     public double PersonThreshold { get => _personThreshold; set { if (double.IsFinite(value) && value is >= .1 and <= .9) Set(ref _personThreshold, value); } }
     public ImageSource? PersonPreview { get => _personPreview; private set => Set(ref _personPreview, value); }
     public LineGeometry3D? PersonOutline { get => _personOutline; private set => Set(ref _personOutline, value); }
-    public PersonViewChoice? SelectedPersonView { get => _selectedPersonView; set { if (value is not null && PersonViews.Contains(value) && Set(ref _selectedPersonView, value)) RefreshPersonPreview(); } }
+    public LineGeometry3D? PeopleProposedOutline { get => _peopleProposedOutline; private set => Set(ref _peopleProposedOutline, value); }
+    public LineGeometry3D? PeopleConfirmedOutline { get => _peopleConfirmedOutline; private set => Set(ref _peopleConfirmedOutline, value); }
+    public LineGeometry3D? PeopleRejectedOutline { get => _peopleRejectedOutline; private set => Set(ref _peopleRejectedOutline, value); }
+    public PersonViewChoice? SelectedPersonView
+    {
+        get => _selectedPersonView;
+        set
+        {
+            if (value is null || !PersonViews.Contains(value) || !Set(ref _selectedPersonView, value)) return;
+            if (SelectedPerson?.ViewIndex != value.Index) SelectedPerson = PersonFindings.FirstOrDefault(p => p.ViewIndex == value.Index);
+            RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
+        }
+    }
     public PersonFinding? SelectedPerson
     {
         get => _selectedPerson;
@@ -49,47 +80,72 @@ public sealed partial class MainViewModel
             if (value is not null && !PersonFindings.Contains(value) || !Set(ref _selectedPerson, value)) return;
             if (value is not null) SelectedPersonView = PersonViews.First(v => v.Index == value.ViewIndex);
             PersonOutline = value is { Minimum: { } min, Maximum: { } max } ? Rendering.SceneGeometry.Lines(BoxLines(min, max)) : null;
-            NotifyPeopleState();
+            RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
         }
     }
-    public string PeopleSummary => _people is null ? "Локальная YOLOX-Nano ищет людей на RGB-виде скана. Требуется проверка оператором." :
-        $"Ракурсов: {_people.Views.Length}; кандидатов в кадрах: {PersonFindings.Count}. Подтверждено: {PersonFindings.Count(p => p.Review == StructureReviewState.Confirmed)}, " +
-        $"ложных: {PersonFindings.Count(p => p.Review == StructureReviewState.Rejected)}, не проверено: {PersonFindings.Count(p => p.Review == StructureReviewState.Proposed)}. " +
-        "Один человек может встречаться в нескольких ракурсах. Оценка модели не является точностью.";
+    public string PeopleSummary => _people is null ? "Поиск ещё не запускался" :
+        $"Кандидатов: {PersonFindings.Count} · ракурсов: {_people.Views.Length}\nПодтверждено: {PersonFindings.Count(p => p.Review == StructureReviewState.Confirmed)} · ложных: {PersonFindings.Count(p => p.Review == StructureReviewState.Rejected)}" +
+        (_people.RejectedChairCandidates > 0 ? $"\nПохоже на стул: исключено {_people.RejectedChairCandidates}" : "");
     public string PersonViewSummary => _people is not null && SelectedPersonView is { } selected ?
-        $"RGB-вид измерений · заполнение кадра {_people.Views[selected.Index].Coverage:P0}. Найдено: {PersonFindings.Count(p => p.ViewIndex == selected.Index)}. " +
-        "Отсутствие рамки не доказывает отсутствие человека; скрытые части и склейки людей могут давать ошибки." : "";
+        $"Ракурс {selected.Index + 1} · кандидатов: {CurrentPersonFindings.Count} · заполнение {_people.Views[selected.Index].Coverage:P0}" : "";
 
     private void InitializePeopleCommands()
     {
         DetectPeopleCommand = new(() => DetectPeopleAsync(false), () => CanDetectPeople, ex => ReportError("Не удалось проверить людей", ex));
         SearchPeopleCommand = new(() => DetectPeopleAsync(true), () => CanSearchPeople, ex => ReportError("Не удалось осмотреть комнату", ex));
+        FindPeopleCommand = new(FindPeopleAsync, () => CanFindPeople, ex => ReportError("Не удалось запустить поиск людей", ex));
+        ShowPeoplePreviewCommand = new(() => { OpenPeopleAnalysisCommand.Execute(null); IsPeoplePreviewOpen = true; }, () => CanInteract && HasPeopleDetection);
+        ClosePeoplePreviewCommand = new(() => IsPeoplePreviewOpen = false);
         ConfirmPersonCommand = new(() => ReviewPerson(StructureReviewState.Confirmed), () => CanReviewPerson);
         RejectPersonCommand = new(() => ReviewPerson(StructureReviewState.Rejected), () => CanReviewPerson);
         ResetPersonReviewCommand = new(() => ReviewPerson(StructureReviewState.Proposed), () => CanReviewPerson);
         FocusPersonViewCommand = new(FocusPersonView, () => CanInteract && SelectedPersonView is not null);
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(IsAnalysisSection) or nameof(IsPeopleAnalysis) or nameof(Is3DView) or nameof(IsPresentationMode)) Raise(nameof(IsPeoplePreviewVisible));
+            if ((e.PropertyName == nameof(IsNavigating) && IsNavigating) || (e.PropertyName == nameof(IsPicking) && IsPicking)) IsPeoplePreviewOpen = false;
+        };
     }
-    public async Task DetectPeopleAsync(bool survey = false)
+    public async Task FindPeopleAsync()
     {
-        if (!(survey ? CanSearchPeople : CanDetectPeople) || _scanProject is not { } project) return;
+        if (!CanFindPeople) return;
+        OpenPeopleAnalysisCommand.Execute(null);
+        if (IsGuest) AdministratorAccessRequested?.Invoke(this, EventArgs.Empty);
+        if (!_disposed && CanDetectPeople) await RunPeopleAnalysisAsync(true, true);
+    }
+    public Task DetectPeopleAsync(bool survey = false) => RunPeopleAnalysisAsync(survey, false);
+    private async Task RunPeopleAnalysisAsync(bool survey, bool prepareViews)
+    {
+        if (!(survey && !prepareViews ? CanSearchPeople : CanDetectPeople) || _scanProject is not { } project) return;
         var poses = new[] { new ScanViewPose(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
             new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z),
             new((float)Camera.UpDirection.X, (float)Camera.UpDirection.Y, (float)Camera.UpDirection.Z), (float)Camera.FieldOfView) };
-        if (survey)
-            poses = PersonScanAnalyzer.RoomViews(_structureDocument!);
         var surfaces = !StructureIsStale ? StructureSurfaces.ToArray() : [];
         var threshold = (float)PersonThreshold; var clip = ActiveClipPlane;
         EndInspection(); ReturnToOverview();
-        var token = BeginOperation("Локальный поиск людей · RGB-ракурсы → ONNX");
+        var token = BeginOperation("Поиск людей · подготовка ракурсов");
         try
         {
+            if (survey && prepareViews && (!HasStructureAnalysis || StructureIsStale))
+            {
+                // Camera preparation is temporary: do not replace the operator's plane analysis or history.
+                var planes = await _structureAnalyzer.AnalyzeAsync(project, new(DistanceTolerance: StructureTolerance), OperationProgress(token, .2), token).WaitAsync(token);
+                surfaces = planes.Surfaces;
+            }
+            token.ThrowIfCancellationRequested();
+            if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
+            if (survey && surfaces.Any(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected))
+                poses = !StructureIsStale && _structureDocument is not null ? PersonScanAnalyzer.RoomViews(_structureDocument) : PersonScanAnalyzer.RoomViews(surfaces);
+            var mode = poses.Length > 1 ? "Обзор помещения · 8 ракурсов" : survey ? "Текущий вид · пол для обзора не найден" : "Текущий вид";
+            Status = "Поиск людей · проверка RGB-ракурсов";
             var result = await _personAnalyzer.AnalyzeAsync(project, poses, surfaces, threshold, clip, OperationProgress(token), token).WaitAsync(token);
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
-            ClearPersonDetections(); _people = result;
+            ClearPersonDetections(); _people = result; _peopleRunMode = mode;
             foreach (var finding in result.Findings) PersonFindings.Add(finding);
             for (var i = 0; i < result.Views.Length; i++) PersonViews.Add(new(i, $"Ракурс {i + 1} · кандидатов {result.Findings.Count(p => p.ViewIndex == i)}"));
             SelectedPersonView = PersonViews.FirstOrDefault(); SelectedPerson = PersonFindings.FirstOrDefault();
+            SelectAnalysisTool("Люди"); IsPeoplePreviewOpen = true;
             Status = $"Проверено ракурсов: {result.Views.Length} · кандидатов людей: {result.Findings.Length} · требуется визуальная проверка";
             Notification = ""; AddEvent(Status);
         }
@@ -106,9 +162,30 @@ public sealed partial class MainViewModel
     private void FocusPersonView()
     {
         if (!CanInteract || _people is null || SelectedPersonView is not { } selected) return;
+        IsPeoplePreviewOpen = false; SelectWorkspaceViewCommand.Execute("3D");
         ReturnToOverview(); var pose = _people.Views[selected.Index].Pose;
         MoveCamera(pose.Position, pose.Position + Vector3.Normalize(pose.Forward) * 3, "Ракурс проверки людей");
         Camera.UpDirection = new(pose.Up.X, pose.Up.Y, pose.Up.Z); Camera.FieldOfView = pose.FieldOfView;
+    }
+    public void SelectPersonAt(double x, double y)
+    {
+        if (!CanInteract || _people is null || SelectedPersonView is not { } selected || !double.IsFinite(x) || !double.IsFinite(y) || x is < 0 or > 1 || y is < 0 or > 1) return;
+        var size = _people.Views[selected.Index].Size;
+        var finding = CurrentPersonFindings.Where(p => x * size >= p.Box.Left && x * size <= p.Box.Right && y * size >= p.Box.Top && y * size <= p.Box.Bottom)
+            .OrderBy(p => p.Box.Area).FirstOrDefault();
+        if (finding is not null) SelectedPerson = finding;
+    }
+    private void RefreshPeopleOutlines()
+    {
+        LineGeometry3D? Outline(StructureReviewState review)
+        {
+            var lines = CurrentPersonFindings.Where(p => p.Review == review && p.Minimum is not null && p.Maximum is not null)
+                .SelectMany(p => BoxLines(p.Minimum!.Value, p.Maximum!.Value)).ToArray();
+            return lines.Length == 0 ? null : Rendering.SceneGeometry.Lines(lines);
+        }
+        PeopleProposedOutline = Outline(StructureReviewState.Proposed);
+        PeopleConfirmedOutline = Outline(StructureReviewState.Confirmed);
+        PeopleRejectedOutline = Outline(StructureReviewState.Rejected);
     }
     private void RefreshPersonPreview()
     {
@@ -122,10 +199,12 @@ public sealed partial class MainViewModel
             foreach (var finding in PersonFindings.Where(p => p.ViewIndex == selected.Index))
             {
                 var box = finding.Box; var brush = finding.Review switch { StructureReviewState.Confirmed => Brushes.LightGreen, StructureReviewState.Rejected => Brushes.IndianRed, _ => Brushes.Orange };
-                context.DrawRectangle(null, new Pen(brush, 2), new Rect(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
-                var text = new FormattedText($"{finding.Id} · человек? {box.Score:P0}", CultureInfo.GetCultureInfo("ru-RU"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), 12, Brushes.White, 1);
-                var y = Math.Max(0, box.Top - 18); context.DrawRectangle(Brushes.Black, null, new Rect(box.Left, y, Math.Min(image.Size - box.Left, text.Width + 6), 18));
-                context.DrawText(text, new Point(box.Left + 2, y));
+                var isSelected = finding.Id == SelectedPerson?.Id;
+                context.DrawRectangle(null, new Pen(brush, isSelected ? 3 : 1.25), new Rect(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
+                var text = new FormattedText(isSelected ? $"#{finding.Id:00} · {box.Score:P0}" : $"#{finding.Id:00}", CultureInfo.GetCultureInfo("ru-RU"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), isSelected ? 12 : 10, Brushes.White, 1);
+                var x = Math.Clamp(box.Left, 0, Math.Max(0, image.Size - text.Width - 6)); var y = Math.Clamp(box.Top - 18, 0, image.Size - 18);
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(210, 15, 25, 33)), null, new Rect(x, y, text.Width + 6, 18));
+                context.DrawText(text, new Point(x + 3, y));
             }
         }
         drawing.Freeze(); var preview = new DrawingImage(drawing); preview.Freeze(); PersonPreview = preview; Raise(nameof(PersonViewSummary));
@@ -138,12 +217,14 @@ public sealed partial class MainViewModel
     }
     private void ClearPersonDetections()
     {
-        _people = null; _selectedPerson = null; _selectedPersonView = null; PersonFindings.Clear(); PersonViews.Clear(); PersonPreview = null; PersonOutline = null;
+        _people = null; _selectedPerson = null; _selectedPersonView = null; _peopleRunMode = ""; IsPeoplePreviewOpen = false;
+        PersonFindings.Clear(); PersonViews.Clear(); PersonPreview = null; PersonOutline = null;
+        PeopleProposedOutline = null; PeopleConfirmedOutline = null; PeopleRejectedOutline = null;
         Raise(nameof(SelectedPerson)); Raise(nameof(SelectedPersonView)); NotifyPeopleState();
     }
     private void NotifyPeopleState()
     {
-        foreach (var name in new[] { nameof(CanDetectPeople), nameof(CanSearchPeople), nameof(CanReviewPerson), nameof(HasPeopleDetection), nameof(PersonBoxesVisible), nameof(PeopleSummary), nameof(PersonViewSummary) }) Raise(name);
+        foreach (var name in new[] { nameof(CanFindPeople), nameof(CanDetectPeople), nameof(CanSearchPeople), nameof(PeopleNeedFloor), nameof(PeopleAvailabilityHint), nameof(CanReviewPerson), nameof(HasPeopleDetection), nameof(PersonBoxesVisible), nameof(PeopleSummary), nameof(PersonViewSummary), nameof(PeopleRunMode), nameof(CurrentPersonFindings), nameof(HasCurrentPersonFindings), nameof(PeopleViewIsEmpty), nameof(IsPeoplePreviewVisible) }) Raise(name);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
 }

@@ -46,6 +46,7 @@ public static partial class RoomReconstructionBuilder
         public int Count;
         public long Red, Green, Blue;
         public bool Inferred;
+        public int SupportDistance;
         public uint Color => Count == 0 ? 0xB5BCC3u : (uint)(Red / Count << 16 | Green / Count << 8 | Blue / Count);
         public void Add(uint rgb) { Count++; Red += rgb >> 16 & 255; Green += rgb >> 8 & 255; Blue += rgb & 255; }
     }
@@ -135,8 +136,8 @@ public static partial class RoomReconstructionBuilder
         {
             token.ThrowIfCancellationRequested();
             var diameter = patch.Kind == StructureSurfaceKind.Wall ? options.WallHoleSize : options.FloorHoleSize;
-            if (shell is not null && patch.Kind != StructureSurfaceKind.Wall && Math.Abs(patch.Normal.Z) > .996f)
-                CompleteSupport(patch, step, p => Excluded(p), ref cellCount, ref filled, token);
+            if (shell is not null && patch.Kind != StructureSurfaceKind.Wall && Math.Abs(patch.Normal.Z) > .996f && diameter > 0)
+                CompleteSupport(patch, step, diameter, p => Excluded(p), ref cellCount, ref filled, token);
             FillHoles(patch, step, diameter, p => Excluded(p) || Opening(patch, p), shell, options.RepairWindows, ref windows, ref cellCount, ref filled, ref skipped, token);
         }
         var removed = options.RemoveIsolatedPoints ? FilterIsolated(residual, residualColors, token) : 0;
@@ -277,18 +278,53 @@ public static partial class RoomReconstructionBuilder
                 }
                 continue;
             }
-            // Multi-source growth copies nearby observed color; it never invents photographic detail.
-            var pending = region.ToHashSet(); var front = new Queue<(int X, int Y)>();
-            foreach (var p in region) if (Neighbors.Any(d => patch.Cells.ContainsKey((p.X + d.X, p.Y + d.Y)))) front.Enqueue(p);
-            while (front.TryDequeue(out var p))
+            GrowFromMeasurements(patch, region.ToHashSet(), int.MaxValue, ref total, ref filled, token);
+        }
+    }
+
+    private static readonly float[] LinearRgb = Enumerable.Range(0, 256).Select(i => MeshTextureSampler.Linear(i / 255f)).ToArray();
+    private static uint InterpolatedColor(Patch patch, (int X, int Y) point, out int distance)
+    {
+        var sum = Vector3.Zero; var weight = 0f; distance = int.MaxValue;
+        foreach (var d in Neighbors)
+        {
+            if (!patch.Cells.TryGetValue((point.X + d.X, point.Y + d.Y), out var cell)) continue;
+            distance = Math.Min(distance, cell.SupportDistance + 1);
+            var rgb = cell.Color; var w = cell.Inferred ? .8f : 1f;
+            sum += new Vector3(LinearRgb[rgb >> 16 & 255], LinearRgb[rgb >> 8 & 255], LinearRgb[rgb & 255]) * w; weight += w;
+        }
+        if (weight == 0) return 0xB5BCC3;
+        sum /= weight;
+        return MeshTextureSampler.Pack(new(MeshTextureSampler.Srgb(sum.X), MeshTextureSampler.Srgb(sum.Y), MeshTextureSampler.Srgb(sum.Z), 1));
+    }
+    private static void GrowFromMeasurements(Patch patch, HashSet<(int X, int Y)> pending, int maximumDistance,
+        ref int total, ref int filled, CancellationToken token)
+    {
+        var front = new Queue<(int X, int Y)>(); var grown = new List<(int X, int Y)>();
+        foreach (var p in pending)
+            foreach (var d in Neighbors) if (patch.Cells.ContainsKey((p.X + d.X, p.Y + d.Y))) { front.Enqueue(p); break; }
+        while (front.TryDequeue(out var p))
+        {
+            if ((grown.Count & 1023) == 0) token.ThrowIfCancellationRequested();
+            if (!pending.Remove(p)) continue;
+            var color = InterpolatedColor(patch, p, out var distance);
+            if (distance > maximumDistance) continue;
+            var cell = new Cell { Inferred = true, SupportDistance = distance }; cell.Add(color);
+            patch.Cells.Add(p, cell); grown.Add(p); total++; filled++;
+            foreach (var d in Neighbors) if (pending.Contains((p.X + d.X, p.Y + d.Y))) front.Enqueue((p.X + d.X, p.Y + d.Y));
+        }
+        // Relax only inferred colors in linear light. Observed colors are fixed boundary conditions.
+        // This removes the visible seams where growth fronts meet, while retaining the original measurements.
+        var next = new uint[grown.Count];
+        for (var pass = 0; pass < (grown.Count < 120_000 ? 12 : 4); pass++)
+        {
+            for (var i = 0; i < grown.Count; i++)
             {
-                if (!pending.Remove(p)) continue;
-                var color = new Cell { Inferred = true };
-                foreach (var d in Neighbors) if (patch.Cells.TryGetValue((p.X + d.X, p.Y + d.Y), out var neighbor)) color.Add(neighbor.Color);
-                if (color.Count == 0) continue;
-                patch.Cells.Add(p, color); total++; filled++;
-                foreach (var d in Neighbors) if (pending.Contains((p.X + d.X, p.Y + d.Y))) front.Enqueue((p.X + d.X, p.Y + d.Y));
+                if ((i & 2047) == 0) token.ThrowIfCancellationRequested(); var p = grown[i];
+                next[i] = InterpolatedColor(patch, p, out _);
             }
+            for (var i = 0; i < grown.Count; i++)
+            { var cell = patch.Cells[grown[i]]; cell.Count = 0; cell.Red = cell.Green = cell.Blue = 0; cell.Add(next[i]); }
         }
     }
 

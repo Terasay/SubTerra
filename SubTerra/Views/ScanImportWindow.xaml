@@ -12,14 +12,14 @@
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,12,0">
             <Border Background="#1D302B" Padding="14" CornerRadius="8" Margin="0,0,0,18"><StackPanel>
-                <TextBlock Text="PLY с iPhone или экспорт 3DeVOK" FontWeight="SemiBold" Foreground="#CCE7BB"/>
-                <TextBlock Text="Перенесите готовый PLY на компьютер и откройте его здесь. Для здания удобны отдельные файлы этажей в общей системе координат. Из 3DeVOK Studio сначала экспортируйте совмещённое облако ASC или сетку PLY." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
+                <TextBlock Text="Скан с iPhone или 3DeVOK" FontWeight="SemiBold" Foreground="#CCE7BB"/>
+                <TextBlock Text="Для просмотра с текстурами перенесите GLB со встроенными изображениями. PLY подходит для облака точек или цветной сетки. Отдельные этажи экспортируйте в общей системе координат; из 3DeVOK Studio можно использовать ASC или PLY." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
             </StackPanel></Border>
             <TextBlock Text="Единицы исходного файла" FontWeight="SemiBold"/>
             <ComboBox x:Name="Units" SelectedIndex="2" Margin="0,8,0,5" AutomationProperties.Name="Единицы исходного скана">
                 <ComboBoxItem Content="Метры (m)"/><ComboBoxItem Content="Сантиметры (cm)"/><ComboBoxItem Content="Миллиметры (mm)"/>
             </ComboBox>
-            <TextBlock Text="Укажите единицы из настроек приложения, создавшего файл. PLY и ASC не гарантируют единицы. После импорта проверьте масштаб по известной длине, например ширине двери. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+            <TextBlock x:Name="UnitsHint" Text="Укажите единицы из настроек приложения, создавшего файл. PLY и ASC не гарантируют единицы. После импорта проверьте масштаб по известной длине, например ширине двери. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
             <TextBlock Text="Какая ось направлена вверх?" FontWeight="SemiBold" Margin="0,18,0,8"/>
             <ComboBox x:Name="UpAxis" SelectedIndex="0" AutomationProperties.Name="Ось высоты скана">
                 <ComboBoxItem Content="Z вверх"/><ComboBoxItem Content="Y вверх → повернуть в Z вверх"/>
@@ -34,7 +34,7 @@
             </StackPanel>
             <CheckBox x:Name="LocalOrigin" Content="Локальное начало у первой точки" IsChecked="True" Margin="0,20,0,7"/>
             <TextBlock Text="Помогает сохранять точность при больших координатах. Исходное смещение, единицы и ось сохранятся в сеансе .subterra. После импорта проверьте масштаб по известному размеру." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
-            <TextBlock Text="До 5 млн точек и 5 млн треугольников. PLY: ASCII и binary, RGB и геометрия. Захват через USB и сшивка выполняются в Studio; подключения MQ напрямую в SubTerra пока нет." TextWrapping="Wrap" Foreground="#D3BF9D" FontSize="12" Margin="0,18,0,10" LineHeight="17"/>
+            <TextBlock Text="До 5 млн вершин и 5 млн треугольников. GLB: статическая сетка со встроенными PNG/JPEG, без Draco-сжатия. PLY: ASCII и binary. Захват через USB и сшивка 3DeVOK выполняются в Studio." TextWrapping="Wrap" Foreground="#D3BF9D" FontSize="12" Margin="0,18,0,10" LineHeight="17"/>
         </StackPanel></ScrollViewer>
         <Grid Grid.Row="2" Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Button Content="Импортировать" Style="{StaticResource Primary}" IsDefault="True" Click="Import_Click" Margin="0,0,10,0"/>

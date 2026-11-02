@@ -6,6 +6,7 @@ internal sealed class TestAccess(bool administrator = true) : IAccessSession
 {
     public bool IsAdministrator { get; private set; } = administrator;
     public event EventHandler? AccessChanged;
+    public void Login() { IsAdministrator = true; AccessChanged?.Invoke(this, EventArgs.Empty); }
     public void Logout() { IsAdministrator = false; AccessChanged?.Invoke(this, EventArgs.Empty); }
 }
 

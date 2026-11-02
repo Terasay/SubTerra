@@ -355,7 +355,7 @@ public sealed partial class MainViewModel
         foreach (var property in new[] { nameof(HasIndoorPreview), nameof(IsIndoorSurfaceView), nameof(CanPrepareIndoorPreview), nameof(IndoorPreviewSummary),
             nameof(HasReconstruction), nameof(ReconstructionSettingsPending), nameof(CanExportReconstruction),
             nameof(CanShowSurface), nameof(SurfaceModeText), nameof(MeshPreviewText), nameof(CanWalk), nameof(CanFly), nameof(ExploreText) }) Raise(property);
-        Raise(nameof(CanSelectSurface)); Raise(nameof(SurfaceModeHint));
+        Raise(nameof(CanSelectSurface)); Raise(nameof(CanOpenSurface)); Raise(nameof(SurfaceModeHint));
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
     public Navigation.ICameraNavigator CreateIndoorNavigator() => new Navigation.IndoorNavigator(_indoorStart, Vector3.UnitX,

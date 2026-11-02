@@ -18,12 +18,33 @@ public static class ScanProjectEvaluator
         var hasColors = objects.Any(o => o.Tint.HasValue || o.Source.Colors.Length > 0);
         var colors = hasColors ? new uint[count] : [];
         var triangles = new List<int>();
+        var hasAppearance = objects.Any(o => o.Source.Appearance is not null);
+        var uv = hasAppearance ? new Vector2[count] : [];
+        var normals = hasAppearance ? new Vector3[count] : [];
+        var vertexColors = hasAppearance ? new Vector4[count] : [];
+        var parts = new List<MeshPart>(); var materials = new List<MeshMaterial>(); var textures = new List<MeshTexture>();
         var referenced = new bool[count];
         var next = 0;
         var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
         foreach (var o in objects)
         {
             var matrix = o.Matrix;
+            var appearance = o.Source.Appearance;
+            var materialOffset = materials.Count; var textureOffset = textures.Count;
+            if (hasAppearance)
+            {
+                if (appearance is not null)
+                {
+                    textures.AddRange(appearance.Textures);
+                    int Texture(int i) => i < 0 ? -1 : i + textureOffset;
+                    materials.AddRange(appearance.Materials.Select(m => m with { BaseColorTexture = o.Tint.HasValue ? -1 : Texture(m.BaseColorTexture), NormalTexture = Texture(m.NormalTexture),
+                        MetallicRoughnessTexture = Texture(m.MetallicRoughnessTexture), EmissiveTexture = Texture(m.EmissiveTexture), OcclusionTexture = Texture(m.OcclusionTexture),
+                        Red = o.Tint is { } tintR ? Rendering.MeshTextureSampler.Linear((tintR >> 16 & 255) / 255f) : m.Red,
+                        Green = o.Tint is { } tintG ? Rendering.MeshTextureSampler.Linear((tintG >> 8 & 255) / 255f) : m.Green,
+                        Blue = o.Tint is { } tintB ? Rendering.MeshTextureSampler.Linear((tintB & 255) / 255f) : m.Blue }));
+                }
+                else materials.Add(new("Цвета вершин", Metallic: 0, Roughness: 1, DoubleSided: true));
+            }
             var remap = o.Mask is null ? null : new int[o.Source.Points.Length];
             if (remap is not null) Array.Fill(remap, -1);
             var offset = next;
@@ -35,12 +56,23 @@ public static class ScanProjectEvaluator
                 if (!InspectionPoint.From(position).IsValid) throw new System.IO.InvalidDataException("Объект выходит за допустимые координаты ±100 км.");
                 points[next] = new(position.X, position.Y, position.Z, o.Source.Points[i].Intensity);
                 if (hasColors) colors[next] = o.Tint ?? (o.Source.Colors.Length > 0 ? o.Source.Colors[i] : 0xd0dbe2u);
+                if (hasAppearance)
+                {
+                    uv[next] = appearance?.TextureCoordinates[i] ?? Vector2.Zero;
+                    normals[next] = appearance is null ? Vector3.Zero : Vector3.TransformNormal(appearance.Normals[i], matrix);
+                    var rgb = hasColors ? colors[next] : 0xd0dbe2u;
+                    vertexColors[next] = o.Tint.HasValue && appearance is not null ? Vector4.One : appearance?.VertexColors[i] ??
+                        new(Rendering.MeshTextureSampler.Linear((rgb >> 16 & 255) / 255f), Rendering.MeshTextureSampler.Linear((rgb >> 8 & 255) / 255f), Rendering.MeshTextureSampler.Linear((rgb & 255) / 255f), 1);
+                }
                 if (remap is not null) remap[i] = next;
                 min = Vector3.Min(min, position); max = Vector3.Max(max, position);
                 ++next;
             }
-            for (var i = 0; i < o.Source.Triangles.Length; i += 3)
+            foreach (var part in appearance?.Parts ?? (o.Source.HasMesh ? [new MeshPart(0, o.Source.Triangles.Length, 0)] : []))
             {
+              var firstIndex = triangles.Count;
+              for (var i = part.IndexOffset; i < part.IndexOffset + part.IndexCount; i += 3)
+              {
                 if ((i % 4095) == 0) token.ThrowIfCancellationRequested();
                 var a = o.Source.Triangles[i]; var b = o.Source.Triangles[i + 1]; var c = o.Source.Triangles[i + 2];
                 if (remap is null) { a += offset; b += offset; c += offset; }
@@ -48,6 +80,10 @@ public static class ScanProjectEvaluator
                 if (a < 0 || b < 0 || c < 0) continue;
                 triangles.Add(a); triangles.Add(b); triangles.Add(c);
                 referenced[a] = referenced[b] = referenced[c] = true;
+                if (hasAppearance && appearance is null)
+                { var normal = Vector3.Cross(points[b].Position - points[a].Position, points[c].Position - points[a].Position); normals[a] += normal; normals[b] += normal; normals[c] += normal; }
+              }
+              if (hasAppearance && triangles.Count > firstIndex) parts.Add(new(firstIndex, triangles.Count - firstIndex, materialOffset + part.MaterialIndex));
             }
         }
         var cloudOnly = new List<int>();
@@ -56,9 +92,12 @@ public static class ScanProjectEvaluator
             if ((i & 4095) == 0) token.ThrowIfCancellationRequested();
             if (!referenced[i]) cloudOnly.Add(i);
         }
+        if (hasAppearance) for (var i = 0; i < normals.Length; i++) normals[i] = normals[i].LengthSquared() < 1e-16f ? Vector3.UnitZ : Vector3.Normalize(normals[i]);
+        var combinedAppearance = hasAppearance && parts.Count > 0 ? new MeshAppearance(uv, normals, vertexColors, parts.ToArray(), materials.ToArray(), textures.ToArray()) : null;
+        combinedAppearance?.Validate(count, triangles.Count, token);
         var scan = new ImportedScan { Metadata = new("SubTerra-project.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0)
             { IsSynthetic = project.Objects.Any(o => o.IsVisible && o.PointCount > 0 && o.Source.Metadata.IsSynthetic) },
-            Points = points, Colors = colors, Triangles = triangles.ToArray() };
+            Points = points, Colors = colors, Triangles = triangles.ToArray(), Appearance = combinedAppearance };
         return new(scan, cloudOnly.ToArray(), (min, max));
     }
     public static (Vector3 Minimum, Vector3 Maximum) ObjectBounds(ScanObject o)

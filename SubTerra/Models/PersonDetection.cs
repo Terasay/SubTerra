@@ -18,4 +18,4 @@ public sealed record PersonFinding(int Id, int ViewIndex, ImageBox Box, Vector3?
     public string Details => Review switch { StructureReviewState.Confirmed => "Подтверждено оператором", StructureReviewState.Rejected => "Ложная находка", _ => "Предположение модели · проверьте изображение" };
     public string LocationText => Minimum is null ? "Недостаточно точек для надёжной 3D-привязки" : "Приблизительная 3D-привязка по видимым точкам";
 }
-public sealed record PersonDetectionResult(ScanImage[] Views, PersonFinding[] Findings, string Model);
+public sealed record PersonDetectionResult(ScanImage[] Views, PersonFinding[] Findings, string Model, int RejectedChairCandidates = 0);

@@ -15,10 +15,15 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
     public static ScanViewPose[] RoomViews(StructureAnalysisDocument document)
     {
         if (document.IsStale) throw new ArgumentException("Анализ помещения устарел.");
-        var floor = document.Result.Surfaces.Where(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected).MaxBy(s => s.AreaSquareMeters)
+        return CreateRoomViews(document.Result.Surfaces, RoomPlanner.IsCurrent(document) ? document.Room?.InteriorPoint : null);
+    }
+    public static ScanViewPose[] RoomViews(StructureSurface[] surfaces) => CreateRoomViews(surfaces, null);
+    private static ScanViewPose[] CreateRoomViews(StructureSurface[] surfaces, Vector3? interior)
+    {
+        var floor = surfaces.Where(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected).MaxBy(s => s.AreaSquareMeters)
             ?? throw new ArgumentException("Сначала найдите пол помещения.");
         var eye = floor.Center + Vector3.UnitZ * 1.55f;
-        if (RoomPlanner.IsCurrent(document) && document.Room?.InteriorPoint is { } seed) eye = new(seed.X, seed.Y, floor.Center.Z + 1.55f);
+        if (interior is { } seed) eye = new(seed.X, seed.Y, floor.Center.Z + 1.55f);
         return Enumerable.Range(0, 8).Select(i => new ScanViewPose(eye, new(MathF.Cos(i * MathF.PI / 4), MathF.Sin(i * MathF.PI / 4), -.03f), Vector3.UnitZ, 80)).ToArray();
     }
     public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
@@ -27,12 +32,13 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         project.Validate(token);
         if (poses.Length is < 1 or > 16) throw new ArgumentException("Для анализа нужны 1–16 ракурсов.");
         using var detector = detectorFactory?.Invoke() ?? new OnnxPersonDetector();
-        var views = new List<ScanImage>(); var findings = new List<PersonFinding>();
+        var views = new List<ScanImage>(); var findings = new List<PersonFinding>(); var rejectedChairs = 0;
         foreach (var pose in poses)
         {
             token.ThrowIfCancellationRequested();
             var image = ScanImageRenderer.Render(project, pose, clip: clip, token: token);
             var boxes = detector.Detect(image, threshold, token);
+            rejectedChairs += detector.RejectedChairCandidates;
             foreach (var box in boxes)
             {
                 var (min, max) = Locate(image, box, surfaces, token);
@@ -41,7 +47,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             views.Add(image); progress?.Report(100d * views.Count / poses.Length);
         }
         token.ThrowIfCancellationRequested();
-        return new PersonDetectionResult(views.ToArray(), findings.ToArray(), OnnxPersonDetector.ModelName);
+        return new PersonDetectionResult(views.ToArray(), findings.ToArray(), OnnxPersonDetector.ModelName, rejectedChairs);
     }, token);
 
     private static (Vector3? Min, Vector3? Max) Locate(ScanImage image, ImageBox box, StructureSurface[] surfaces, CancellationToken token)

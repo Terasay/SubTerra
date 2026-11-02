@@ -47,6 +47,40 @@ public sealed class WorkspacePresentationTests
     [Theory]
     [InlineData(1040, 640)]
     [InlineData(1440, 900)]
+    public Task PeopleShortcutOpensVisibleToolsForGuestEvenWithPanelsHidden(int width, int height) => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(false);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var dirty = vm.HasUnsavedChanges;
+        vm.IsSidebarOpen = false; vm.IsPresentationMode = true;
+        vm.OpenPeopleAnalysisCommand.Execute(null);
+        Assert.True(vm.IsAnalysisSection); Assert.True(vm.IsPeopleAnalysis);
+        Assert.True(vm.IsSidebarOpen); Assert.False(vm.IsPresentationMode);
+        var root = ThemeRenderingTests.ShellPreview(vm);
+        WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); root.UpdateLayout();
+        var people = Descendants(root).OfType<PeopleAnalysisPanel>().Single();
+        Assert.True(IsShown(people)); Assert.True(people.ActualHeight > 0);
+        Assert.Contains(Descendants(root).OfType<TextBlock>(), t => IsShown(t) && t.Text == "Гостевой режим");
+        var login = Descendants(root).OfType<Button>().Single(b => IsShown(b) && b.Command == vm.RequestAdminAccessCommand);
+        Assert.True(login.IsEnabled); Assert.False(vm.CanDetectPeople); Assert.False(vm.CanSelectSurface);
+        var requests = 0; vm.AdministratorAccessRequested += (_, _) => requests++;
+        login.Command.Execute(null); Assert.Equal(1, requests);
+        var surface = Descendants(root).OfType<RadioButton>().Single(b => b.Command == vm.SurfaceCommand);
+        Assert.True(surface.IsEnabled);
+        surface.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, true);
+        await vm.SurfaceCommand.ExecuteAsync(); await Dispatcher.Yield(DispatcherPriority.DataBind);
+        Assert.Equal(2, requests); Assert.False(surface.IsChecked); Assert.True(vm.IsPointMode);
+        CheckBindings(root); ThemeRenderingTests.CheckReadableText(root); SavePreview(root, $"people-guest-{width}.png");
+        vm.SelectAnalysisToolCommand.Execute("Поверхности"); Assert.True(vm.IsSurfaceAnalysis);
+        vm.IsPresentationMode = true; vm.SelectSectionCommand.Execute("Анализ");
+        Assert.False(vm.IsPresentationMode); Assert.True(vm.IsSidebarOpen);
+        Assert.Equal(dirty, vm.HasUnsavedChanges); Assert.False(vm.HasStructureAnalysis);
+    });
+
+    [Theory]
+    [InlineData(1040, 640)]
+    [InlineData(1440, 900)]
     [InlineData(1920, 1080)]
     public Task AllSectionsAndPlanViewsRemainUsableAtSupportedWindowSizes(int width, int height) => ScanControlTests.OnSta(async () =>
     {
@@ -66,6 +100,11 @@ public sealed class WorkspacePresentationTests
             var left = (Border)root.FindName("LeftPanel"); var right = (Border)root.FindName("RightPanel");
             Assert.True(left.ActualWidth >= 270); Assert.True(right.ActualWidth >= 298);
         }
+        vm.OpenPeopleAnalysisCommand.Execute(null);
+        WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); root.UpdateLayout();
+        Assert.True(IsShown(Descendants(root).OfType<PeopleAnalysisPanel>().Single()));
+        CheckBindings(root); ThemeRenderingTests.CheckReadableText(root); SavePreview(root, $"people-admin-{width}.png");
         vm.Inspect("Комната");
         foreach (var view in new[] { "План 2D", "Рядом", "3D" })
         {
@@ -149,7 +188,14 @@ public sealed class WorkspacePresentationTests
         CheckBindings(people); ThemeRenderingTests.CheckReadableText(people); SavePreview(people, "people-analysis.png");
     });
 
-    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    private static bool IsShown(DependencyObject element)
+    {
+        // IsVisible also requires a native window, whereas these tests render offscreen.
+        for (DependencyObject? current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (current is UIElement { Visibility: not Visibility.Visible }) return false;
+        return true;
+    }
+    internal static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
@@ -167,7 +213,7 @@ public sealed class WorkspacePresentationTests
             }
         }
     }
-    private static void SavePreview(FrameworkElement root, string name)
+    internal static void SavePreview(FrameworkElement root, string name)
     {
         var directory = Environment.GetEnvironmentVariable("SUBTERRA_UI_PREVIEW_DIR"); if (string.IsNullOrWhiteSpace(directory)) return;
         Directory.CreateDirectory(directory);

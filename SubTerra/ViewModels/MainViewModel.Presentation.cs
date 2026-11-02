@@ -5,6 +5,7 @@ namespace SubTerra.ViewModels;
 public sealed partial class MainViewModel
 {
     private string _workspaceSection = "Проект", _workspaceView = "3D", _inspectorSubject = "Скан";
+    private string _analysisTool = "Поверхности";
     private bool _isWelcomeVisible = true, _isSettingsOpen, _isRoomEditing;
     public RelayCommand<string> SelectSectionCommand { get; private set; } = null!;
     public RelayCommand<string> SelectWorkspaceViewCommand { get; private set; } = null!;
@@ -12,6 +13,9 @@ public sealed partial class MainViewModel
     public RelayCommand ShowWelcomeCommand { get; private set; } = null!;
     public RelayCommand ContinueWorkspaceCommand { get; private set; } = null!;
     public RelayCommand ToggleSettingsCommand { get; private set; } = null!;
+    public RelayCommand<string> SelectAnalysisToolCommand { get; private set; } = null!;
+    public RelayCommand OpenPeopleAnalysisCommand { get; private set; } = null!;
+    public RelayCommand RequestAdminAccessCommand { get; private set; } = null!;
     public bool HasWorkspace => _dataset is not null;
     public bool IsWelcomeVisible { get => _isWelcomeVisible; private set { if (Set(ref _isWelcomeVisible, value)) Raise(nameof(IsWorkspaceVisible)); } }
     public bool IsWorkspaceVisible => !IsWelcomeVisible;
@@ -21,6 +25,8 @@ public sealed partial class MainViewModel
     public bool IsProjectSection => WorkspaceSection == "Проект";
     public bool IsProcessingSection => WorkspaceSection == "Обработка";
     public bool IsAnalysisSection => WorkspaceSection == "Анализ";
+    public bool IsSurfaceAnalysis => _analysisTool == "Поверхности";
+    public bool IsPeopleAnalysis => _analysisTool == "Люди";
     public bool IsResultsSection => WorkspaceSection == "Результаты";
     public string WorkspaceView => _workspaceView;
     public bool Is3DView => WorkspaceView == "3D";
@@ -35,7 +41,7 @@ public sealed partial class MainViewModel
     public bool ShowObjectInspector => IsImported && _inspectorSubject == "Предмет";
     public bool ShowSimulationInspector => IsSimulation;
     public RoomPlan? CurrentRoomPlan => RoomPlanVisible ? _structureDocument?.Room : null;
-    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : IsIndoorSurfaceView && HasReconstruction ? "Реконструкция · гипотеза геометрии" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
+    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : UsesOriginalMaterials ? "Исходная модель · материалы и текстуры" : IsIndoorSurfaceView && HasReconstruction ? "Реконструкция · гипотеза геометрии" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
     public string SurfaceAnalysisMethodText => _structureDocument?.Result.Options.UseNeuralClasses == true ? "Классы предложены экспериментальной MLP · требуется проверка" : "Геометрические классы · требуется проверка";
     public string AnalysisProgressText => StructureIsStale ? "Данные изменились · повторите поиск поверхностей" : !HasStructureAnalysis ? "01 / Обнаружение поверхностей" :
         StructureSurfaces.Any(s => s.Review == StructureReviewState.Proposed) ? "02 / Проверка кандидатов оператором" : HasRoom ? "04 / План готов к просмотру" : "03 / Построение плана комнаты";
@@ -51,6 +57,9 @@ public sealed partial class MainViewModel
         ShowWelcomeCommand = new(() => { Pause(); ReturnToOverview(); IsSettingsOpen = false; IsWelcomeVisible = true; }, () => CanInteract && !HasEditPreview && !IsScreenSelecting);
         ContinueWorkspaceCommand = new(() => IsWelcomeVisible = false, () => HasWorkspace && CanInteract);
         ToggleSettingsCommand = new(() => IsSettingsOpen = !IsSettingsOpen, () => CanInteract);
+        SelectAnalysisToolCommand = new(SelectAnalysisTool, _ => IsImported && CanInteract && !IsWelcomeVisible);
+        OpenPeopleAnalysisCommand = new(() => SelectAnalysisTool("Люди"), () => IsImported && CanInteract && !IsWelcomeVisible);
+        RequestAdminAccessCommand = new(() => AdministratorAccessRequested?.Invoke(this, EventArgs.Empty), () => IsGuest && CanInteract);
         PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(CanExport)) Raise(nameof(CanExportReconstruction));
@@ -71,8 +80,15 @@ public sealed partial class MainViewModel
     private void SelectSection(string section)
     {
         if (section is not ("Проект" or "Обработка" or "Анализ" or "Результаты")) return;
-        _workspaceSection = section; IsSidebarOpen = true; IsSettingsOpen = false;
+        _workspaceSection = section; IsPresentationMode = false; IsSidebarOpen = true; IsSettingsOpen = false;
         NotifyPresentationState();
+    }
+    private void SelectAnalysisTool(string tool)
+    {
+        if (tool is not ("Поверхности" or "Люди")) return;
+        _analysisTool = tool;
+        if (tool == "Люди") { SelectWorkspaceView("3D"); IsInspectorOpen = false; }
+        SelectSection("Анализ");
     }
     private void SelectWorkspaceView(string view)
     {
@@ -91,13 +107,13 @@ public sealed partial class MainViewModel
     }
     private void EnterWorkspace()
     {
-        IsSettingsOpen = false; IsRoomEditing = false;
+        IsSettingsOpen = false; IsRoomEditing = false; _analysisTool = "Поверхности";
         IsWelcomeVisible = false; _workspaceSection = "Проект"; _workspaceView = "3D"; _inspectorSubject = "Скан";
         NotifyPresentationState();
     }
     private void NotifyPresentationState()
     {
-        foreach (var name in new[] { nameof(HasWorkspace), nameof(WorkspaceSection), nameof(IsProjectSection), nameof(IsProcessingSection), nameof(IsAnalysisSection), nameof(IsResultsSection),
+        foreach (var name in new[] { nameof(HasWorkspace), nameof(WorkspaceSection), nameof(IsProjectSection), nameof(IsProcessingSection), nameof(IsAnalysisSection), nameof(IsResultsSection), nameof(IsSurfaceAnalysis), nameof(IsPeopleAnalysis),
             nameof(WorkspaceView), nameof(Is3DView), nameof(IsPlanView), nameof(IsSplitView), nameof(Show3DWorkspace), nameof(ShowPlanWorkspace),
             nameof(InspectorTitle), nameof(ShowScanInspector), nameof(ShowSurfaceInspector), nameof(ShowRoomInspector), nameof(ShowObjectInspector), nameof(ShowSimulationInspector),
             nameof(CurrentRoomPlan), nameof(SourceBadge), nameof(SurfaceAnalysisMethodText), nameof(AnalysisProgressText), nameof(ReviewProgressText), nameof(NextAnalysisStep) }) Raise(name);

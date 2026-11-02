@@ -12,7 +12,14 @@ public partial class ScanImportWindow : Window
     {
         InitializeComponent();
         FileLabel.Text = Path.GetFileName(path);
-        TextOptions.Visibility = Path.GetExtension(path).Equals(".ply", StringComparison.OrdinalIgnoreCase) ? Visibility.Collapsed : Visibility.Visible;
+        var glb = Path.GetExtension(path).Equals(".glb", StringComparison.OrdinalIgnoreCase);
+        TextOptions.Visibility = glb || Path.GetExtension(path).Equals(".ply", StringComparison.OrdinalIgnoreCase) ? Visibility.Collapsed : Visibility.Visible;
+        if (glb)
+        {
+            Units.SelectedIndex = (int)ScanUnit.Meters; UpAxis.SelectedIndex = (int)ScanUpAxis.Y;
+            Units.IsEnabled = UpAxis.IsEnabled = false;
+            UnitsHint.Text = "В GLB единицы заданы стандартом: метры, Y вверх. Модель автоматически поворачивается в Z вверх. Материалы и встроенные PNG/JPEG-текстуры сохраняются в проекте.";
+        }
         // Recognize documented source headers, including SubTerra's own meter-based exports.
         // Units and vertical axis remain visible/editable and must be checked by the operator.
         if (Path.GetExtension(path).Equals(".ply", StringComparison.OrdinalIgnoreCase))

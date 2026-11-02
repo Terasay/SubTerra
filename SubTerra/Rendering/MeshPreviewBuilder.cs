@@ -11,6 +11,8 @@ public static class MeshPreviewBuilder
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(triangleTarget, 1);
         token.ThrowIfCancellationRequested();
+        // QEM does not preserve UV seams/material boundaries. Keep indexed textured geometry intact.
+        if (scan.Appearance is not null) return scan;
         if (scan.Triangles.Length / 3 <= triangleTarget) return scan;
         var geometry = new HelixToolkit.Geometry.MeshGeometry3D
         {

@@ -26,9 +26,27 @@ public sealed partial class MainViewModel
     public bool CanShowSurface => !IsImported || HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
     public bool CanSelectSurface => CanInteract && (!IsImported || CanShowSurface || !HasEditPreview && !IsScreenSelecting && !HasRecovery &&
         (HasStructureAnalysis && !StructureIsStale || IsAdministrator && _scanProject?.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount) >= 64));
+    private bool NeedsSurfaceLogin => IsImported && IsGuest && !CanShowSurface && !(HasStructureAnalysis && !StructureIsStale);
+    public bool CanOpenSurface => CanSelectSurface || NeedsSurfaceLogin && CanInteract && !HasEditPreview && !IsScreenSelecting && !HasRecovery;
     public string SurfaceModeHint => CanShowSurface ? "Показать поверхности" : HasStructureAnalysis && !StructureIsStale ? "Восстановить поверхности по имеющемуся анализу" :
-        IsAdministrator ? "Построить поверхности по цветным точкам; анализ можно отменить" : "Первое построение сетки по точкам требует входа администратора";
+        IsAdministrator ? "Построить поверхности по цветным точкам; анализ можно отменить" : "Для первого построения сетки нужен администратор. Нажмите, чтобы войти и продолжить.";
     public string SurfaceModeText => IsImported ? HasReconstruction ? "Реконструкция" : HasIndoorPreview ? "Поверхности" : CanShowSurface ? "Сетка" : "Построить сетку" : "Пещера";
+    public bool UsesOriginalMaterials => IsImported && IsSurface && !IsHeight && CurrentProjectView?.Data.VisibleScan?.Appearance is not null &&
+        (!IsIndoorSurfaceView || IndoorStyle.Style == IndoorSurfaceStyle.SourceColors);
+    private async Task OpenSurfaceAsync()
+    {
+        if (!CanOpenSurface) return;
+        try
+        {
+            if (NeedsSurfaceLogin) AdministratorAccessRequested?.Invoke(this, EventArgs.Empty);
+            if (!_disposed) await ShowSurfaceAsync();
+        }
+        finally
+        {
+            // A cancelled login must restore the radio selection to the actual render mode.
+            Raise(nameof(IsSurfaceMode)); Raise(nameof(IsPointMode)); Raise(nameof(IsHeight));
+        }
+    }
     public async Task ShowSurfaceAsync()
     {
         if (!CanSelectSurface) return;
@@ -51,12 +69,13 @@ public sealed partial class MainViewModel
     public string CoverageMetricText => IsImported ? $"{(_importedBounds.Maximum.Z - _importedBounds.Minimum.Z):F3} м" : $"{CoveragePercent:F0}%";
     public string ImportDetails => IsImported ? $"{ProjectSummary}\nВидимых точек: {CurrentProjectView?.Data.VisibleScan?.Points.Length ?? 0:N0}\n" +
         "Проект хранит исходники и очистку. PLY включает видимые объекты после очистки." : "3DeVOK MQ → Studio → ASC / PLY → SubTerra";
-    public string ExportButtonText => IsImported ? "Экспорт скана в PLY" : "Экспорт точек в PLY";
+    public string ExportButtonText => IsImported ? CurrentProjectView?.Data.VisibleScan?.Appearance is not null ? "Экспорт PLY · цвета вершин" : "Экспорт скана в PLY" : "Экспорт точек в PLY";
     public string ImportTransformText => ActiveScanObject is { } o ? $"Исходные единицы: {o.Source.Metadata.Unit switch { ScanUnit.Meters => "м", ScanUnit.Centimeters => "см", _ => "мм" }} · вверх: {o.Source.Metadata.UpAxis}\n" +
         $"Смещение XYZ: {o.Source.Metadata.OriginX:G10}; {o.Source.Metadata.OriginY:G10}; {o.Source.Metadata.OriginZ:G10}" : "";
     private PointGeometry3D? _cloudOnly;
     public PointGeometry3D? CloudOnly { get => _cloudOnly; private set => Set(ref _cloudOnly, value); }
     public bool ImportedMeshVisible => IsImported && IsSurface;
+    public IReadOnlyList<ImportedGeometry.MaterialMesh> TexturedMeshParts { get; private set; } = [];
     private bool CoarseMesh => AdaptiveQuality && IsOverview && Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
         (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4;
     public string MeshPreviewText => IsIndoorSurfaceView ? IndoorPreviewSummary : $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
@@ -99,7 +118,8 @@ public sealed partial class MainViewModel
                 var o = next.Objects[0];
                 if (_scanProject!.Origin is { } origin && origin.Unit == scan.Metadata.Unit && origin.UpAxis == scan.Metadata.UpAxis)
                 {
-                    var delta = new Vector3((float)((scan.Metadata.OriginX - origin.OriginX) * options.Scale), (float)((scan.Metadata.OriginY - origin.OriginY) * options.Scale), (float)((scan.Metadata.OriginZ - origin.OriginZ) * options.Scale));
+                    var scale = new ScanImportOptions(scan.Metadata.Unit).Scale;
+                    var delta = new Vector3((float)((scan.Metadata.OriginX - origin.OriginX) * scale), (float)((scan.Metadata.OriginY - origin.OriginY) * scale), (float)((scan.Metadata.OriginZ - origin.OriginZ) * scale));
                     if (origin.UpAxis == ScanUpAxis.Y) delta = new(delta.X, -delta.Z, delta.Y);
                     o = o with { Transform = new(delta.X, delta.Y, delta.Z) };
                 }
@@ -114,7 +134,7 @@ public sealed partial class MainViewModel
             NotifySessionProperties();
             await ClearRecoveryAsync();
             Home();
-            Status = $"Импортировано {scan.Points.Length:N0} точек · проверьте размер по известному расстоянию";
+            Status = scan.Appearance is { } appearance ? $"Модель GLB · {scan.Triangles.Length / 3:N0} треугольников · текстур: {appearance.Textures.Length}" : $"Импортировано {scan.Points.Length:N0} точек · проверьте размер по известному расстоянию";
             Notification = "";
             AddEvent("Импортирован скан " + Path.GetFileName(path));
         }
@@ -131,10 +151,10 @@ public sealed partial class MainViewModel
         _baselineSettings = null;
         var synthetic = project.Objects.Any(o => o.Source.Metadata.IsSynthetic);
         SelectedScenario = new("imported", synthetic ? "Модель корпуса" : "Проект сканов",
-            synthetic ? "СИНТЕТИЧЕСКИЕ ДАННЫЕ · ТЕСТ АНАЛИЗА" : "3D-СКАНЫ · ASC / PLY", "Геометрия в метрах");
+            synthetic ? "СИНТЕТИЧЕСКИЕ ДАННЫЕ · ТЕСТ АНАЛИЗА" : "3D-СКАНЫ · GLB / PLY / ASC", "Геометрия в метрах");
         Route = null; Markers = null; Scanner = null; ScannerHeading = null;
         VisibleMarkers.Clear();
-        _isHeight = false; _isSurface = false;
+        _isHeight = false; _isSurface = project.Objects.Any(o => o.Source.Appearance is not null);
         Raise(nameof(IsHeight)); Raise(nameof(IsSurface)); Raise(nameof(IsPoints)); Raise(nameof(IsCave));
         Raise(nameof(IsPointMode)); Raise(nameof(IsSurfaceMode));
         Raise(nameof(SurfaceMaterial)); Raise(nameof(RenderLabel)); Raise(nameof(ShadowsVisible)); Raise(nameof(SsaoEnabled));
@@ -154,9 +174,11 @@ public sealed partial class MainViewModel
     private void RefreshImportedGeometry()
     {
         var clock = Stopwatch.StartNew();
+        TexturedMeshParts = UsesOriginalMaterials ? _importedGeometry?.MaterialMeshes ?? [] : [];
+        Raise(nameof(TexturedMeshParts)); Raise(nameof(UsesOriginalMaterials)); Raise(nameof(SourceBadge));
         if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry?.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight);
-        else Surface = _viewFrames == 0 ? null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
-        CloudOnly = !IsSurface ? null : IsIndoorSurfaceView ? _indoorRemaining?.Cloud(EffectivePointLimit, null, IsHeight) : CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight);
+        else Surface = _viewFrames == 0 || TexturedMeshParts.Count > 0 ? null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
+        CloudOnly = !IsSurface ? null : IsIndoorSurfaceView && !UsesOriginalMaterials ? _indoorRemaining?.Cloud(EffectivePointLimit, null, IsHeight) : CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight);
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
     }

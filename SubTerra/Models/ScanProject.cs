@@ -70,12 +70,15 @@ public sealed record ScanProject(ScanObject[] Objects, Guid ActiveObjectId, Impo
             Objects.Sum(o => (long)o.Source.Points.Length) > ImportedScan.MaximumPoints ||
             Objects.Sum(o => (long)o.Source.Triangles.Length / 3) > ImportedScan.MaximumTriangles)
             throw new InvalidDataException("Проект превышает лимиты или содержит некорректные объекты.");
+        long textureBytes = 0;
         foreach (var o in Objects)
         {
             token.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(o.Name) || o.Name.Length > 120 || o.Tint is > 0xffffff ||
                 (o.Mask is not null && o.Mask.Length != o.Source.Points.Length)) throw new InvalidDataException("Некорректные свойства объекта.");
             o.Source.Validate(token); (o.Transform ?? new()).Validate();
+            textureBytes += o.Source.Appearance?.Textures.Sum(t => (long)t.Data.Length) ?? 0;
+            if (textureBytes > MeshAppearance.MaximumTotalTextureBytes) throw new InvalidDataException("Текстуры проекта превышают 128 МБ.");
         }
         if (Origin is { } origin)
             new ImportedScan { Metadata = origin, Points = [new(0, 0, 0, 1)] }.Validate(token);

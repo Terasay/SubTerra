@@ -109,7 +109,30 @@ public sealed class RoomReconstructionTests
         Assert.False(Index(restored).Cast(new(.9f,1,1),-Vector3.UnitY,2,out _));
         var noWindow = RoomReconstructionBuilder.Build(project,doc,new(RepairWindows:false));
         Assert.Equal(0,noWindow.ReconstructedWindows); Assert.False(Index(noWindow).Cast(new(3,4,1.7f),Vector3.UnitY,2,out _));
+        var disabledFloor = RoomReconstructionBuilder.Build(project,doc,new(FloorHoleSize:0,RepairWindows:false));
+        Assert.False(Index(disabledFloor).Cast(new(3,.6f,1),-Vector3.UnitZ,2,out _));
+        var boundedFloor = RoomReconstructionBuilder.Build(project,doc,new(FloorHoleSize:.3,RepairWindows:false));
+        Assert.False(Index(boundedFloor).Cast(new(3,.6f,1),-Vector3.UnitZ,2,out _));
         Assert.Equal(points.ToArray(),scan.Points); Assert.Equal(colors.ToArray(),scan.Colors);
+    }
+
+    [Fact]
+    public void CompletionBlendsBoundaryColorsInLinearLightAndPreservesEveryMeasuredCell()
+    {
+        var floor = (from x in Enumerable.Range(0, 61) from y in Enumerable.Range(0, 61)
+            let p = new Vector3(x * .04f, y * .04f, 0) where !(p.X > .8 && p.X < 1.6 && p.Y > .8 && p.Y < 1.6) select p).ToArray();
+        var (project, doc) = Fixture(floor, [], StructureSurfaceKind.Floor, Vector3.UnitZ, [new(0,0,0),new(2.4f,0,0),new(2.4f,2.4f,0),new(0,2.4f,0)], 5.76);
+        var source = project.Active!.Source;
+        var colors = floor.Select(p => p.X < 1.2 ? 0xff0000u : 0x0000ffu).ToArray();
+        var recolored = new ImportedScan { Metadata = source.Metadata, Points = source.Points, Colors = colors };
+        project = project.Replace(project.Active with { Source = recolored }); doc = StructureProvenance.Create(project, doc.Result);
+        var observed = RoomReconstructionBuilder.Build(project, doc, new(FloorHoleSize: 0));
+        var completed = RoomReconstructionBuilder.Build(project, doc, new());
+        var measuredColors = observed.Scan.Points.Select((p,i) => (p.Position, Color: observed.Scan.Colors[i])).ToDictionary(p => p.Position, p => p.Color);
+        foreach (var (p, i) in completed.Scan.Points.Select((p,i) => (p,i)))
+            if (measuredColors.TryGetValue(p.Position, out var original)) Assert.Equal(original, completed.Scan.Colors[i]);
+        Assert.Contains(completed.Scan.Colors.Where((c,i) => completed.CompletionColors[i] == 0xF4B860), c => (c >> 16 & 255) > 150 && (c & 255) > 150 && (c >> 8 & 255) == 0);
+        Assert.Equal(colors, recolored.Colors);
     }
 
     [Fact]

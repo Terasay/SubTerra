@@ -14,7 +14,7 @@ public sealed partial class SessionStorage
     private sealed record Manifest(int SchemaVersion, string SourceType, string CoordinateUnit,
         string ScenarioId, ScanSettings Settings, int FrameCount, int PointCount, int SceneVersion = 1,
         ScannerAdjustment[]? Adjustments = null, UserAnnotation[]? Annotations = null,
-        ImportMetadata? ImportMetadata = null, int TriangleCount = 0, bool HasColors = false, ProjectManifest? Project = null);
+        ImportMetadata? ImportMetadata = null, int TriangleCount = 0, bool HasColors = false, ProjectManifest? Project = null, bool HasAppearance = false);
     private const int MaximumPoints = 750_000;
     private const int MaximumManifestBytes = 262_144;
 
@@ -87,8 +87,8 @@ public sealed partial class SessionStorage
         Manifest manifest;
         using (var stream = metadata.Open())
             manifest = JsonSerializer.Deserialize<Manifest>(stream) ?? throw new InvalidDataException("Не удалось прочитать сеанс.");
-        if (manifest.SchemaVersion is 5 or 6 or 7 or 8 or 9 or 10) return LoadProject(archive, manifest, cancellationToken, progressReporter);
-        if (manifest.SchemaVersion == 4) return LoadImported(archive, manifest, cancellationToken, progressReporter);
+        if (manifest.SchemaVersion is 5 or 6 or 7 or 8 or 9 or 10 or 11) return LoadProject(archive, manifest, cancellationToken, progressReporter);
+        if (manifest.SchemaVersion is 4 or 12 && manifest.HasAppearance == (manifest.SchemaVersion == 12)) return LoadImported(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion is not (1 or 2 or 3) || manifest.SourceType != "simulation" || manifest.CoordinateUnit != "m")
             throw new InvalidDataException("Версия или тип сеанса не поддерживается.");
         if (!SceneVersions.IsSupported(manifest.SceneVersion))
