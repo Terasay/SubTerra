@@ -167,7 +167,7 @@ public sealed partial class SessionStorage
                 uv[i] = new(ReadFinite(reader), ReadFinite(reader)); normals[i] = new(ReadFinite(reader), ReadFinite(reader), ReadFinite(reader));
                 colors[i] = new(ReadFinite(reader), ReadFinite(reader), ReadFinite(reader), ReadFinite(reader));
             }
-        var textures = new MeshTexture[info.Textures.Length]; long pixels = 0;
+        var textures = new MeshTexture[info.Textures.Length];
         for (var i = 0; i < textures.Length; i++)
         {
             token.ThrowIfCancellationRequested(); var t = info.Textures[i];
@@ -175,8 +175,7 @@ public sealed partial class SessionStorage
             if (entry.Length != t.ByteLength) throw new InvalidDataException("Размер текстуры не совпадает.");
             var data = new byte[t.ByteLength]; using (var stream = entry.Open()) stream.ReadExactly(data);
             textures[i] = new(data, t.MimeType, t.WrapS, t.WrapT);
-            var image = Rendering.MeshTextureSampler.Decode(textures[i]); pixels += (long)image.Width * image.Height;
-            if (pixels > 33_554_432) throw new InvalidDataException("Превышено число пикселей текстур.");
+            _ = Rendering.MeshTextureSampler.Inspect(textures[i]);
         }
         var result = new MeshAppearance(uv, normals, colors, info.Parts, info.Materials, textures); result.Validate(count, indexCount, token); return result;
     }

@@ -485,7 +485,7 @@ internal sealed class GlbReader(FileStream file, string path, bool localOrigin, 
     {
         var textures = Optional(_root, "textures"); if (textures.ValueKind == JsonValueKind.Undefined) return;
         if (textures.GetArrayLength() > 64) throw Bad("слишком много текстур");
-        long total = 0; long pixels = 0;
+        long total = 0;
         foreach (var texture in textures.EnumerateArray())
         {
             token.ThrowIfCancellationRequested();
@@ -508,8 +508,7 @@ internal sealed class GlbReader(FileStream file, string path, bool localOrigin, 
                 throw Bad("текстуры: PNG/JPEG, до 32 МБ каждая и до 128 МБ суммарно");
             var samplerId = Integer(texture, "sampler", -1); var sampler = samplerId < 0 ? default : At("samplers", samplerId);
             var value = new MeshTexture(data, mime, Integer(sampler, "wrapS", 10497), Integer(sampler, "wrapT", 10497));
-            var decoded = Rendering.MeshTextureSampler.Decode(value); pixels += (long)decoded.Width * decoded.Height;
-            if (pixels > 33_554_432) throw Bad("суммарный размер текстур превышает 32 млн пикселей");
+            _ = Rendering.MeshTextureSampler.Inspect(value);
             _textures.Add(value);
         }
     }

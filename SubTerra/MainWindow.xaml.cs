@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private bool _changingScenario;
     private bool _closeAllowed;
     private bool _checkingClose;
+    private bool _handlingRenderFailure;
     private readonly WalkController _walk;
     private readonly DispatcherTimer _diagnosticsTimer;
     private readonly DispatcherTimer _interactionTimer;
@@ -257,8 +258,14 @@ public partial class MainWindow : Window
     private void CloseSidebar_Click(object sender, RoutedEventArgs e) => _viewModel.IsSidebarOpen = false;
     private void Viewport_RenderExceptionOccurred(object? sender, RelayExceptionEventArgs e)
     {
-        _viewModel.ReportError("Не удалось отобразить 3D-сцену", e.Exception);
         e.Handled = true;
+        if (_handlingRenderFailure || Dispatcher.HasShutdownStarted) return;
+        _handlingRenderFailure = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            try { if (IsLoaded) _viewModel.RecoverRenderFailure(e.Exception); }
+            finally { _handlingRenderFailure = false; }
+        }));
     }
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

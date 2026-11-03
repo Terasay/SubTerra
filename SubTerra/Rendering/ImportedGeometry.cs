@@ -16,8 +16,12 @@ public sealed class ImportedGeometry(ImportedScan scan)
     private sealed class MaterialTextureCache
     {
         public Dictionary<(int, int, float, float), TextureModel> Models { get; } = [];
+        public Dictionary<int, MeshTextureSampler.Pixels> Images { get; } = [];
+        public int PixelLimit;
         public long Pixels;
     }
+    public int ReducedTextureCount { get; private set; }
+    public long DisplayTexturePixels { get; private set; }
     public IReadOnlyList<MaterialMesh> MaterialMeshes => _materialMeshes ??= CreateMaterialMeshes();
     private readonly (Vector3 Minimum, Vector3 Maximum) _bounds = scan.Bounds;
     public (Vector3 Minimum, Vector3 Maximum) Bounds => _bounds;
@@ -118,6 +122,17 @@ public sealed class ImportedGeometry(ImportedScan scan)
         var result = new List<MaterialMesh>();
         var materialCache = new Dictionary<int, HelixToolkit.Wpf.SharpDX.Material>();
         var textureCache = new MaterialTextureCache();
+        var variants = new HashSet<(int, int, float, float)>();
+        foreach (var material in appearance.Parts.Select(p => p.MaterialIndex).Distinct().Select(i => appearance.Materials[i]))
+        {
+            if (material.BaseColorTexture >= 0) variants.Add(TextureKey(material, material.BaseColorTexture, albedo: true));
+            if (material.NormalTexture >= 0) variants.Add(TextureKey(material, material.NormalTexture, normal: true));
+            if (material.MetallicRoughnessTexture >= 0) variants.Add(TextureKey(material, material.MetallicRoughnessTexture));
+            if (material.EmissiveTexture >= 0) variants.Add(TextureKey(material, material.EmissiveTexture));
+            if (material.OcclusionTexture >= 0) variants.Add(TextureKey(material, material.OcclusionTexture, occlusion: true));
+        }
+        textureCache.PixelLimit = Math.Min(MeshTextureSampler.MaximumDisplayPixels,
+            MeshTextureSampler.MaximumDisplayTotalPixels / Math.Max(1, variants.Count));
         foreach (var part in appearance.Parts)
         {
             token.ThrowIfCancellationRequested(); var material = appearance.Materials[part.MaterialIndex];
@@ -140,7 +155,18 @@ public sealed class ImportedGeometry(ImportedScan scan)
             result.Add(new(new() { Positions = positions, Normals = normals, TextureCoordinates = uv, Colors = colors, Indices = indices }, renderMaterial,
                 material.DoubleSided ? SharpDX.Direct3D11.CullMode.None : SharpDX.Direct3D11.CullMode.Back, material.AlphaMode != "OPAQUE"));
         }
+        ReducedTextureCount = textureCache.Images.Count(pair =>
+        {
+            var original = MeshTextureSampler.Inspect(appearance.Textures[pair.Key]);
+            return original.Width != pair.Value.Width || original.Height != pair.Value.Height;
+        });
+        DisplayTexturePixels = textureCache.Pixels;
         return result;
+    }
+    private static (int, int, float, float) TextureKey(MeshMaterial source, int i, bool albedo = false, bool normal = false, bool occlusion = false)
+    {
+        var kind = albedo ? source.AlphaMode == "OPAQUE" ? 1 : source.AlphaMode == "MASK" ? 2 : 0 : normal && source.NormalScale != 1 ? 3 : occlusion && source.OcclusionStrength != 1 ? 4 : 0;
+        return (i, kind, kind == 2 ? source.Alpha : kind == 3 ? source.NormalScale : kind == 4 ? source.OcclusionStrength : 0, kind == 2 ? source.AlphaCutoff : 0);
     }
     private static HelixToolkit.Wpf.SharpDX.Material CreateMaterial(MeshAppearance appearance, MeshMaterial source, MaterialTextureCache cache)
     {
@@ -151,13 +177,14 @@ public sealed class ImportedGeometry(ImportedScan scan)
         TextureModel? Texture(int i, bool albedo = false, bool normal = false, bool occlusion = false)
         {
             if (i < 0) return null;
-            var kind = albedo ? source.AlphaMode == "OPAQUE" ? 1 : source.AlphaMode == "MASK" ? 2 : 0 : normal && source.NormalScale != 1 ? 3 : occlusion && source.OcclusionStrength != 1 ? 4 : 0;
-            var key = (i, kind, kind == 2 ? source.Alpha : kind == 3 ? source.NormalScale : kind == 4 ? source.OcclusionStrength : 0, kind == 2 ? source.AlphaCutoff : 0);
+            var key = TextureKey(source, i, albedo, normal, occlusion); var kind = key.Item2;
             if (cache.Models.TryGetValue(key, out var cached)) return cached;
-            var pixels = MeshTextureSampler.Decode(appearance.Textures[i]); var bytes = pixels.Bgra;
+            if (!cache.Images.TryGetValue(i, out var pixels))
+                cache.Images[i] = pixels = MeshTextureSampler.DecodeForDisplay(appearance.Textures[i], cache.PixelLimit);
+            var bytes = pixels.Bgra;
             cache.Pixels += (long)pixels.Width * pixels.Height;
-            if (cache.Pixels > 134_217_728) throw new System.IO.InvalidDataException("Слишком много вариантов текстур материалов. Уменьшите размер изображений.");
-            if (albedo && source.AlphaMode is "OPAQUE" or "MASK")
+            if (cache.Pixels > MeshTextureSampler.MaximumDisplayTotalPixels) throw new System.IO.InvalidDataException("Не удалось подготовить текстуры в пределах памяти просмотра.");
+            if (albedo && (source.AlphaMode is "OPAQUE" or "MASK") && (source.AlphaMode == "MASK" || HasTransparency(bytes)))
             {
                 bytes = (byte[])bytes.Clone();
                 for (var p = 3; p < bytes.Length; p += 4) bytes[p] = source.AlphaMode == "OPAQUE" || bytes[p] / 255f * source.Alpha >= source.AlphaCutoff ? (byte)255 : (byte)0;
@@ -194,6 +221,11 @@ public sealed class ImportedGeometry(ImportedScan scan)
                 SurfaceMapSampler = sampler, VertexColorBlendingFactor = source.BaseColorTexture < 0 ? 1 : 0 };
         material.Freeze(); return material;
     }
+    private static bool HasTransparency(byte[] bgra)
+    {
+        for (var i = 3; i < bgra.Length; i += 4) if (bgra[i] != 255) return true;
+        return false;
+    }
     private Color4 Color(int index, bool height) => Color(scan, index, height);
     private Color4 Color(ImportedScan data, int index, bool height)
     {
@@ -226,25 +258,58 @@ public sealed class ImportedGeometry(ImportedScan scan)
 
 public static class MeshTextureSampler
 {
+    public const int MaximumDisplayPixels = 16_777_216, MaximumDisplayTotalPixels = 33_554_432;
     public sealed record Pixels(int Width, int Height, byte[] Bgra);
+    public sealed record ImageInfo(int Width, int Height);
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MeshTexture, ImageInfo> Information = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MeshTexture, Pixels> Cache = new();
-    public static Pixels Decode(MeshTexture texture) => Cache.GetValue(texture, t =>
+    public static ImageInfo Inspect(MeshTexture texture) => Information.GetValue(texture, t =>
     {
         using var stream = new System.IO.MemoryStream(t.Data, writable: false);
         try
         {
             var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(stream,
                 System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnDemand);
+            if (decoder is not (System.Windows.Media.Imaging.PngBitmapDecoder or System.Windows.Media.Imaging.JpegBitmapDecoder))
+                throw new System.IO.InvalidDataException("Текстура должна содержать PNG или JPEG.");
             var frame = decoder.Frames[0];
-            if (frame.PixelWidth < 1 || frame.PixelHeight < 1 || frame.PixelWidth > 8192 || frame.PixelHeight > 8192 || (long)frame.PixelWidth * frame.PixelHeight > 16_777_216)
-                throw new System.IO.InvalidDataException("Текстура превышает лимит 16 млн пикселей.");
-            var image = new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
-            var bytes = new byte[checked(image.PixelWidth * image.PixelHeight * 4)]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
-            return new Pixels(image.PixelWidth, image.PixelHeight, bytes);
+            // Validate source dimensions without allocating its full decoded bitmap. 8K/16K
+            // scans are accepted; preview and analysis have independent bounded resolutions.
+            if (frame.PixelWidth < 1 || frame.PixelHeight < 1 || frame.PixelWidth > 32768 || frame.PixelHeight > 32768 ||
+                (long)frame.PixelWidth * frame.PixelHeight > 268_435_456)
+                throw new System.IO.InvalidDataException("Некорректные или чрезмерные исходные размеры PNG/JPEG-текстуры.");
+            return new ImageInfo(frame.PixelWidth, frame.PixelHeight);
         }
-        catch (Exception ex) when (ex is NotSupportedException or System.IO.IOException or ArgumentException)
+        catch (OutOfMemoryException ex) { throw new System.IO.InvalidDataException("Недостаточно памяти для чтения изображения текстуры.", ex); }
+        catch (Exception ex) when (ex is NotSupportedException or System.IO.IOException or ArgumentException or FormatException or System.Runtime.InteropServices.COMException)
         { throw new System.IO.InvalidDataException("Не удалось прочитать PNG/JPEG-текстуру GLB.", ex); }
     });
+    // A small CPU copy is sufficient for vertex colours and image projections; retain original encoded bytes for saving.
+    public static Pixels Decode(MeshTexture texture) => Cache.GetValue(texture, t => DecodeSized(t, 1_048_576, 1024));
+    public static Pixels DecodeForDisplay(MeshTexture texture, int pixelLimit = MaximumDisplayPixels) =>
+        DecodeSized(texture, Math.Clamp(pixelLimit, 1, MaximumDisplayPixels), 4096);
+    private static Pixels DecodeSized(MeshTexture texture, int pixelLimit, int maximumSide)
+    {
+        var original = Inspect(texture);
+        var scale = Math.Min(1, Math.Min((double)maximumSide / Math.Max(original.Width, original.Height),
+            Math.Sqrt((double)pixelLimit / original.Width / original.Height)));
+        var width = Math.Max(1, (int)Math.Floor(original.Width * scale));
+        var height = Math.Max(1, Math.Min((int)Math.Floor(original.Height * scale), pixelLimit / width));
+        using var stream = new System.IO.MemoryStream(texture.Data, writable: false);
+        try
+        {
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage(); bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.DecodePixelWidth = width; bitmap.DecodePixelHeight = height; bitmap.StreamSource = stream; bitmap.EndInit();
+            System.Windows.Media.Imaging.BitmapSource image = bitmap.Format == System.Windows.Media.PixelFormats.Bgra32 ? bitmap :
+                new System.Windows.Media.Imaging.FormatConvertedBitmap(bitmap, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            var bytes = new byte[checked(image.PixelWidth * image.PixelHeight * 4)]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
+            return new(image.PixelWidth, image.PixelHeight, bytes);
+        }
+        catch (OutOfMemoryException ex) { throw new System.IO.InvalidDataException("Недостаточно памяти для подготовки уменьшенной текстуры просмотра.", ex); }
+        catch (Exception ex) when (ex is NotSupportedException or System.IO.IOException or ArgumentException or FormatException or System.Runtime.InteropServices.COMException or InvalidOperationException)
+        { throw new System.IO.InvalidDataException("Не удалось подготовить PNG/JPEG-текстуру для просмотра.", ex); }
+    }
     public static Vector4 Sample(MeshTexture texture, Vector2 uv)
     {
         static float Wrap(float x, int mode) => mode switch { 33071 => Math.Clamp(x, 0, 1), 33648 => 1 - Math.Abs((x % 2 + 2) % 2 - 1), _ => x - MathF.Floor(x) };

@@ -28,6 +28,8 @@ internal static class Program
                 return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
             if (args.Length == 2 && args[0] == "--audit-tunnel")
                 return AuditTunnel(args[1]);
+            if (args.Length == 2 && args[0] == "--audit-glb")
+                return AuditGlb(args[1]);
             if (args.Length == 3 && args[0] == "--prepare-indoor")
                 return PrepareIndoor(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--reconstruct-indoor")
@@ -132,6 +134,45 @@ internal static class Program
             var parent = Path.GetDirectoryName(Path.GetFullPath(temporary.FullName));
             if (!string.Equals(parent, Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ||
                 !temporary.Name.StartsWith("SubTerra-tunnel-audit-", StringComparison.Ordinal)) throw new IOException("Неожиданный путь временной проверки.");
+            Directory.Delete(temporary.FullName, true);
+        }
+        return 0;
+    }
+
+    private static int AuditGlb(string input)
+    {
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        var token = cancellation.Token; var clock = Stopwatch.StartNew();
+        string FileHash() { using var stream = File.OpenRead(input); return Convert.ToHexString(SHA256.HashData(stream)); }
+        var before = FileHash();
+        var scan = new ScanImporter().ImportAsync(input, new(), token).GetAwaiter().GetResult();
+        var appearance = scan.Appearance ?? throw new InvalidDataException("Ожидается GLB с материалами.");
+        var view = ScanProjectView.PrepareAsync(ScanProject.FromSession(scan.ToSession()), token).GetAwaiter().GetResult();
+        var temporary = Directory.CreateTempSubdirectory("SubTerra-glb-audit-");
+        try
+        {
+            var storage = new SessionStorage(); var path = Path.Combine(temporary.FullName, "textures.subterra");
+            storage.SaveAsync(path, scan.ToSession(), 1, token).GetAwaiter().GetResult();
+            var restored = storage.LoadAsync(path, token).GetAwaiter().GetResult().ImportedScan!;
+            if (restored.Appearance is null || !scan.Points.SequenceEqual(restored.Points) || !scan.Triangles.SequenceEqual(restored.Triangles) ||
+                appearance.Textures.Length != restored.Appearance.Textures.Length || appearance.Textures.Where((t, i) => !t.Data.SequenceEqual(restored.Appearance.Textures[i].Data)).Any())
+                throw new InvalidDataException("Изменились геометрия или оригинальные изображения после сохранения.");
+            if (FileHash() != before) throw new InvalidDataException("Изменился исходный GLB.");
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                Points = scan.Points.Length, Triangles = scan.Triangles.Length / 3,
+                OriginalImages = appearance.Textures.Select(t => MeshTextureSampler.Inspect(t)).ToArray(),
+                DisplayTexturePixels = view.Geometry!.DisplayTexturePixels, ReducedTextures = view.Geometry.ReducedTextureCount,
+                SourceUnchanged = true, OriginalImagesRoundTrip = true, GeometryRoundTrip = true,
+                ElapsedSeconds = clock.Elapsed.TotalSeconds
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        finally
+        {
+            var parent = Path.GetDirectoryName(Path.GetFullPath(temporary.FullName));
+            if (!string.Equals(parent, Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ||
+                !temporary.Name.StartsWith("SubTerra-glb-audit-", StringComparison.Ordinal)) throw new IOException("Неожиданный путь временной проверки.");
             Directory.Delete(temporary.FullName, true);
         }
         return 0;

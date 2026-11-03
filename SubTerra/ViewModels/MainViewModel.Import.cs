@@ -141,6 +141,7 @@ public sealed partial class MainViewModel
             await ClearRecoveryAsync();
             Home();
             Status = scan.Appearance is { } appearance ? $"Модель GLB · {scan.Triangles.Length / 3:N0} треугольников · текстур: {appearance.Textures.Length}" : $"Импортировано {scan.Points.Length:N0} точек · проверьте размер по известному расстоянию";
+            if (view.Geometry?.ReducedTextureCount > 0) Status += " · текстуры просмотра адаптированы, оригиналы сохранены";
             Notification = "";
             AddEvent("Импортирован скан " + Path.GetFileName(path));
         }
@@ -188,6 +189,15 @@ public sealed partial class MainViewModel
         NotifyTunnelWorkspace();
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
+    }
+    public void RecoverRenderFailure(Exception error)
+    {
+        if (IsImported && IsSurface && CurrentProjectView?.Data.VisibleScan?.Appearance is not null)
+        {
+            SetView(false, false);
+            ReportError("Не удалось отобразить текстуры. Включён просмотр точек; проект остался открыт", error);
+        }
+        else ReportError("Не удалось отобразить 3D-сцену", error);
     }
     private void ConfigureNavigationClipping()
     {

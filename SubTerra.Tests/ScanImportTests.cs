@@ -3,6 +3,8 @@ using System.IO;
 using System.Numerics;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Buffers.Binary;
+using System.IO.Compression;
 using SubTerra.Models;
 using SubTerra.Rendering;
 using SubTerra.Services;
@@ -437,7 +439,86 @@ public sealed class ScanImportTests
         return Task.CompletedTask;
     });
 
-    internal static void CreateGlb(string path, Action<JsonObject>? edit = null, bool sparse = false)
+    [Fact]
+    public async Task EightKGlbUsesBoundedPreviewAndPreservesOriginalImageInSession()
+    {
+        using var files = new Files(); var image = LargeRedPng(8192, 8192); var path = Path.Combine(files.Directory, "large.glb");
+        CreateGlb(path, textureBytes: image);
+        var scan = await new ScanImporter().ImportAsync(path, new()); var texture = Assert.Single(scan.Appearance!.Textures);
+        Assert.Equal(new MeshTextureSampler.ImageInfo(8192, 8192), MeshTextureSampler.Inspect(texture));
+        var sampling = MeshTextureSampler.Decode(texture); Assert.Equal(1024, sampling.Width); Assert.Equal(1024, sampling.Height);
+        Assert.All(scan.Colors, c => Assert.Equal(0xFF0000u, c));
+        var geometry = new ImportedGeometry(scan); geometry.PrepareMeshPreviews();
+        Assert.Equal(1, geometry.ReducedTextureCount); Assert.Equal(4096L * 4096, geometry.DisplayTexturePixels);
+        var saved = Path.Combine(files.Directory, "large.subterra"); var storage = new SessionStorage();
+        await storage.SaveAsync(saved, scan.ToSession(), 1); var restored = (await storage.LoadAsync(saved)).ImportedScan!;
+        Assert.Equal(image, Assert.Single(restored.Appearance!.Textures).Data);
+        Assert.Equal(scan.Points, restored.Points); Assert.Equal(scan.Triangles, restored.Triangles);
+    }
+
+    [Fact]
+    public async Task CombinedSourceTexturesAboveOldPixelCapShareDisplayMemoryBudget()
+    {
+        using var files = new Files(); var image = LargeRedPng(8192, 8192); var path = Path.Combine(files.Directory, "model.glb");
+        CreateGlb(path); var original = await new ScanImporter().ImportAsync(path, new());
+        var appearance = original.Appearance! with
+        {
+            Parts = [new(0, 6, 0), new(6, 6, 1), new(12, 6, 2)],
+            Materials = [new("One", BaseColorTexture: 0), new("Two", BaseColorTexture: 1), new("Three", BaseColorTexture: 2)],
+            Textures = [new(image, "image/png"), new(image, "image/png"), new(image, "image/png")]
+        };
+        var scan = new ImportedScan { Metadata = original.Metadata, Points = original.Points, Colors = original.Colors,
+            Triangles = [.. original.Triangles, .. original.Triangles, .. original.Triangles], Appearance = appearance };
+        var geometry = new ImportedGeometry(scan); geometry.PrepareMeshPreviews();
+        Assert.Equal(3, geometry.ReducedTextureCount); Assert.Equal(3, geometry.MaterialMeshes.Count);
+        Assert.InRange(geometry.DisplayTexturePixels, 1, MeshTextureSampler.MaximumDisplayTotalPixels);
+        var storage = new SessionStorage(); var saved = Path.Combine(files.Directory, "several.subterra");
+        await storage.SaveAsync(saved, scan.ToSession(), 1);
+        var restored = (await storage.LoadAsync(saved)).ImportedScan!;
+        Assert.All(restored.Appearance!.Textures, t => Assert.Equal(image, t.Data));
+    }
+
+    [Fact]
+    public Task BadTextureAndRenderFailureKeepOpenSceneAndAllowPointView() => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files(); var good = Path.Combine(files.Directory, "good.glb"); CreateGlb(good);
+        var bad = Path.Combine(files.Directory, "bad.glb"); CreateGlb(bad, textureBytes: [1, 2, 3, 4]);
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: new TestAccess(), interaction: new TestInteraction());
+        await vm.ImportAsync(good, new()); Assert.True(vm.UsesOriginalMaterials);
+        vm.BeginInspection(false); vm.SelectInspectionPoint(Vector3.Zero); vm.AnnotationName = "Оставить"; vm.AddAnnotationCommand.Execute(null);
+        var count = vm.PointCountText; var dirty = vm.HasUnsavedChanges;
+        await vm.ImportAsync(bad, new()); Assert.True(vm.HasNotification); Assert.Equal(count, vm.PointCountText); Assert.Single(vm.UserAnnotations);
+        vm.RecoverRenderFailure(new InvalidOperationException("Texture allocation failed"));
+        Assert.True(vm.IsPoints); Assert.Empty(vm.TexturedMeshParts); Assert.Equal(count, vm.PointCountText);
+        Assert.Single(vm.UserAnnotations); Assert.Equal(dirty, vm.HasUnsavedChanges); Assert.True(vm.HasNotification);
+        await vm.ShowSurfaceAsync(); Assert.True(vm.UsesOriginalMaterials);
+    });
+
+    // Stream a highly compressible image; constructing an 8K source bitmap would make the fixture itself allocate 256 MB.
+    private static byte[] LargeRedPng(int width, int height)
+    {
+        using var result = new MemoryStream(); result.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+        void Chunk(string name, byte[] data)
+        {
+            Span<byte> size = stackalloc byte[4]; BinaryPrimitives.WriteInt32BigEndian(size, data.Length); result.Write(size);
+            var type = Encoding.ASCII.GetBytes(name); result.Write(type); result.Write(data);
+            uint crc = 0xFFFFFFFF;
+            void Update(byte value) { crc ^= value; for (var bit = 0; bit < 8; bit++) crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xEDB88320u : 0); }
+            foreach (var value in type) Update(value); foreach (var value in data) Update(value);
+            BinaryPrimitives.WriteUInt32BigEndian(size, ~crc); result.Write(size);
+        }
+        var header = new byte[13]; BinaryPrimitives.WriteInt32BigEndian(header, width); BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+        header[8] = 8; header[9] = 2; Chunk("IHDR", header);
+        using var compressed = new MemoryStream();
+        using (var zip = new ZLibStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            var row = new byte[width * 3 + 1]; for (var x = 0; x < width; x++) row[1 + x * 3] = 255;
+            for (var y = 0; y < height; y++) zip.Write(row);
+        }
+        Chunk("IDAT", compressed.ToArray()); Chunk("IEND", []); return result.ToArray();
+    }
+
+    internal static void CreateGlb(string path, Action<JsonObject>? edit = null, bool sparse = false, byte[]? textureBytes = null)
     {
         var views = new JsonArray(); using var binary = new MemoryStream();
         int Add(byte[] data, int? stride = null)
@@ -453,7 +534,7 @@ public sealed class ScanImportTests
         var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null,
             new byte[] {0,0,255,255, 0,255,0,255, 255,0,0,255, 255,255,255,255}, 8);
         var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-        using var image = new MemoryStream(); encoder.Save(image); var texture = Add(image.ToArray());
+        using var image = new MemoryStream(); encoder.Save(image); var texture = Add(textureBytes ?? image.ToArray());
         var root = JsonNode.Parse("""
         {"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"translation":[10,20,30],"children":[1]},{"mesh":0,"scale":[-2,3,1]}],
         "meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":3,"material":0}]}],
