@@ -240,6 +240,27 @@ public sealed class PeopleDetectionTests
     });
 
     [Fact]
+    public Task TunnelPeopleSearchChecksOnlyCurrentMeasuredRgbViewWithoutRoomAnalysisOrHistoryChanges() => ScanControlTests.OnSta(async () =>
+    {
+        var planes = new BlockingPlaneAnalyzer(); planes.Pending.SetResult(new([], 0, 0, new()));
+        var people = new FakeAnalyzer();
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+            access: new TestAccess(), interaction: new TestInteraction(), structureAnalyzer: planes, personAnalyzer: people);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        vm.SelectedProjectMode = vm.ProjectModes.Single(m => m.Mode == ProjectAnalysisMode.Tunnel);
+        Assert.True(vm.CanFindPeople); Assert.False(vm.CanSearchPeople); Assert.False(vm.PeopleNeedFloor);
+        var undo = vm.UndoProjectText; var dirty = vm.HasUnsavedChanges;
+        await vm.FindPeopleCommand.ExecuteAsync();
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasPeopleDetection);
+        Assert.Equal(0, planes.Calls); Assert.Equal(1, people.Calls); Assert.Single(people.Poses!); Assert.Empty(people.Surfaces!);
+        Assert.False(vm.HasStructureAnalysis); Assert.Equal(undo, vm.UndoProjectText); Assert.Equal(dirty, vm.HasUnsavedChanges);
+        await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.IsTunnelMode); Assert.True(vm.HasTunnelSections); Assert.False(vm.CanFindPeople);
+        Assert.False(vm.FindPeopleCommand.CanExecute(null));
+        await vm.FindPeopleCommand.ExecuteAsync(); Assert.Equal(1, people.Calls); Assert.Equal(0, planes.Calls);
+    });
+
+    [Fact]
     public Task FindingsCanBeReviewedAndTheirRgbInputInspectedWithoutChangingTheProject() => ScanControlTests.OnSta(async () =>
     {
         var directory = WorkspaceFeatureTests.TemporaryDirectory();
@@ -281,9 +302,9 @@ public sealed class PeopleDetectionTests
     }
     private sealed class FakeAnalyzer : IPersonScanAnalyzer
     {
-        public int Calls; public ScanViewPose[]? Poses;
+        public int Calls; public ScanViewPose[]? Poses; public StructureSurface[]? Surfaces;
         public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token)
-        { Calls++; Poses = poses; return Task.FromResult(FakeResult(project, poses)); }
+        { Calls++; Poses = poses; Surfaces = surfaces; return Task.FromResult(FakeResult(project, poses)); }
     }
     private sealed class MultipleViewsAnalyzer : IPersonScanAnalyzer
     {
@@ -295,8 +316,10 @@ public sealed class PeopleDetectionTests
     }
     private sealed class BlockingPlaneAnalyzer : IStructureAnalyzer
     {
+        public int Calls;
         public TaskCompletionSource<StructureAnalysisResult> Pending { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task<StructureAnalysisResult> AnalyzeAsync(ScanProject project, StructureAnalysisOptions options, IProgress<double>? progress, CancellationToken token) => Pending.Task;
+        public Task<StructureAnalysisResult> AnalyzeAsync(ScanProject project, StructureAnalysisOptions options, IProgress<double>? progress, CancellationToken token)
+        { Calls++; return Pending.Task; }
     }
     private sealed class BlockingAnalyzer : IPersonScanAnalyzer
     {

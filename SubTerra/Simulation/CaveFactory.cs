@@ -37,6 +37,44 @@ public static class CaveFactory
     };
 }
 
+/// <summary>Known synthetic geometry for reviewing a sloping, curved tunnel without RGB.</summary>
+public static class TunnelDemoFactory
+{
+    public static ScanProject Create(CancellationToken token = default)
+    {
+        const int rings = 601, sides = 144;
+        static Vector3 Center(float x) => new(x, 3 * MathF.Sin(x / 8), 2 + .12f * x);
+        var points = new ScanPoint[rings * sides];
+        var triangles = new int[(rings - 1) * sides * 6]; var next = 0;
+        for (var ring = 0; ring < rings; ring++)
+        {
+            if ((ring & 31) == 0) token.ThrowIfCancellationRequested();
+            var x = ring * .05f; var center = Center(x);
+            var forward = Vector3.Normalize(new Vector3(1, .375f * MathF.Cos(x / 8), .12f));
+            var right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ)); var up = Vector3.Cross(right, forward);
+            for (var side = 0; side < sides; side++)
+            {
+                var angle = side * MathF.Tau / sides;
+                var rough = 1 + .018f * MathF.Sin(angle * 7 + x * 1.1f);
+                var p = center + right * (2.6f * MathF.Cos(angle) * rough) + up * (1.9f * MathF.Sin(angle) * rough);
+                points[ring * sides + side] = new(p.X, p.Y, p.Z, 1);
+                if (ring == rings - 1) continue;
+                var a = ring * sides + side; var b = ring * sides + (side + 1) % sides;
+                var c = a + sides; var d = b + sides;
+                triangles[next++] = a; triangles[next++] = b; triangles[next++] = c;
+                triangles[next++] = b; triangles[next++] = d; triangles[next++] = c;
+            }
+        }
+        var scan = new ImportedScan { Metadata = new("Учебный тоннель без RGB", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0) { IsSynthetic = true }, Points = points, Triangles = triangles };
+        var id = Guid.NewGuid();
+        return new([new(id, "Тоннель · уклон и поворот · синтетика", scan)], id, scan.Metadata)
+        {
+            AnalysisMode = ProjectAnalysisMode.Tunnel,
+            Tunnel = Services.TunnelAnalyzer.Create(Enumerable.Range(0, 31).Select(i => InspectionPoint.From(Center(i))).ToArray(), new())
+        };
+    }
+}
+
 /// <summary>A synthetic test building, not measurements or neural-network output.</summary>
 public static class CollegeBuildingFactory
 {

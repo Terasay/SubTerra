@@ -85,6 +85,7 @@ public sealed partial class MainViewModel
 
     private void InitializeProjectCommands()
     {
+        InitializeTunnelCommands();
         InitializeAlignmentCommands();
         LoadCollegeBuildingCommand = new(LoadCollegeBuildingAsync, () => CanChangeScenario && !HasRecovery && !HasEditPreview,
             ex => ReportError("Не удалось создать модель корпуса", ex));
@@ -124,6 +125,7 @@ public sealed partial class MainViewModel
     }
     private void NotifyProjectState()
     {
+        NotifyTunnelState();
         NotifyStructureState();
         foreach (var name in new[] { nameof(CanManageProject), nameof(CanEditObject), nameof(CanVoxelClean), nameof(CanUndoProject), nameof(CanRedoProject), nameof(UndoProjectText), nameof(RedoProjectText), nameof(ProjectSummary), nameof(HasEditPreview), nameof(EditPreviewText), nameof(IsScreenSelecting), nameof(SelectionTool), nameof(SelectionHint), nameof(CanSave), nameof(CanExport), nameof(CanSelectScanObject), nameof(CanAddAnnotation), nameof(CloudQualityVisible) }) Raise(name);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
@@ -198,8 +200,10 @@ public sealed partial class MainViewModel
     private void SetProject(ScanProject project, ScanProjectView view)
     {
         if (project.Structure is { } structure) project = project with { Structure = StructureProvenance.Refresh(structure, project) };
+        if (project.Tunnel is { } tunnel) project = project with { Tunnel = TunnelAnalyzer.Refresh(tunnel, project) };
         var sameView = ReferenceEquals(_projectView, view);
         _scanProject = project; _projectView = view;
+        SyncTunnelState();
         _dataset = new(null, project.ToSession(UserAnnotations.ToArray()));
         if (sameView)
         {
@@ -216,6 +220,7 @@ public sealed partial class MainViewModel
     }
     private void ApplyProjectView(ScanProjectView view)
     {
+        UpdateTunnelGeometry();
         SetStructureDocument(HasEditPreview ? null : _scanProject?.Structure);
         _importedGeometry = view.Geometry; _importedBounds = view.Data.Bounds;
         _pointOffsets = [view.Data.VisibleScan?.Points.Length ?? 0];

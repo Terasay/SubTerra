@@ -2,7 +2,10 @@
     <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries><Style x:Key="AnalyzeAction" TargetType="Button" BasedOn="{StaticResource Primary}"><Setter Property="Content" Value="Найти поверхности"/><Style.Triggers><DataTrigger Binding="{Binding HasStructureAnalysis}" Value="True"><Setter Property="Background" Value="#1B2B37"/><Setter Property="Foreground" Value="#DAE5EF"/><Setter Property="BorderBrush" Value="#354A59"/><Setter Property="Content" Value="Повторить поиск поверхностей"/></DataTrigger></Style.Triggers></Style></ResourceDictionary></UserControl.Resources>
     <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Margin="0,4,4,12">
-            <UniformGrid Columns="2" Margin="0,0,0,10">
+            <TextBlock Text="Тип пространства" Style="{StaticResource Muted}" Margin="0,0,0,5"/>
+            <ComboBox ItemsSource="{Binding ProjectModes}" SelectedItem="{Binding SelectedProjectMode}" DisplayMemberPath="Label" IsEnabled="{Binding CanEditTunnel}" AutomationProperties.Name="Тип пространства" Margin="0,0,0,10"/>
+            <UniformGrid Columns="3" Margin="0,0,0,10">
+                <RadioButton Content="Тоннель" Style="{StaticResource Segment}" IsChecked="{Binding IsTunnelAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Тоннель" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
                 <RadioButton Content="Поверхности" Style="{StaticResource Segment}" IsChecked="{Binding IsSurfaceAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Поверхности" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
                 <RadioButton Content="Люди" Style="{StaticResource Segment}" IsChecked="{Binding IsPeopleAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Люди" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
             </UniformGrid>
@@ -13,6 +16,7 @@
             </StackPanel></Border>
         </StackPanel>
         <Grid>
+        <ScrollViewer Padding="0,0,4,12" Visibility="{Binding IsTunnelAnalysis, Converter={StaticResource BoolVisibility}}"><views:TunnelAnalysisPanel/></ScrollViewer>
         <ScrollViewer Padding="0,0,4,12" Visibility="{Binding IsSurfaceAnalysis, Converter={StaticResource BoolVisibility}}"><StackPanel>
         <TextBlock Text="Анализ помещения" Style="{StaticResource Section}" Margin="0,0,0,12"/>
         <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16"><StackPanel>

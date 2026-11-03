@@ -26,6 +26,8 @@ public static class StructureProvenance
         document with { IsStale = !document.Inputs.OrderBy(i => i.ObjectId).SequenceEqual(Capture(project, token)) };
     public static void WarmHashes(ScanProject project, CancellationToken token) => _ = Capture(project, token);
 
+    public static StructureInputStamp[] CaptureInputs(ScanProject project, CancellationToken token = default) => Capture(project, token);
+
     private static StructureInputStamp[] Capture(ScanProject project, CancellationToken token) => project.Objects.OrderBy(o => o.Id).Select(o =>
     {
         token.ThrowIfCancellationRequested();

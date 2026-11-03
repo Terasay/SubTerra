@@ -27,6 +27,7 @@ public sealed partial class MainViewModel
     public bool IsAnalysisSection => WorkspaceSection == "Анализ";
     public bool IsSurfaceAnalysis => _analysisTool == "Поверхности";
     public bool IsPeopleAnalysis => _analysisTool == "Люди";
+    public bool IsTunnelAnalysis => _analysisTool == "Тоннель";
     public bool IsResultsSection => WorkspaceSection == "Результаты";
     public string WorkspaceView => _workspaceView;
     public bool Is3DView => WorkspaceView == "3D";
@@ -36,12 +37,12 @@ public sealed partial class MainViewModel
     public bool ShowPlanWorkspace => !Is3DView;
     public string InspectorTitle => _inspectorSubject == "Поверхность" ? "Свойства поверхности" : _inspectorSubject == "Комната" ? "Свойства комнаты" : _inspectorSubject == "Предмет" ? "Свойства предмета" : "Свойства скана";
     public bool ShowScanInspector => IsImported && _inspectorSubject == "Скан";
-    public bool ShowSurfaceInspector => IsImported && _inspectorSubject == "Поверхность";
-    public bool ShowRoomInspector => IsImported && _inspectorSubject == "Комната";
+    public bool ShowSurfaceInspector => IsImported && !IsTunnelMode && _inspectorSubject == "Поверхность";
+    public bool ShowRoomInspector => IsImported && !IsTunnelMode && _inspectorSubject == "Комната";
     public bool ShowObjectInspector => IsImported && _inspectorSubject == "Предмет";
     public bool ShowSimulationInspector => IsSimulation;
     public RoomPlan? CurrentRoomPlan => RoomPlanVisible ? _structureDocument?.Room : null;
-    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : UsesOriginalMaterials ? "Исходная модель · материалы и текстуры" : IsIndoorSurfaceView && HasReconstruction ? "Реконструкция · гипотеза геометрии" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
+    public string SourceBadge => !HasWorkspace ? "Рабочее пространство" : IsGeometryShading ? HasSyntheticScans ? "Синтетические данные · рельеф без RGB" : "Рельеф · нейтральный материал" : UsesOriginalMaterials ? "Исходная модель · материалы и текстуры" : IsIndoorSurfaceView && HasReconstruction ? "Реконструкция · гипотеза геометрии" : IsImported ? HasSyntheticScans ? "Есть синтетические данные" : "Импортированный скан" : "Синтетическая сцена";
     public string SurfaceAnalysisMethodText => _structureDocument?.Result.Options.UseNeuralClasses == true ? "Классы предложены экспериментальной MLP · требуется проверка" : "Геометрические классы · требуется проверка";
     public string AnalysisProgressText => StructureIsStale ? "Данные изменились · повторите поиск поверхностей" : !HasStructureAnalysis ? "01 / Обнаружение поверхностей" :
         StructureSurfaces.Any(s => s.Review == StructureReviewState.Proposed) ? "02 / Проверка кандидатов оператором" : HasRoom ? "04 / План готов к просмотру" : "03 / Построение плана комнаты";
@@ -85,7 +86,7 @@ public sealed partial class MainViewModel
     }
     private void SelectAnalysisTool(string tool)
     {
-        if (tool is not ("Поверхности" or "Люди")) return;
+        if (tool is not ("Поверхности" or "Люди" or "Тоннель")) return;
         _analysisTool = tool;
         if (tool == "Люди") { SelectWorkspaceView("3D"); IsInspectorOpen = false; }
         SelectSection("Анализ");
@@ -107,13 +108,14 @@ public sealed partial class MainViewModel
     }
     private void EnterWorkspace()
     {
-        IsSettingsOpen = false; IsRoomEditing = false; _analysisTool = "Поверхности";
+        IsSettingsOpen = false; IsRoomEditing = false;
+        _analysisTool = _dataset?.Session.Project?.AnalysisMode == ProjectAnalysisMode.Tunnel ? "Тоннель" : "Поверхности";
         IsWelcomeVisible = false; _workspaceSection = "Проект"; _workspaceView = "3D"; _inspectorSubject = "Скан";
         NotifyPresentationState();
     }
     private void NotifyPresentationState()
     {
-        foreach (var name in new[] { nameof(HasWorkspace), nameof(WorkspaceSection), nameof(IsProjectSection), nameof(IsProcessingSection), nameof(IsAnalysisSection), nameof(IsResultsSection), nameof(IsSurfaceAnalysis), nameof(IsPeopleAnalysis),
+        foreach (var name in new[] { nameof(HasWorkspace), nameof(WorkspaceSection), nameof(IsProjectSection), nameof(IsProcessingSection), nameof(IsAnalysisSection), nameof(IsResultsSection), nameof(IsSurfaceAnalysis), nameof(IsPeopleAnalysis), nameof(IsTunnelAnalysis),
             nameof(WorkspaceView), nameof(Is3DView), nameof(IsPlanView), nameof(IsSplitView), nameof(Show3DWorkspace), nameof(ShowPlanWorkspace),
             nameof(InspectorTitle), nameof(ShowScanInspector), nameof(ShowSurfaceInspector), nameof(ShowRoomInspector), nameof(ShowObjectInspector), nameof(ShowSimulationInspector),
             nameof(CurrentRoomPlan), nameof(SourceBadge), nameof(SurfaceAnalysisMethodText), nameof(AnalysisProgressText), nameof(ReviewProgressText), nameof(NextAnalysisStep) }) Raise(name);

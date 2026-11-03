@@ -21,7 +21,7 @@ public sealed class ImportedGeometry(ImportedScan scan)
     public IReadOnlyList<MaterialMesh> MaterialMeshes => _materialMeshes ??= CreateMaterialMeshes();
     private readonly (Vector3 Minimum, Vector3 Maximum) _bounds = scan.Bounds;
     public (Vector3 Minimum, Vector3 Maximum) Bounds => _bounds;
-    private readonly Dictionary<(int Limit, PointClipPlane? Clip, bool Height), PointGeometry3D> _clouds = [];
+    private readonly Dictionary<(int Limit, PointClipPlane? Clip, bool Height, bool Neutral), PointGeometry3D> _clouds = [];
     private readonly Dictionary<(bool Height, bool Coarse), MeshGeometry3D> _meshes = [];
     private ImportedScan? _meshPreview;
     private ImportedScan? _coarsePreview;
@@ -41,11 +41,11 @@ public sealed class ImportedGeometry(ImportedScan scan)
     }
     private static readonly Vector3[] Palette = [new(.10f, .30f, .52f), new(.06f, .73f, .79f), new(.13f, .84f, .54f),
         new(.56f, .91f, .27f), new(.92f, .87f, .22f), new(.97f, .55f, .18f)];
-    public PointGeometry3D Cloud(int limit, PointClipPlane? clip, bool height = false)
+    public PointGeometry3D Cloud(int limit, PointClipPlane? clip, bool height = false, bool neutral = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         limit = Math.Min(limit, scan.Points.Length);
-        var key = (limit, clip, height);
+        var key = (limit, clip, height, neutral);
         if (_clouds.TryGetValue(key, out var cached)) return cached;
         // Count and sample in two passes; clipping never creates an array of millions of indices.
         var eligible = clip is null ? scan.Points.Length : scan.Points.Count(p => clip.Value.Contains(p.Position));
@@ -56,7 +56,7 @@ public sealed class ImportedGeometry(ImportedScan scan)
             for (var i = 0; i < size; i++)
             {
                 var index = size < 2 ? 0 : (int)((long)i * (eligible - 1) / (size - 1));
-                positions.Add(scan.Points[index].Position); colors.Add(Color(index, height));
+                positions.Add(scan.Points[index].Position); colors.Add(neutral ? new(.72f, .76f, .80f, 1) : Color(index, height));
             }
         }
         else
@@ -67,7 +67,7 @@ public sealed class ImportedGeometry(ImportedScan scan)
                 if (!clip.Value.Contains(scan.Points[i].Position)) continue;
                 var target = size < 2 ? 0 : (int)((long)next * (eligible - 1) / (size - 1));
                 if (rank++ != target) continue;
-                positions.Add(scan.Points[i].Position); colors.Add(Color(i, height)); ++next;
+                positions.Add(scan.Points[i].Position); colors.Add(neutral ? new(.72f, .76f, .80f, 1) : Color(i, height)); ++next;
             }
         }
         if (_clouds.Count >= 2) _clouds.Clear();

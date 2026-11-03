@@ -9,19 +9,23 @@ public sealed partial class SessionStorage
 {
     private sealed record ObjectManifest(Guid Id, string Name, bool IsVisible, uint? Tint, ScanTransform? Transform,
         ImportMetadata Metadata, int PointCount, int TriangleCount, bool HasColors, bool HasMask, bool HasAppearance = false);
-    private sealed record ProjectManifest(ObjectManifest[] Objects, Guid ActiveObjectId, ImportMetadata? Origin, bool HasStructure = false);
+    private sealed record ProjectManifest(ObjectManifest[] Objects, Guid ActiveObjectId, ImportMetadata? Origin, bool HasStructure = false,
+        ProjectAnalysisMode AnalysisMode = ProjectAnalysisMode.Room, bool HasTunnel = false);
     private static string ObjectPrefix(Guid id) => $"objects/{id:N}/";
     private static void SaveProject(string path, ScanSession session, CancellationToken token, IProgress<double>? progress)
     {
         var project = session.Project!;
         project.Validate(token); ValidateAnnotations(session.Annotations);
         var structureBytes = PrepareStructure(project, token);
+        var tunnelBytes = PrepareTunnel(project, token);
         if (session.Frames.Length != 0 || session.Adjustments.Length != 0) throw new InvalidDataException("Проект сканов не содержит кадров симулятора.");
         var objects = project.Objects.Select(o => new ObjectManifest(o.Id, o.Name, o.IsVisible, o.Tint, o.Transform,
             o.Source.Metadata, o.Source.Points.Length, o.Source.Triangles.Length / 3, o.Source.Colors.Length > 0, o.Mask is not null, o.Source.Appearance is not null)).ToArray();
-        var manifest = new Manifest(objects.Any(o => o.HasAppearance) ? 11 : structureBytes is null ? 5 : project.Structure!.Rooms is not null ? 10 : project.Structure.Objects is not null ? 9 : project.Structure.Room is null ? 6 : project.Structure.Room.IsManuallyEdited ? 8 : 7, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
+        var schema = project.AnalysisMode != ProjectAnalysisMode.Room || tunnelBytes is not null ? 13 :
+            objects.Any(o => o.HasAppearance) ? 11 : structureBytes is null ? 5 : project.Structure!.Rooms is not null ? 10 : project.Structure.Objects is not null ? 9 : project.Structure.Room is null ? 6 : project.Structure.Room.IsManuallyEdited ? 8 : 7;
+        var manifest = new Manifest(schema, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
             Annotations: session.Annotations, TriangleCount: objects.Sum(o => o.TriangleCount),
-            Project: new(objects, project.ActiveObjectId, project.Origin, structureBytes is not null));
+            Project: new(objects, project.ActiveObjectId, project.Origin, structureBytes is not null, project.AnalysisMode, tunnelBytes is not null));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         if (bytes.Length > MaximumManifestBytes) throw new InvalidDataException("Описание проекта слишком большое.");
         AtomicWrite(path, temporary =>
@@ -32,6 +36,11 @@ public sealed partial class SessionStorage
             {
                 token.ThrowIfCancellationRequested();
                 using var stream = archive.CreateEntry(StructureEntry, CompressionLevel.Fastest).Open(); stream.Write(structureBytes);
+            }
+            if (tunnelBytes is not null)
+            {
+                token.ThrowIfCancellationRequested();
+                using var stream = archive.CreateEntry(TunnelEntry, CompressionLevel.Fastest).Open(); stream.Write(tunnelBytes);
             }
             for (var objectIndex = 0; objectIndex < project.Objects.Length; objectIndex++)
             {
@@ -69,8 +78,10 @@ public sealed partial class SessionStorage
             info.Objects.Any(o => o.PointCount is < 1 or > ImportedScan.MaximumPoints || o.TriangleCount is < 0 or > ImportedScan.MaximumTriangles) ||
             info.Objects.Sum(o => (long)o.PointCount) != manifest.PointCount || manifest.PointCount > ImportedScan.MaximumPoints ||
             info.Objects.Sum(o => (long)o.TriangleCount) != manifest.TriangleCount || manifest.TriangleCount > ImportedScan.MaximumTriangles ||
-            (manifest.Adjustments?.Length ?? 0) != 0 || (manifest.SchemaVersion != 11 && info.HasStructure != (manifest.SchemaVersion is 6 or 7 or 8 or 9 or 10)) ||
-            (manifest.SchemaVersion == 11) != info.Objects.Any(o => o.HasAppearance))
+            (manifest.Adjustments?.Length ?? 0) != 0 || (manifest.SchemaVersion <= 10 && info.HasStructure != (manifest.SchemaVersion is 6 or 7 or 8 or 9 or 10)) ||
+            (manifest.SchemaVersion < 13 && (manifest.SchemaVersion == 11) != info.Objects.Any(o => o.HasAppearance)) ||
+            !Enum.IsDefined(info.AnalysisMode) || (manifest.SchemaVersion < 13 && (info.AnalysisMode != ProjectAnalysisMode.Room || info.HasTunnel)) ||
+            (info.HasTunnel ? archive.Entries.Count(e => e.FullName == TunnelEntry) != 1 : archive.Entries.Any(e => e.FullName == TunnelEntry)))
             throw new InvalidDataException("Некорректное описание проекта сканов.");
         var annotations = manifest.Annotations ?? []; ValidateAnnotations(annotations);
         var objects = new ScanObject[info.Objects.Length];
@@ -95,14 +106,48 @@ public sealed partial class SessionStorage
             objects[i] = new(o.Id, o.Name, scan, o.IsVisible, o.Tint, o.Transform, mask);
             progress?.Report((i + 1d) / objects.Length * 95);
         }
-        var project = new ScanProject(objects, info.ActiveObjectId, info.Origin);
+        var project = new ScanProject(objects, info.ActiveObjectId, info.Origin) { AnalysisMode = info.AnalysisMode };
         project.Validate(token);
         if (info.HasStructure) project = project with { Structure = ReadStructure(archive, project, token) };
+        if (info.HasTunnel) project = project with { Tunnel = ReadTunnel(archive, project, token) };
         if (manifest.SchemaVersion <= 10 && ((manifest.SchemaVersion == 10) != (project.Structure?.Rooms is not null) ||
             (manifest.SchemaVersion < 10 && ((manifest.SchemaVersion == 9) != (project.Structure?.Objects is not null) ||
             (manifest.SchemaVersion < 9 && ((manifest.SchemaVersion is 7 or 8) != (project.Structure?.Room is not null) ||
             (manifest.SchemaVersion == 8) != (project.Structure?.Room?.IsManuallyEdited == true))))))) throw new InvalidDataException("Анализ не соответствует версии проекта.");
         progress?.Report(100);
         return project.ToSession(annotations);
+    }
+
+    private const string TunnelEntry = "tunnel/analysis.json";
+    private const int MaximumTunnelBytes = 64 * 1024 * 1024;
+    private static readonly JsonSerializerOptions TunnelJson = new() { IgnoreReadOnlyProperties = true, MaxDepth = 16 };
+
+    private static byte[]? PrepareTunnel(ScanProject project, CancellationToken token)
+    {
+        if (project.Tunnel is not { } document) return null;
+        TunnelAnalyzer.Validate(document with { IsStale = true }, project, token);
+        document = TunnelAnalyzer.Refresh(document, project, token);
+        TunnelAnalyzer.Validate(document, project, token);
+        token.ThrowIfCancellationRequested();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, TunnelJson);
+        if (bytes.Length > MaximumTunnelBytes) throw new InvalidDataException("Анализ тоннеля превышает допустимый размер.");
+        return bytes;
+    }
+
+    private static TunnelAnalysisDocument ReadTunnel(ZipArchive archive, ScanProject project, CancellationToken token)
+    {
+        var entries = archive.Entries.Where(e => e.FullName == TunnelEntry).ToArray();
+        if (entries.Length != 1 || entries[0].Length is < 1 or > MaximumTunnelBytes)
+            throw new InvalidDataException("Нет анализа тоннеля или его размер некорректен.");
+        using var stream = entries[0].Open();
+        var bytes = new byte[(int)entries[0].Length]; stream.ReadExactly(bytes);
+        token.ThrowIfCancellationRequested();
+        TunnelAnalysisDocument document;
+        try { document = JsonSerializer.Deserialize<TunnelAnalysisDocument>(bytes, TunnelJson) ?? throw new InvalidDataException("Нет данных анализа тоннеля."); }
+        catch (JsonException ex) { throw new InvalidDataException("Повреждено описание анализа тоннеля.", ex); }
+        TunnelAnalyzer.Validate(document with { IsStale = true }, project, token);
+        document = TunnelAnalyzer.Refresh(document, project, token);
+        TunnelAnalyzer.Validate(document, project, token);
+        return document;
     }
 }

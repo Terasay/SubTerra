@@ -38,12 +38,12 @@ public sealed partial class MainViewModel
     public bool CanFindPeople => IsImported && CanInteract && !HasEditPreview && !HasRecovery && !IsScreenSelecting &&
         _scanProject?.Objects.Any(o => o.IsVisible && o.Source.Colors.Length > 0) == true;
     public bool CanDetectPeople => IsAdministrator && CanFindPeople;
-    public bool CanSearchPeople => CanDetectPeople && HasStructureAnalysis && !StructureIsStale && StructureSurfaces.Any(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected);
-    public bool PeopleNeedFloor => CanDetectPeople && !CanSearchPeople;
+    public bool CanSearchPeople => CanDetectPeople && !IsTunnelMode && HasStructureAnalysis && !StructureIsStale && StructureSurfaces.Any(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected);
+    public bool PeopleNeedFloor => CanDetectPeople && !IsTunnelMode && !CanSearchPeople;
     public string PeopleAvailabilityHint => !IsImported ? "Импортируйте цветной скан для поиска людей." : IsGuest ? "Нажмите «Найти людей», чтобы войти и запустить поиск." :
         !CanInteract ? "Дождитесь завершения текущей операции." : HasRecovery ? "Сначала восстановите или отклоните автосохранение." :
         HasEditPreview ? "Примените или отмените предварительную очистку." : IsScreenSelecting ? "Завершите выделение точек." :
-        !CanDetectPeople ? "Нужен хотя бы один видимый скан с исходными RGB-цветами." : PeopleNeedFloor ?
+        !CanDetectPeople ? "Нужен хотя бы один видимый скан с исходными RGB-цветами." : IsTunnelMode ? "В тоннеле проверяется текущий RGB-вид. Поиск людей по неокрашенному 3D-облаку пока не реализован." : PeopleNeedFloor ?
         "Поиск подготовит ракурсы автоматически. Если пол не найдётся, будет проверен текущий вид." :
         "Обзор помещения: восемь ракурсов изнутри скана.";
     public bool CanReviewPerson => CanDetectPeople && SelectedPerson is not null;
@@ -117,10 +117,11 @@ public sealed partial class MainViewModel
     private async Task RunPeopleAnalysisAsync(bool survey, bool prepareViews)
     {
         if (!(survey && !prepareViews ? CanSearchPeople : CanDetectPeople) || _scanProject is not { } project) return;
+        if (IsTunnelMode) { survey = false; prepareViews = false; }
         var poses = new[] { new ScanViewPose(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
             new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z),
             new((float)Camera.UpDirection.X, (float)Camera.UpDirection.Y, (float)Camera.UpDirection.Z), (float)Camera.FieldOfView) };
-        var surfaces = !StructureIsStale ? StructureSurfaces.ToArray() : [];
+        var surfaces = !IsTunnelMode && !StructureIsStale ? StructureSurfaces.ToArray() : [];
         var threshold = (float)PersonThreshold; var clip = ActiveClipPlane;
         EndInspection(); ReturnToOverview();
         var token = BeginOperation("Поиск людей · подготовка ракурсов");

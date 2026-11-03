@@ -188,6 +188,180 @@ public sealed class WorkspacePresentationTests
         CheckBindings(people); ThemeRenderingTests.CheckReadableText(people); SavePreview(people, "people-analysis.png");
     });
 
+    [Fact]
+    public Task TunnelDemoSupportsModeHistoryAndReadOnlySavedGuestViewing() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.True(vm.IsTunnelMode); Assert.True(vm.IsGeometryShading); Assert.True(vm.HasTunnelSections);
+        Assert.False(vm.ReconstructRoomCommand.CanExecute(null));
+        var axis = vm.TunnelAxisText; var count = vm.TunnelSections.Count;
+        vm.SelectedProjectMode = vm.ProjectModes.Single(m => m.Mode == ProjectAnalysisMode.Room);
+        Assert.False(vm.IsTunnelMode); Assert.False(vm.HasTunnelSections);
+        await vm.UndoProjectCommand.ExecuteAsync();
+        Assert.True(vm.IsTunnelMode); Assert.True(vm.IsGeometryShading); Assert.True(vm.HasTunnelSections);
+        Assert.Equal(axis, vm.TunnelAxisText); Assert.Equal(count, vm.TunnelSections.Count);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.False(vm.IsTunnelMode);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.IsTunnelMode);
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "tunnel.subterra"); Assert.True(await vm.SaveAsync(path));
+            var saved = await new SessionStorage().LoadAsync(path);
+            Assert.Equal(ProjectAnalysisMode.Tunnel, saved.Project!.AnalysisMode);
+            Assert.All(saved.Project.Objects, obj => { Assert.Empty(obj.Source.Colors); Assert.True(obj.Source.HasMesh); });
+            using var guest = Vm(false); await guest.OpenAsync(path);
+            Assert.True(guest.IsTunnelMode); Assert.True(guest.HasTunnelSections); Assert.True(guest.IsGeometryShading);
+            Assert.Equal(axis, guest.TunnelAxisText); Assert.Equal(count, guest.TunnelSections.Count);
+            Assert.False(guest.CanEditTunnel); Assert.False(guest.ApplyTunnelAxisCommand.CanExecute(null));
+            Assert.False(guest.AnalyzeTunnelCommand.CanExecute(null));
+            var dirty = guest.HasUnsavedChanges;
+            guest.SelectedProjectMode = guest.ProjectModes.Single(m => m.Mode == ProjectAnalysisMode.Room);
+            guest.TunnelAxisText = "0 0 0\n1 0 0";
+            Assert.True(guest.IsTunnelMode); Assert.Equal(axis, guest.TunnelAxisText);
+            guest.SelectedTunnelSection = guest.TunnelSections.Last();
+            Assert.Same(guest.TunnelSections.Last().Section, guest.CurrentTunnelSection);
+            Assert.True(guest.FocusTunnelSectionCommand.CanExecute(null));
+            guest.IsGeometryShading = false; Assert.False(guest.IsGeometryShading);
+            Assert.Equal(dirty, guest.HasUnsavedChanges); Assert.False(guest.HasNotification, guest.Notification);
+        }
+        finally { Directory.Delete(directory, true); }
+    });
+
+    [Fact]
+    public Task InvalidTunnelDraftPreservesLastResultsAndHistoryUntilValidChangesAreApplied() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.HasTunnelSections, vm.Notification);
+        var axis = vm.TunnelAxisText; var section = vm.CurrentTunnelSection; var count = vm.TunnelSections.Count;
+        var undo = vm.UndoProjectText;
+        vm.TunnelAxisText = "0 0\n2 0 0"; Assert.True(vm.TunnelDraftPending);
+        vm.ApplyTunnelAxisCommand.Execute(null);
+        Assert.True(vm.HasNotification); Assert.True(vm.HasTunnelSections); Assert.Same(section, vm.CurrentTunnelSection);
+        Assert.Equal(count, vm.TunnelSections.Count); Assert.Equal(undo, vm.UndoProjectText);
+        await vm.AnalyzeTunnelAsync();
+        Assert.True(vm.HasTunnelSections); Assert.Same(section, vm.CurrentTunnelSection); Assert.Equal(undo, vm.UndoProjectText);
+        vm.ResetTunnelDraftCommand.Execute(null);
+        Assert.Equal(axis, vm.TunnelAxisText); Assert.False(vm.TunnelDraftPending);
+        vm.TunnelSectionSpacing = 0; vm.ApplyTunnelAxisCommand.Execute(null);
+        Assert.True(vm.HasTunnelSections); Assert.Same(section, vm.CurrentTunnelSection); Assert.Equal(undo, vm.UndoProjectText);
+        vm.ResetTunnelDraftCommand.Execute(null);
+        vm.TunnelAxisText = "0 0 2\n3 0 2"; vm.ApplyTunnelAxisCommand.Execute(null);
+        Assert.False(vm.HasTunnelSections); Assert.Empty(vm.TunnelSections);
+        Assert.False(vm.TunnelDraftPending); Assert.NotEqual(undo, vm.UndoProjectText);
+        await vm.UndoProjectCommand.ExecuteAsync();
+        Assert.True(vm.HasTunnelSections); Assert.Equal(axis, vm.TunnelAxisText); Assert.Equal(count, vm.TunnelSections.Count);
+    });
+
+    [Fact]
+    public Task TransformingTunnelScanHidesStaleMeasurementsAndUndoRestoresThem() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.HasTunnelSections, vm.Notification);
+        var count = vm.TunnelSections.Count;
+        vm.ObjectX += .4; await vm.ApplyObjectCommand.ExecuteAsync();
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.True(vm.TunnelIsStale); Assert.False(vm.HasTunnelSections); Assert.Null(vm.CurrentTunnelSection);
+        Assert.Empty(vm.TunnelSectionGeometry!.Positions!);
+        await vm.UndoProjectCommand.ExecuteAsync();
+        Assert.False(vm.TunnelIsStale); Assert.True(vm.HasTunnelSections); Assert.NotNull(vm.CurrentTunnelSection);
+        Assert.Equal(count, vm.TunnelSections.Count); Assert.NotEmpty(vm.TunnelSectionGeometry!.Positions!);
+    });
+
+    [Fact]
+    public Task SwitchingReviewedRoomToTunnelHidesRoomGeometryWithoutDeletingSavedRoom() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters, LocalOrigin: false));
+        await vm.AnalyzeStructureAsync();
+        foreach (var surface in vm.StructureSurfaces.Where(s => s.Kind != StructureSurfaceKind.Unknown).ToArray())
+        { vm.SelectedStructureSurface = vm.StructureSurfaces.Single(s => s.Id == surface.Id); vm.ConfirmStructureSurfaceCommand.Execute(null); }
+        await vm.BuildRoomAsync(); Assert.True(vm.HasRoom); Assert.True(vm.RoomVisible);
+        vm.IsRoomEditing = true;
+        vm.SelectedProjectMode = vm.ProjectModes.Single(m => m.Mode == ProjectAnalysisMode.Tunnel);
+        Assert.True(vm.IsTunnelMode); Assert.True(vm.HasRoom);
+        Assert.False(vm.RoomVisible); Assert.False(vm.RoomPlanVisible); Assert.Null(vm.CurrentRoomPlan);
+        Assert.False(vm.CanBuildRoom); Assert.False(vm.CanEditRoom);
+        Assert.False(vm.AnalyzeStructureCommand.CanExecute(null)); Assert.False(vm.ReconstructRoomCommand.CanExecute(null));
+        await vm.UndoProjectCommand.ExecuteAsync();
+        Assert.False(vm.IsTunnelMode); Assert.True(vm.HasRoom); Assert.True(vm.RoomVisible); Assert.NotNull(vm.CurrentRoomPlan);
+    });
+
+    [Fact]
+    public Task TunnelFlightNotifiesLampAndEditorBindingsAndRestoresEditingOnReturn() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.IsGeometryShading); Assert.True(vm.CanEditTunnel); Assert.False(vm.ReliefLampVisible);
+        var lampStates = new List<bool>(); var editStates = new List<bool>();
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.ReliefLampVisible)) lampStates.Add(vm.ReliefLampVisible);
+            if (e.PropertyName == nameof(MainViewModel.CanEditTunnel)) editStates.Add(vm.CanEditTunnel);
+        };
+        vm.FlyCommand.Execute(null);
+        Assert.True(vm.IsFlying); Assert.True(vm.ReliefLampVisible); Assert.False(vm.CanEditTunnel);
+        Assert.Contains(true, lampStates); Assert.Contains(false, editStates);
+        Assert.True(vm.AppendTunnelCameraCommand.CanExecute(null)); Assert.False(vm.ApplyTunnelAxisCommand.CanExecute(null));
+        vm.ReturnToOverview();
+        Assert.False(vm.IsFlying); Assert.False(vm.ReliefLampVisible); Assert.True(vm.CanEditTunnel);
+        Assert.False(lampStates.Last()); Assert.True(editStates.Last());
+        Assert.True(vm.ApplyTunnelAxisCommand.CanExecute(null)); Assert.False(vm.HasNotification, vm.Notification);
+    });
+
+    [Fact]
+    public Task LoadingSimulationAfterTunnelRemovesAxisProfilesAndTunnelAnalysisSelection() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.IsTunnelAnalysis); Assert.NotEmpty(vm.TunnelAxisGeometry!.Positions!);
+        Assert.NotEmpty(vm.TunnelSectionGeometry!.Positions!);
+        await vm.LoadDemoAsync(ScenarioDefinition.All.Single(s => s.Id == "mine"));
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.IsSimulation);
+        Assert.False(vm.IsTunnelMode); Assert.False(vm.IsGeometryShading); Assert.False(vm.HasTunnelSections);
+        Assert.Empty(vm.TunnelSections); Assert.Null(vm.CurrentTunnelSection); Assert.Empty(vm.TunnelAxisText);
+        Assert.Empty(vm.TunnelAxisGeometry!.Positions!); Assert.Empty(vm.TunnelAxisNodes!.Positions!);
+        Assert.Empty(vm.TunnelSectionGeometry!.Positions!);
+        Assert.True(vm.IsSurfaceAnalysis); Assert.False(vm.IsTunnelAnalysis);
+    });
+
+    [Fact]
+    public Task CancellingTunnelCleanupRestoresOriginalAxisAndMeasuredSectionWithoutHistoryChanges() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        var axis = vm.TunnelAxisGeometry!.Positions!.ToArray();
+        var section = vm.CurrentTunnelSection; var count = vm.TunnelSections.Count; var undo = vm.UndoProjectText;
+        vm.CleanMaxX = (vm.CleanMinX + vm.CleanMaxX) / 2;
+        await vm.PreviewBoxAsync(true);
+        Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasEditPreview);
+        Assert.False(vm.HasTunnelSections); Assert.Null(vm.CurrentTunnelSection);
+        Assert.Empty(vm.TunnelAxisGeometry!.Positions!); Assert.Empty(vm.TunnelSectionGeometry!.Positions!);
+        vm.CancelCleanPreview();
+        Assert.False(vm.HasEditPreview); Assert.False(vm.TunnelIsStale); Assert.True(vm.HasTunnelSections);
+        Assert.Same(section, vm.CurrentTunnelSection); Assert.Equal(count, vm.TunnelSections.Count);
+        Assert.Equal(axis, vm.TunnelAxisGeometry!.Positions!); Assert.NotEmpty(vm.TunnelSectionGeometry!.Positions!);
+        Assert.Equal(undo, vm.UndoProjectText);
+    });
+
+    [Theory]
+    [InlineData(268)]
+    [InlineData(312)]
+    public Task TunnelToolsResolveBindingsAndShowSelectedMeasuredProfileInNarrowPanels(int width) => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm(); await vm.LoadTunnelDemoAsync();
+        Assert.True(vm.HasTunnelSections, vm.Notification);
+        var panel = new TunnelAnalysisPanel { DataContext = vm }; ThemeRenderingTests.Layout(panel, width, 1800);
+        await Dispatcher.Yield(DispatcherPriority.DataBind); panel.UpdateLayout();
+        CheckBindings(panel); ThemeRenderingTests.CheckReadableText(panel);
+        var axis = Descendants(panel).OfType<TextBox>().Single(b => AutomationProperties.GetName(b) == "Точки оси тоннеля");
+        Assert.True(axis.IsEnabled); Assert.True(axis.ActualWidth > 200 && axis.ActualWidth <= width);
+        var canvas = Descendants(panel).OfType<TunnelSectionCanvas>().Single();
+        Assert.Same(vm.CurrentTunnelSection, canvas.Section);
+        vm.SelectedTunnelSection = vm.TunnelSections.Last();
+        await Dispatcher.Yield(DispatcherPriority.DataBind); panel.UpdateLayout();
+        Assert.Same(vm.CurrentTunnelSection, canvas.Section);
+        Assert.True(canvas.ActualWidth > 200 && canvas.ActualWidth <= width);
+        Assert.True(canvas.ActualHeight >= 200);
+        SavePreview(panel, $"tunnel-panel-{width}.png");
+    });
+
     private static bool IsShown(DependencyObject element)
     {
         // IsVisible also requires a native window, whereas these tests render offscreen.

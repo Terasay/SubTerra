@@ -26,7 +26,7 @@ public sealed partial class MainViewModel
         get => _structureDocument?.ActiveRoomId ?? Guid.Empty;
         set
         {
-            if (!CanInteract || HasEditPreview || value == SelectedRoomId || _structureDocument is not { } document || document.Rooms?.FirstOrDefault(r => r.Id == value) is not { } selected) return;
+            if (!CanInteract || IsTunnelMode || HasEditPreview || value == SelectedRoomId || _structureDocument is not { } document || document.Rooms?.FirstOrDefault(r => r.Id == value) is not { } selected) return;
             var next = document with { ActiveRoomId = value, Room = selected.Plan };
             _scanProject = _scanProject! with { Structure = next }; _dataset = new(null, _scanProject.ToSession(UserAnnotations.ToArray()));
             SetStructureDocument(next);
@@ -41,9 +41,9 @@ public sealed partial class MainViewModel
     public RelayCommand ApplyRoomIdentityCommand { get; private set; } = null!;
     private int _roomVertexIndex;
     private double _roomVertexX, _roomVertexY, _openingStart, _openingEnd = 1;
-    public bool CanEditRoom => CanManageProject && !IsScreenSelecting && HasRoom && !RoomIsStale;
+    public bool CanEditRoom => CanManageProject && !IsTunnelMode && !IsScreenSelecting && HasRoom && !RoomIsStale;
     public bool HasRoomEdits => _structureDocument?.Room?.IsManuallyEdited == true;
-    public bool CanResetRoomEdits => CanManageProject && !IsScreenSelecting && HasRoomEdits;
+    public bool CanResetRoomEdits => CanManageProject && !IsTunnelMode && !IsScreenSelecting && HasRoomEdits;
     public IReadOnlyList<RoomVertexChoice> RoomVertices => _structureDocument?.Room?.FloorContour.Select((p, i) => new RoomVertexChoice(i, $"Вершина {i + 1} · X {p.X:F3}, Y {p.Y:F3}")).ToArray() ?? [];
     public int RoomVertexIndex
     {
@@ -63,11 +63,11 @@ public sealed partial class MainViewModel
     public RelayCommand ResetRoomEditsCommand { get; private set; } = null!;
     public AsyncRelayCommand BuildRoomCommand { get; private set; } = null!;
     public RelayCommand RemoveRoomCommand { get; private set; } = null!;
-    public bool CanBuildRoom => CanManageProject && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
+    public bool CanBuildRoom => CanManageProject && !IsTunnelMode && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
     public bool HasRoom => _structureDocument?.Room is not null;
     public bool RoomIsStale => HasRoom && _roomIsStale;
-    public bool RoomVisible => ShowRoom && IsImported && (HasRoom && !RoomIsStale || ShowAllRooms && _structureDocument is { } d && SavedRooms.Any(r => RoomPlanner.IsCurrent(d with { Room = r.Plan })));
-    public bool RoomPlanVisible => HasRoom && !RoomIsStale;
+    public bool RoomVisible => ShowRoom && IsImported && !IsTunnelMode && (HasRoom && !RoomIsStale || ShowAllRooms && _structureDocument is { } d && SavedRooms.Any(r => RoomPlanner.IsCurrent(d with { Room = r.Plan })));
+    public bool RoomPlanVisible => !IsTunnelMode && HasRoom && !RoomIsStale;
     public string RoomName { get => _roomName; set { if (value is not null) Set(ref _roomName, value); } }
     public string RoomBuildMessage { get => _roomBuildMessage; private set => Set(ref _roomBuildMessage, value); }
     public bool ShowRoom { get => _showRoom; set { if (Set(ref _showRoom, value)) Raise(nameof(RoomVisible)); } }
@@ -125,7 +125,7 @@ public sealed partial class MainViewModel
             if (_structureDocument is not { } document) return;
             var rooms = document.Rooms?.Where(r => r.Id != document.ActiveRoomId).ToArray(); var selected = rooms?.FirstOrDefault();
             CommitStructureDocument(document with { Room = selected?.Plan, Rooms = rooms, ActiveRoomId = selected?.Id ?? Guid.Empty }, "удаление плана комнаты");
-        }, () => CanManageProject && HasRoom && !IsScreenSelecting);
+        }, () => CanManageProject && !IsTunnelMode && HasRoom && !IsScreenSelecting);
     }
     public async Task BuildRoomAsync()
     {
@@ -202,6 +202,11 @@ public sealed partial class MainViewModel
     }
     private void UpdateRoomDisplay()
     {
+        if (IsTunnelMode)
+        {
+            RoomOutline = RoomGapOutline = null; RoomPlanPoints = null; RoomPlanGaps = null;
+            return;
+        }
         if (_structureDocument is { } document && ShowAllRooms && SavedRooms.Count > 0)
         {
             var outlines = new List<System.Numerics.Vector3>(); var openings = new List<System.Numerics.Vector3>();

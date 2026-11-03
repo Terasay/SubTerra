@@ -1,0 +1,39 @@
+<UserControl x:Class="SubTerra.Views.TunnelAnalysisPanel" Foreground="{DynamicResource TextBrush}"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SubTerra.Views">
+    <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+    <StackPanel>
+        <TextBlock Text="Ось и сечения тоннеля" Style="{StaticResource Section}" TextWrapping="Wrap"/>
+        <TextBlock Text="Анализ использует форму точек. RGB и плоскость пола не требуются. Выберите тип пространства «Тоннель / шахта»." Style="{StaticResource Muted}" Margin="0,8,0,12"/>
+        <Button Content="Учебный тоннель · без RGB" Command="{Binding LoadTunnelDemoCommand}" Margin="0,0,0,14"/>
+        <TextBlock Text="01  Задать ось внутри прохода" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="Одна строка — X Y Z в метрах. Точки идут по порядку движения. Для развилки рассчитывайте каждую ветвь отдельно." Style="{StaticResource Muted}"/>
+        <TextBox Text="{Binding TunnelAxisText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Height="110" FontFamily="Consolas" IsEnabled="{Binding CanEditTunnel}" AutomationProperties.Name="Точки оси тоннеля" Margin="0,8,0,8"/>
+        <Button Content="Середина измерения → точка оси" Command="{Binding AppendTunnelMidpointCommand}" Margin="0,0,0,6" ToolTip="Измерьте расстояние между противоположными сторонами прохода. Добавится середина этих двух точек."/>
+        <Button Content="Положение камеры → точка оси" Command="{Binding AppendTunnelCameraCommand}" Margin="0,0,0,8" ToolTip="Добавляйте точки во время полёта внутри тоннеля; затем выйдите в обзор для расчёта."/>
+        <TextBlock Text="Ось должна проходить внутри одного прохода. В этой версии профиль описывается вокруг оси; отдельные ниши и предметы могут влиять на результат." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
+        <Grid IsEnabled="{Binding CanEditTunnel}">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="82"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="Шаг сечений, м" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,6"/>
+            <TextBox Grid.Column="1" Text="{Binding TunnelSectionSpacing, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Шаг сечений тоннеля" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="1" Text="Толщина слоя, м" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,6"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TunnelSliceThickness, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Толщина сечения тоннеля" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="2" Text="Радиус поиска, м" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,6"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TunnelMaximumRadius, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Радиус сечения тоннеля" Margin="0,0,0,6"/>
+        </Grid>
+        <TextBlock Text="Изменения оси / параметров ещё не применены" Foreground="#FAD582" TextWrapping="Wrap" Visibility="{Binding TunnelDraftPending, Converter={StaticResource BoolVisibility}}" Margin="0,4,0,8"/>
+        <WrapPanel Margin="0,0,0,8"><Button Content="Применить ось" Command="{Binding ApplyTunnelAxisCommand}" Margin="0,0,6,6"/><Button Content="Сбросить черновик" Command="{Binding ResetTunnelDraftCommand}" Margin="0,0,0,6"/></WrapPanel>
+        <Button Content="Рассчитать сечения" Command="{Binding AnalyzeTunnelCommand}" Style="{StaticResource Primary}"/>
+        <TextBlock Text="{Binding TunnelSummary}" Style="{StaticResource Muted}" Margin="0,10,0,16"/>
+        <TextBlock Text="02  Проверить профиль" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <ListBox ItemsSource="{Binding TunnelSections}" SelectedItem="{Binding SelectedTunnelSection}" IsEnabled="{Binding HasTunnelSections}" MaxHeight="180" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Сечения тоннеля">
+            <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Details}" Style="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <Border Background="#0B161E" BorderBrush="#354A59" BorderThickness="1" Margin="0,10,0,8"><local:TunnelSectionCanvas Section="{Binding CurrentTunnelSection}" MaximumContourGap="{Binding TunnelContourGap}" Height="220" AutomationProperties.Name="Поперечный профиль тоннеля"/></Border>
+        <TextBlock Text="{Binding TunnelSectionMetrics}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <Button Content="Показать сечение в 3D" Command="{Binding FocusTunnelSectionCommand}"/>
+        <TextBlock Text="Разрывы профиля оставлены открытыми. Угловое покрытие — доля направлений с точками, не оценка точности. Полная площадь выводится только для замкнутого профиля." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
+    </StackPanel>
+</UserControl>

@@ -212,6 +212,179 @@ public sealed class StructureAnalysisTests
     public async Task InvalidToleranceIsRejected(double tolerance) => await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
         Analyze(Project(Cloud([Vector3.Zero])), new(DistanceTolerance: tolerance)));
 
+    [Fact]
+    public async Task SlopingTunnelSectionsRecoverMeasuredEllipseWithoutRgbOrFlattening()
+    {
+        Vector3 a = new(0, 0, 0), b = new(6, 0, 1.5f);
+        var obj = Cloud(TunnelTube(a, b)); var project = Project(obj);
+        var original = obj.Source.Points.ToArray();
+        var document = await TunnelAnalyzer.AnalyzeAsync(project, [InspectionPoint.From(a), InspectionPoint.From(b)], TunnelOptions());
+        Assert.InRange(document.AxisLength, 6.18, 6.19);
+        Assert.False(document.IsStale); Assert.NotEmpty(document.Sections);
+        Assert.Equal(project.PointCount, document.SourcePointCount);
+        Assert.Equal(project.PointCount, document.SampleCount);
+        foreach (var section in document.Sections)
+        {
+            Assert.True(section.IsClosed); Assert.Equal(section.AngularBins, section.CoveredBins);
+            Assert.InRange(section.Width, 3.97, 4.03); Assert.InRange(section.Height, 2.97, 3.03);
+            Assert.InRange(section.AreaSquareMeters!.Value, 9.25, 9.6);
+            Assert.InRange(section.SlopeDegrees, 14.03, 14.05);
+            Assert.InRange(Vector3.Distance(section.Center.Position, a + Vector3.Normalize(b - a) * (float)section.Chainage), 0, .0001);
+            Assert.InRange(Math.Abs(Vector3.Dot(section.Forward.Position, section.Up.Position)), 0, .00001);
+            Assert.InRange(Math.Abs(Vector3.Dot(section.Right.Position, section.Up.Position)), 0, .00001);
+        }
+        Assert.Equal(original, obj.Source.Points); Assert.Empty(obj.Source.Colors);
+        TunnelAnalyzer.Validate(document, project);
+    }
+
+    [Fact]
+    public async Task TunnelSectionMeasurementsAndProvenanceIgnoreRgbAndObjectTint()
+    {
+        Vector3 a = new(0, 0, 0), b = new(4, 0, 1);
+        var obj = Cloud(TunnelTube(a, b)); var plain = Project(obj);
+        var colored = Project(obj with { Tint = 0xFF0000, Source = new ImportedScan
+        {
+            Metadata = obj.Source.Metadata, Points = obj.Source.Points,
+            Colors = obj.Source.Points.Select((_, i) => (uint)(i * 7919) & 0xFFFFFFu).ToArray()
+        } });
+        InspectionPoint[] axis = [InspectionPoint.From(a), InspectionPoint.From(b)];
+        var first = await TunnelAnalyzer.AnalyzeAsync(plain, axis, TunnelOptions());
+        var second = await TunnelAnalyzer.AnalyzeAsync(colored, axis, TunnelOptions());
+        Assert.Equal(first.Inputs, second.Inputs);
+        Assert.Equal(first.Sections.Length, second.Sections.Length);
+        for (var i = 0; i < first.Sections.Length; i++)
+        {
+            var x = first.Sections[i]; var y = second.Sections[i];
+            Assert.Equal((x.Chainage, x.Center, x.Forward, x.Width, x.Height, x.AreaSquareMeters, x.CoveredBins),
+                (y.Chainage, y.Center, y.Forward, y.Width, y.Height, y.AreaSquareMeters, y.CoveredBins));
+            Assert.Equal(x.Contour, y.Contour);
+        }
+        Assert.False(TunnelAnalyzer.Refresh(first, colored).IsStale);
+    }
+
+    [Fact]
+    public async Task MissingTunnelRoofRemainsOpenAndDoesNotInventAnArea()
+    {
+        Vector3 a = new(0, 0, 0), b = new(4, 0, 0);
+        var obj = Cloud(TunnelTube(a, b, angle => angle < Math.PI / 6 || angle > Math.PI * 5 / 6));
+        var options = TunnelOptions();
+        var document = await TunnelAnalyzer.AnalyzeAsync(Project(obj), [InspectionPoint.From(a), InspectionPoint.From(b)], options);
+        Assert.NotEmpty(document.Sections);
+        foreach (var section in document.Sections)
+        {
+            Assert.False(section.IsClosed); Assert.Null(section.AreaSquareMeters);
+            Assert.InRange(section.Coverage, .55, .75);
+            Assert.All(section.Contour, p => Assert.True(p.SupportCount > 0));
+            Assert.Contains(Enumerable.Range(0, section.Contour.Length), i => !section.ConnectsToNext(i, options.MaximumContourGap));
+        }
+    }
+
+    [Fact]
+    public async Task BentTunnelUsesLocalTransverseFramesAndCumulativeAxisDistance()
+    {
+        Vector3 a = new(0, 0, 0), corner = new(10, 0, 1), b = new(10, 10, 2);
+        var project = Project(Cloud(TunnelTube(a, corner).Concat(TunnelTube(corner, b))));
+        var options = TunnelOptions() with { MaximumRadius = 3 };
+        var document = await TunnelAnalyzer.AnalyzeAsync(project,
+            [InspectionPoint.From(a), InspectionPoint.From(corner), InspectionPoint.From(b)], options);
+        Assert.InRange(document.AxisLength, 20.09, 20.11);
+        var first = document.Sections.MinBy(s => Math.Abs(s.Chainage - 3))!;
+        var second = document.Sections.MinBy(s => Math.Abs(s.Chainage - 17))!;
+        Assert.InRange(Vector3.Dot(first.Forward.Position, Vector3.Normalize(corner - a)), .9999, 1.0001);
+        Assert.InRange(Vector3.Dot(second.Forward.Position, Vector3.Normalize(b - corner)), .9999, 1.0001);
+        foreach (var section in new[] { first, second })
+        {
+            Assert.True(section.IsClosed);
+            Assert.InRange(section.Width, 3.95, 4.05); Assert.InRange(section.Height, 2.95, 3.05);
+            Assert.InRange(section.AreaSquareMeters!.Value, 9.2, 9.65);
+        }
+    }
+
+    [Fact]
+    public async Task TunnelAnalysisUsesOnlyVisibleIncludedPointsInWorldCoordinates()
+    {
+        Vector3 a = new(0, 0, 0), b = new(4, 0, 1);
+        var source = Cloud(TunnelTube(a, b));
+        var mask = source.Source.Points.Select((_, i) => i % 2 == 0).ToArray();
+        var visible = source with { Mask = new(mask), Transform = new(12, -7, 4, RotateZ: 35) };
+        var hidden = Cloud(TunnelTube(a, b).Select(p => p * 2)) with { IsVisible = false };
+        var axis = new[] { a, b }.Select(p => InspectionPoint.From(Vector3.Transform(p, visible.Matrix))).ToArray();
+        var document = await TunnelAnalyzer.AnalyzeAsync(Project(visible, hidden), axis, TunnelOptions());
+        Assert.Equal(mask.Count(x => x), document.SourcePointCount);
+        Assert.Equal(mask.Count(x => x), document.SampleCount);
+        Assert.All(document.Sections, section =>
+        {
+            Assert.True(section.IsClosed);
+            Assert.InRange(section.Width, 3.95, 4.05); Assert.InRange(section.Height, 2.95, 3.05);
+            Assert.InRange(section.Center.Z, 3.99, 5.01);
+        });
+        Assert.Equal(mask, visible.Mask!.Copy()); Assert.Null(source.Mask);
+    }
+
+    [Fact]
+    public async Task TunnelResultsBecomeStaleAfterGeometryMaskOrVisibilityChangesAndRecoverOnUndo()
+    {
+        var obj = Cloud(TunnelTube(Vector3.Zero, new(4, 0, 0))); var project = Project(obj);
+        var document = await TunnelAnalyzer.AnalyzeAsync(project, [new(0, 0, 0), new(4, 0, 0)], TunnelOptions());
+        Assert.False(TunnelAnalyzer.Refresh(document, project.Replace(obj with { Name = "Новое имя", Tint = 0x00FF00 })).IsStale);
+        var changed = project.Replace(obj with { Transform = new(1) });
+        var stale = TunnelAnalyzer.Refresh(document, changed);
+        Assert.True(stale.IsStale); Assert.False(TunnelAnalyzer.Refresh(stale, project).IsStale);
+        Assert.True(TunnelAnalyzer.Refresh(document, project.Replace(obj with { IsVisible = false })).IsStale);
+        Assert.True(TunnelAnalyzer.Refresh(document, project.Replace(obj with
+            { Mask = new(obj.Source.Points.Select((_, i) => i != 0).ToArray()) })).IsStale);
+    }
+
+    [Fact]
+    public async Task TunnelAnalysisCancellationLeavesOriginalScanAndManualAxisUnchanged()
+    {
+        var obj = Cloud(TunnelTube(Vector3.Zero, new(4, 0, 0))); var project = Project(obj);
+        InspectionPoint[] axis = [new(0, 0, 0), new(4, 0, 0)];
+        var original = obj.Source.Points.ToArray(); using var cts = new CancellationTokenSource();
+        var progress = new ImmediateProgress(_ => cts.Cancel());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TunnelAnalyzer.AnalyzeAsync(project, axis, TunnelOptions(), progress, cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TunnelAnalyzer.AnalyzeAsync(project, axis, TunnelOptions(), token: cts.Token));
+        Assert.Equal(original, obj.Source.Points); Assert.Equal(new InspectionPoint[] { new(0, 0, 0), new(4, 0, 0) }, axis);
+    }
+
+    [Fact]
+    public async Task TunnelDraftIsEditableButAnalysisRejectsMissingOrInvalidAxis()
+    {
+        var options = TunnelOptions();
+        var draft = TunnelAnalyzer.Create([], options);
+        Assert.Empty(draft.Axis); Assert.Empty(draft.Sections); Assert.False(draft.IsStale);
+        var project = Project(Cloud(TunnelTube(Vector3.Zero, new(4, 0, 0))));
+        TunnelAnalyzer.Validate(draft, project);
+        await Assert.ThrowsAsync<ArgumentException>(() => TunnelAnalyzer.AnalyzeAsync(project, [], options));
+        await Assert.ThrowsAsync<ArgumentException>(() => TunnelAnalyzer.AnalyzeAsync(project, [new(0, 0, 0)], options));
+        Assert.Throws<ArgumentException>(() => TunnelAnalyzer.Create([new(0, 0, 0), new(.001f, 0, 0)], options));
+        Assert.Throws<ArgumentException>(() => TunnelAnalyzer.Create([new(0, 0, 0), new(0, 0, 4)], options));
+        Assert.Throws<ArgumentException>(() => TunnelAnalyzer.Create([new(0, 0, 0), new(float.NaN, 0, 0)], options));
+    }
+
+    [Theory]
+    [InlineData(0)] [InlineData(.1)] [InlineData(21)] [InlineData(double.NaN)] [InlineData(double.PositiveInfinity)]
+    public void TunnelAnalysisRejectsUnboundedSectionSpacing(double spacing) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => (TunnelOptions() with { SectionSpacing = spacing }).Validate());
+
+    private static TunnelAnalysisOptions TunnelOptions() => new(SectionSpacing: 1, SliceThickness: .12);
+    private static IEnumerable<Vector3> TunnelTube(Vector3 a, Vector3 b, Func<double, bool>? keepAngle = null)
+    {
+        var forward = Vector3.Normalize(b - a); var right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ));
+        var up = Vector3.Cross(right, forward);
+        var layers = Math.Max(1, (int)Math.Ceiling(Vector3.Distance(a, b) / .05));
+        for (var layer = 0; layer <= layers; layer++)
+        {
+            var center = Vector3.Lerp(a, b, (float)layer / layers);
+            for (var degree = 0; degree < 360; degree++)
+            {
+                var angle = (degree + .25) * Math.PI / 180;
+                if (keepAngle is not null && !keepAngle(angle)) continue;
+                yield return center + right * (float)(2 * Math.Cos(angle)) + up * (float)(1.5 * Math.Sin(angle));
+            }
+        }
+    }
+
     private sealed class ImmediateProgress(Action<double> report) : IProgress<double>
     { public void Report(double value) => report(value); }
 }

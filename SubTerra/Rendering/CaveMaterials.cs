@@ -8,6 +8,13 @@ namespace SubTerra.Rendering;
 
 public static class CaveMaterials
 {
+    public static PhongMaterial Relief { get; } = new()
+    {
+        Name = "Рельеф · нейтральный материал",
+        DiffuseColor = new(.72f, .76f, .80f, 1), AmbientColor = new(.32f, .34f, .36f, 1),
+        SpecularColor = new(.06f, .06f, .06f, 1), SpecularShininess = 18,
+        VertexColorBlendingFactor = 0, RenderShadowMap = true
+    };
     // Generated once per process and reused when switching views and scenarios.
     private static readonly Lazy<LimestoneTexture> Stone = new(() => LimestoneTexture.Create());
     private static readonly Lazy<LimestoneTexture> Gravel = new(() => LimestoneTexture.Create(kind: CaveSurfaceKind.Sediment));

@@ -227,6 +227,161 @@ public sealed class ScanProjectTests
     }
 
     [Theory]
+    [InlineData(0)] [InlineData(1)] [InlineData(2)]
+    public async Task TunnelDraftRoundTripKeepsModeAxisAndSettingsWithoutInventingSections(int axisPoints)
+    {
+        using var files = new Files(); var storage = new SessionStorage();
+        InspectionPoint[] axis = [new(1, 2, 3), new(5, 2, 4)];
+        var options = new TunnelAnalysisOptions(SectionSpacing: 1.25, SliceThickness: .4, MaximumRadius: 6);
+        var project = new ScanProject([], Guid.Empty, null)
+        {
+            AnalysisMode = ProjectAnalysisMode.Tunnel,
+            Tunnel = TunnelAnalyzer.Create(axis.Take(axisPoints).ToArray(), options)
+        };
+        var path = Path.Combine(files.Directory, "tunnel-draft.subterra");
+        await storage.SaveAsync(path, project.ToSession(), 0);
+        var loaded = (await storage.LoadAsync(path)).Project!;
+        Assert.Equal(ProjectAnalysisMode.Tunnel, loaded.AnalysisMode);
+        var restored = Assert.IsType<TunnelAnalysisDocument>(loaded.Tunnel);
+        Assert.Equal(project.Tunnel.Axis, restored.Axis); Assert.Equal(options, restored.Options);
+        Assert.Empty(restored.Sections); Assert.Empty(restored.Inputs); Assert.False(restored.IsStale);
+        using var archive = ZipFile.OpenRead(path);
+        using var reader = new StreamReader(archive.GetEntry("manifest.json")!.Open());
+        Assert.Equal(13, JsonNode.Parse(reader.ReadToEnd())!["SchemaVersion"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task TunnelSectionsRoundTripKeepsGeometryProvenanceMasksAndCanBeRetainedInRoomMode()
+    {
+        using var files = new Files(); var storage = new SessionStorage();
+        var project = TunnelProject(); var obj = project.Active!;
+        project = project.Replace(obj with { Transform = new(10, 2, 3), Mask = new(obj.Source.Points.Select((_, i) => i % 79 != 0).ToArray()) });
+        InspectionPoint[] axis = [new(10, 2, 3), new(14, 2, 3)];
+        var document = await TunnelAnalyzer.AnalyzeAsync(project, axis, new(SectionSpacing: 1, SliceThickness: .4));
+        Assert.NotEmpty(document.Sections);
+        project = project with { AnalysisMode = ProjectAnalysisMode.Room, Tunnel = document };
+        var path = Path.Combine(files.Directory, "tunnel-sections.subterra");
+        await storage.SaveAsync(path, project.ToSession([new("Участок", axis[0])]), 1);
+        var session = await storage.LoadAsync(path); var loaded = session.Project!;
+        Assert.Equal(ProjectAnalysisMode.Room, loaded.AnalysisMode);
+        var restored = Assert.IsType<TunnelAnalysisDocument>(loaded.Tunnel);
+        Assert.False(restored.IsStale); Assert.Equal(document.Axis, restored.Axis); Assert.Equal(document.Options, restored.Options);
+        Assert.Equal(document.SourcePointCount, restored.SourcePointCount); Assert.Equal(document.SampleCount, restored.SampleCount);
+        Assert.Equal(document.Inputs, restored.Inputs); Assert.Equal(document.Sections.Length, restored.Sections.Length);
+        for (var i = 0; i < document.Sections.Length; i++)
+        {
+            var expected = document.Sections[i]; var section = restored.Sections[i];
+            Assert.Equal(expected.Center, section.Center); Assert.Equal(expected.Forward, section.Forward);
+            Assert.Equal(expected.Right, section.Right); Assert.Equal(expected.Up, section.Up);
+            Assert.Equal(expected.Chainage, section.Chainage); Assert.Equal(expected.Contour, section.Contour);
+            Assert.Equal(expected.AreaSquareMeters, section.AreaSquareMeters); Assert.Equal(expected.IsClosed, section.IsClosed);
+        }
+        Assert.Equal(project.Active!.Transform, loaded.Active!.Transform);
+        Assert.Equal(project.Active.Mask!.Copy(), loaded.Active.Mask!.Copy());
+        Assert.Empty(loaded.Active.Source.Colors); Assert.Equal("Участок", Assert.Single(session.Annotations).Name);
+    }
+
+    [Fact]
+    public async Task SavingTunnelAfterSourceTransformMarksStoredSectionsStale()
+    {
+        using var files = new Files(); var storage = new SessionStorage(); var project = TunnelProject();
+        var document = await TunnelAnalyzer.AnalyzeAsync(project, [new(0, 0, 0), new(4, 0, 0)], new(SectionSpacing: 1));
+        project = project.Replace(project.Active! with { Transform = new(1, 0, 0) }) with { Tunnel = document, AnalysisMode = ProjectAnalysisMode.Tunnel };
+        var path = Path.Combine(files.Directory, "stale-tunnel.subterra");
+        await storage.SaveAsync(path, project.ToSession(), 1);
+        var loaded = (await storage.LoadAsync(path)).Project!;
+        Assert.True(loaded.Tunnel!.IsStale); Assert.Equal(document.Axis, loaded.Tunnel.Axis);
+        Assert.Equal(document.Sections.Length, loaded.Tunnel.Sections.Length);
+    }
+
+    [Fact]
+    public async Task TunnelProjectSchemaPreservesEmbeddedGlbAppearanceAlongsidePlaneAnalysis()
+    {
+        using var files = new Files(); var storage = new SessionStorage();
+        var source = Path.Combine(files.Directory, "tunnel.glb"); ScanImportTests.CreateGlb(source);
+        var scan = await new ScanImporter().ImportAsync(source, new());
+        var project = ScanProject.FromSession(scan.ToSession());
+        project = project with
+        {
+            AnalysisMode = ProjectAnalysisMode.Tunnel,
+            Tunnel = TunnelAnalyzer.Create([new(-1, -1, 1), new(-1, 1, 1)], new()),
+            Structure = StructureProvenance.Create(project, new([], project.PointCount, project.PointCount, new()))
+        };
+        var path = Path.Combine(files.Directory, "textured-tunnel.subterra");
+        await storage.SaveAsync(path, project.ToSession(), 1);
+        var loaded = (await storage.LoadAsync(path)).Project!;
+        Assert.Equal(ProjectAnalysisMode.Tunnel, loaded.AnalysisMode); Assert.NotNull(loaded.Structure);
+        Assert.Equal(project.Tunnel.Axis, loaded.Tunnel!.Axis); Assert.False(loaded.Tunnel.IsStale);
+        var appearance = Assert.IsType<MeshAppearance>(loaded.Active!.Source.Appearance);
+        Assert.Equal(scan.Appearance!.Textures[0].Data, appearance.Textures[0].Data);
+        Assert.Equal(scan.Appearance.TextureCoordinates, appearance.TextureCoordinates);
+        Assert.Equal(scan.Appearance.Materials, appearance.Materials);
+    }
+
+    [Fact]
+    public async Task LegacyProjectManifestWithoutTunnelFieldsLoadsInRoomMode()
+    {
+        using var files = new Files(); var storage = new SessionStorage();
+        var obj = Object(Cloud(Vector3.Zero, Vector3.One));
+        var project = new ScanProject([obj], obj.Id, obj.Source.Metadata);
+        var path = Path.Combine(files.Directory, "legacy-project.subterra");
+        await storage.SaveAsync(path, project.ToSession(), 1);
+        using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("manifest.json")!; JsonNode json;
+            using (var reader = new StreamReader(entry.Open())) json = JsonNode.Parse(reader.ReadToEnd())!;
+            var info = (JsonObject)json["Project"]!; info.Remove("AnalysisMode"); info.Remove("HasTunnel");
+            entry.Delete(); using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open()); writer.Write(json.ToJsonString());
+        }
+        var loaded = (await storage.LoadAsync(path)).Project!;
+        Assert.Equal(ProjectAnalysisMode.Room, loaded.AnalysisMode); Assert.Null(loaded.Tunnel);
+        Assert.Equal(project.Active!.Source.Points, loaded.Active!.Source.Points);
+    }
+
+    [Theory]
+    [InlineData("missing")] [InlineData("duplicate")] [InlineData("mode")] [InlineData("axis")]
+    [InlineData("options")] [InlineData("section")] [InlineData("downgrade")]
+    public async Task CorruptTunnelMetadataIsRejected(string kind)
+    {
+        using var files = new Files(); var storage = new SessionStorage(); var project = TunnelProject();
+        var document = await TunnelAnalyzer.AnalyzeAsync(project, [new(0, 0, 0), new(4, 0, 0)], new(SectionSpacing: 1));
+        project = project with { Tunnel = document, AnalysisMode = ProjectAnalysisMode.Tunnel };
+        var path = Path.Combine(files.Directory, "corrupt-tunnel.subterra");
+        await storage.SaveAsync(path, project.ToSession(), 1);
+        using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
+        {
+            var entryName = kind is "mode" or "downgrade" ? "manifest.json" : "tunnel/analysis.json";
+            var entry = archive.GetEntry(entryName)!;
+            if (kind == "missing") entry.Delete();
+            else if (kind == "duplicate")
+            {
+                using var stream = archive.CreateEntry(entryName).Open(); stream.WriteByte(123);
+            }
+            else
+            {
+                JsonNode json; using (var reader = new StreamReader(entry.Open())) json = JsonNode.Parse(reader.ReadToEnd())!;
+                if (kind == "mode") json["Project"]!["AnalysisMode"] = 99;
+                if (kind == "downgrade") json["SchemaVersion"] = 5;
+                if (kind == "axis") json["Axis"]![0]!["X"] = 100001;
+                if (kind == "options") json["Options"]!["SectionSpacing"] = 0;
+                if (kind == "section") json["Sections"]![0]!["AreaSquareMeters"] = -1;
+                entry.Delete(); using var writer = new StreamWriter(archive.CreateEntry(entryName).Open()); writer.Write(json.ToJsonString());
+            }
+        }
+        await Assert.ThrowsAsync<InvalidDataException>(() => storage.LoadAsync(path));
+    }
+
+    private static ScanProject TunnelProject()
+    {
+        var points = (from station in Enumerable.Range(0, 81) from angle in Enumerable.Range(0, 72)
+            let radians = (angle + .5) * Math.PI * 2 / 72
+            select new ScanPoint(station * .05f, (float)(2 * Math.Cos(radians)), (float)(1.5 * Math.Sin(radians)), 1)).ToArray();
+        var scan = new ImportedScan { Metadata = new("tunnel.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0), Points = points };
+        var obj = Object(scan);
+        return new([obj], obj.Id, scan.Metadata);
+    }
+
+    [Theory]
     [InlineData("mask")] [InlineData("duplicate")] [InlineData("count")] [InlineData("transform")]
     public async Task CorruptProjectIsRejected(string kind)
     {

@@ -59,12 +59,14 @@ public sealed record ScanObject(Guid Id, string Name, ImportedScan Source, bool 
 public sealed record ScanProject(ScanObject[] Objects, Guid ActiveObjectId, ImportMetadata? Origin)
 {
     public StructureAnalysisDocument? Structure { get; init; }
+    public ProjectAnalysisMode AnalysisMode { get; init; } = ProjectAnalysisMode.Room;
+    public TunnelAnalysisDocument? Tunnel { get; init; }
     public const int MaximumObjects = 32;
     public ScanObject? Active => Objects.FirstOrDefault(o => o.Id == ActiveObjectId);
     public int PointCount => Objects.Sum(o => o.PointCount);
     public void Validate(CancellationToken token = default)
     {
-        if (Objects is null || Objects.Length > MaximumObjects || Objects.Any(o => o is null || o.Source is null) ||
+        if (!Enum.IsDefined(AnalysisMode) || Objects is null || Objects.Length > MaximumObjects || Objects.Any(o => o is null || o.Source is null) ||
             Objects.Select(o => o.Id).Distinct().Count() != Objects.Length || Objects.Any(o => o.Id == Guid.Empty) ||
             (Objects.Length > 0 ? Active is null : ActiveObjectId != Guid.Empty) ||
             Objects.Sum(o => (long)o.Source.Points.Length) > ImportedScan.MaximumPoints ||

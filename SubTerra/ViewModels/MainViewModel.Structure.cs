@@ -37,12 +37,12 @@ public sealed partial class MainViewModel
     public RelayCommand RejectStructureSurfaceCommand { get; private set; } = null!;
     public RelayCommand ResetStructureSurfaceCommand { get; private set; } = null!;
     public RelayCommand FocusStructureSurfaceCommand { get; private set; } = null!;
-    public bool CanAnalyzeStructure => CanManageProject && !IsScreenSelecting &&
+    public bool CanAnalyzeStructure => CanManageProject && !IsTunnelMode && !IsScreenSelecting &&
         _scanProject?.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount) >= 64;
     public bool HasStructureAnalysis => _structureAnalysis is not null;
     public bool StructureIsStale => _structureDocument?.IsStale == true;
-    public bool CanReviewStructure => CanManageProject && !IsScreenSelecting && !StructureIsStale && SelectedStructureSurface is not null;
-    public bool StructureVisible => HasStructureAnalysis && !StructureIsStale && ShowStructure && IsImported;
+    public bool CanReviewStructure => CanManageProject && !IsTunnelMode && !IsScreenSelecting && !StructureIsStale && SelectedStructureSurface is not null;
+    public bool StructureVisible => HasStructureAnalysis && !StructureIsStale && ShowStructure && IsImported && !IsTunnelMode;
     public string StructureCountsText => _structureAnalysis is { } result ?
         $"Поверхностей: {result.Surfaces.Length} · подтверждено: {result.Surfaces.Count(s => s.Review == StructureReviewState.Confirmed)} · отклонено: {result.Surfaces.Count(s => s.Review == StructureReviewState.Rejected)}" :
         "Пол, стены и потолок одного помещения";
@@ -249,8 +249,8 @@ public sealed partial class MainViewModel
         set { if (value is not null && IndoorStyles.Contains(value) && Set(ref _indoorStyle, value) && HasIndoorPreview) RefreshImportedGeometry(); }
     }
     public bool HasIndoorPreview => _indoorPreview is not null;
-    public bool IsIndoorSurfaceView => IsImported && IsSurface && HasIndoorPreview;
-    public bool CanPrepareIndoorPreview => IsImported && CanInteract && IsOverview && !HasEditPreview && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
+    public bool IsIndoorSurfaceView => IsImported && !IsTunnelMode && IsSurface && HasIndoorPreview;
+    public bool CanPrepareIndoorPreview => IsImported && !IsTunnelMode && CanInteract && IsOverview && !HasEditPreview && !IsScreenSelecting && HasStructureAnalysis && !StructureIsStale;
     public string IndoorPreviewSummary => HasReconstruction ?
         $"Реконструкция · гипотеза: {_indoorPreview!.Scan.Triangles.Length / 3:N0} треугольников. " +
         $"Достроено ячеек: {_indoorPreview.FilledCells:N0}; точек предметов: {_indoorPreview.RemainingPoints?.Points.Length ?? 0:N0}. " +

@@ -201,7 +201,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsSurfaceMode => IsSurface && !IsHeight;
     public bool IsCave => IsSimulation && IsSurface && !IsHeight;
     public bool IsHeight => _isHeight;
-    public PhongMaterial SurfaceMaterial => IsImported || IsHeight ? CaveMaterials.Height : _limestone ??= CaveMaterials.Limestone();
+    public PhongMaterial SurfaceMaterial => IsGeometryShading && !IsHeight ? CaveMaterials.Relief : IsImported || IsHeight ? CaveMaterials.Height : _limestone ??= CaveMaterials.Limestone();
     private PhongMaterial? _limestone;
     public PhongMaterial FloorMaterial => _sediment ??= CaveMaterials.Sediment();
     public PhongMaterial DampMaterial => _dampLimestone ??= CaveMaterials.DampLimestone();
@@ -210,7 +210,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsWalking => _isWalking;
     public bool IsFlying => _isFlying;
     public bool IsNavigating => IsWalking || IsFlying;
-    public bool CanWalk => CanInteract && _viewFrames > 0 && (IsImported ? _indoorFloor is not null : WalkCoverage.End - WalkCoverage.Start >= .06f);
+    public bool CanWalk => CanInteract && _viewFrames > 0 && (IsImported ? !IsTunnelMode && _indoorFloor is not null : WalkCoverage.End - WalkCoverage.Start >= .06f);
     public bool CanFly => CanInteract && (IsPoints || IsImported) && _viewFrames > 0;
     public bool IsOverview => !IsNavigating;
     public string ExploreText => IsImported ? CanWalk ? "Прогулка по поверхностям" : "Свободный полёт" : IsPoints ? "Свободный полёт" : "Прогулка внутри";
@@ -620,6 +620,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         _importedGeometry = null;
         _scanProject = null; _projectView = null; _previewProject = null; _previewView = null; CloudOnly = null;
+        SyncTunnelState(true);
         _projectHistory.Clear(); EndScreenSelection(); RefreshProjectItems();
         _map = new(dataset.Session.ScenarioId, dataset.Session.Settings, dataset.Session.SceneVersion);
         _geometry = new SceneGeometry(dataset.Scene!);
@@ -829,6 +830,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         Raise(nameof(IsWalking)); Raise(nameof(IsFlying)); Raise(nameof(IsNavigating)); Raise(nameof(IsOverview));
         Raise(nameof(SceneLightingVisible));
+        Raise(nameof(ReliefLampVisible));
+        NotifyTunnelState();
         Raise(nameof(NavigationTitle)); Raise(nameof(NavigationSpeedText)); Raise(nameof(WalkPrompt));
         Raise(nameof(ShadowCamera)); Raise(nameof(ShadowsVisible));
         Raise(nameof(SsaoEnabled)); Raise(nameof(ClipGuideVisible)); Raise(nameof(IsPicking)); Raise(nameof(CloudQualityVisible));

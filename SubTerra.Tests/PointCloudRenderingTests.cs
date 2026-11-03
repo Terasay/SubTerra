@@ -81,4 +81,50 @@ public sealed class PointCloudRenderingTests
         }
         finally { File.Delete(path); }
     }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void NeutralImportedCloudIsIndependentOfRgbAndPreservesMeasurements(bool clipped)
+    {
+        var points = Enumerable.Range(0, 9).Select(i => new ScanPoint(i * .4f, i % 3, i * .15f, .6f)).ToArray();
+        uint[] colors = [0xff0000, 0x00ff00, 0x0000ff, 0x112233, 0x445566, 0x778899, 0xaabbcc, 0xddeeff, 0x123456];
+        var originalPoints = points.ToArray(); var originalColors = colors.ToArray();
+        var metadata = new ImportMetadata("tunnel.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0);
+        var colored = new ImportedScan { Metadata = metadata, Points = points, Colors = colors };
+        var uncolored = new ImportedScan { Metadata = metadata, Points = points };
+        PointClipPlane? clip = clipped ? new(Vector3.UnitX, 1.7f) : null;
+        var coloredView = new ImportedGeometry(colored).Cloud(4, clip, neutral: true);
+        var uncoloredView = new ImportedGeometry(uncolored).Cloud(4, clip, neutral: true);
+        Assert.Equal(coloredView.Positions!.ToArray(), uncoloredView.Positions!.ToArray());
+        Assert.Equal(coloredView.Colors!.ToArray(), uncoloredView.Colors!.ToArray());
+        Assert.Equal(4, coloredView.Positions.Count);
+        Assert.All(coloredView.Colors, color => Assert.Equal(new HelixToolkit.Maths.Color4(.72f, .76f, .80f, 1), color));
+        if (clip is { } plane) Assert.All(coloredView.Positions, position => Assert.True(plane.Contains(position)));
+        Assert.Equal(originalPoints, colored.Points); Assert.Equal(originalColors, colored.Colors); Assert.Empty(uncolored.Colors);
+    }
+
+    [Fact]
+    public void ImportedCloudCacheSeparatesNeutralSourceAndHeightModes()
+    {
+        var scan = new ImportedScan
+        {
+            Metadata = new("rgb.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
+            Points = [new(0, 0, 0, 1), new(1, 0, 1, 1), new(2, 0, 2, 1)],
+            Colors = [0xff0000, 0x00ff00, 0x0000ff]
+        };
+        var geometry = new ImportedGeometry(scan);
+        var source = geometry.Cloud(3, null); var neutral = geometry.Cloud(3, null, neutral: true);
+        Assert.NotSame(source, neutral); Assert.Same(source, geometry.Cloud(3, null));
+        Assert.Same(neutral, geometry.Cloud(3, null, neutral: true));
+        Assert.Equal(source.Positions!.ToArray(), neutral.Positions!.ToArray());
+        Assert.Equal(new HelixToolkit.Maths.Color4(1, 0, 0, 1), source.Colors![0]);
+        Assert.False(source.Colors.SequenceEqual(neutral.Colors!));
+        var sourceColors = source.Colors.ToArray();
+        var height = geometry.Cloud(3, null, height: true);
+        Assert.False(sourceColors.SequenceEqual(height.Colors!));
+        Assert.Equal(sourceColors, geometry.Cloud(3, null).Colors!.ToArray());
+        Assert.All(geometry.Cloud(3, null, height: true, neutral: true).Colors!,
+            color => Assert.Equal(new HelixToolkit.Maths.Color4(.72f, .76f, .80f, 1), color));
+        Assert.Equal(new uint[] { 0xff0000, 0x00ff00, 0x0000ff }, scan.Colors);
+    }
 }
