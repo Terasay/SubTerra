@@ -6,11 +6,13 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using Microsoft.Win32;
 using SubTerra.Models;
 using SubTerra.Rendering;
 using SubTerra.Services;
 using SubTerra.Simulation;
+using SubTerra.Navigation;
 
 namespace SubTerra.Diagnostics;
 
@@ -24,6 +26,8 @@ internal static class Program
         {
             if (args.Length == 2 && args[0] == "--stress-points")
                 return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
+            if (args.Length == 2 && args[0] == "--audit-tunnel")
+                return AuditTunnel(args[1]);
             if (args.Length == 3 && args[0] == "--prepare-indoor")
                 return PrepareIndoor(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--reconstruct-indoor")
@@ -36,7 +40,7 @@ internal static class Program
             {
                 if (args[i] == "--passes" && i + 1 < args.Length) passes = int.Parse(args[++i], CultureInfo.InvariantCulture);
                 else if (args[i] == "--output" && i + 1 < args.Length) output = Path.GetFullPath(args[++i]);
-                else throw new ArgumentException("Параметры: --passes 12 --output <папка отчёта> или --stress-points <число точек> (только консоль).");
+                else throw new ArgumentException("Параметры: --passes 12 --output <папка отчёта>, --stress-points <число точек> или --audit-tunnel <скан в метрах, Z вверх> (только консоль).");
             }
             if (passes is < 3 or > 100) throw new ArgumentOutOfRangeException(nameof(passes), "Число проходов: 3–100.");
             using var cancellation = new CancellationTokenSource();
@@ -71,6 +75,66 @@ internal static class Program
         }
         catch (OperationCanceledException) { Console.Error.WriteLine("Замер отменён."); return 2; }
         catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    }
+
+    private static int AuditTunnel(string input)
+    {
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        var token = cancellation.Token; var clock = Stopwatch.StartNew();
+        string FileHash() { using var stream = File.OpenRead(input); return Convert.ToHexString(SHA256.HashData(stream)); }
+        var initialHash = FileHash();
+        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z), token).GetAwaiter().GetResult();
+        var originalPoints = scan.Points.ToArray(); var originalColors = scan.Colors.ToArray();
+        var project = ScanProject.FromSession(scan.ToSession()) with { AnalysisMode = ProjectAnalysisMode.Tunnel };
+        var axis = TunnelRoutePlanner.SuggestAsync(project, token: token).GetAwaiter().GetResult();
+        var root = TunnelAnalyzer.Create(axis);
+        root = TunnelMeshBuilder.BuildAsync(project, root, new(CompletionGap: 0), token).GetAwaiter().GetResult();
+        project = project with { Tunnel = root };
+        var mesh = root.Reconstruction!;
+        var collisionClock = Stopwatch.StartNew(); var surface = TunnelWalkSurface.Prepare(mesh, token); collisionClock.Stop();
+        var places = 0; var furthest = 0f;
+        foreach (var section in root.Sections)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!surface.TryCreate(section.Center.Position, section.Forward.Position, out var walker)) continue;
+            places++;
+            for (var i = 0; i < 60; i++) walker!.Move(1, 0, 1f / 60, false);
+            furthest = Math.Max(furthest, walker!.DistanceTravelled);
+        }
+        var temporary = Directory.CreateTempSubdirectory("SubTerra-tunnel-audit-");
+        try
+        {
+            var storage = new SessionStorage(); var session = Path.Combine(temporary.FullName, "scan.subterra");
+            storage.SaveAsync(session, project.ToSession(), 1, token).GetAwaiter().GetResult();
+            var restored = storage.LoadAsync(session, token).GetAwaiter().GetResult().Project!;
+            if (!restored.Active!.Source.Points.SequenceEqual(originalPoints) || !restored.Active.Source.Colors.SequenceEqual(originalColors) ||
+                !restored.Tunnel!.Reconstruction!.ObservedTriangles.SequenceEqual(mesh.ObservedTriangles) || restored.Tunnel.Reconstruction.IsStale)
+                throw new InvalidDataException("Изменились исходные данные или производная сетка при сохранении.");
+            var ply = Path.Combine(temporary.FullName, "mesh.ply"); var exported = TunnelMeshBuilder.Export(mesh);
+            storage.ExportImportedPlyAsync(ply, exported, token).GetAwaiter().GetResult();
+            var imported = new ScanImporter().ImportAsync(ply, new(ScanUnit.Meters, LocalOrigin: false), token).GetAwaiter().GetResult();
+            if (!imported.Points.SequenceEqual(exported.Points) || !imported.Triangles.SequenceEqual(exported.Triangles))
+                throw new InvalidDataException("Сетка изменилась при экспорте и повторном импорте PLY.");
+            if (FileHash() != initialHash || !scan.Points.SequenceEqual(originalPoints) || !scan.Colors.SequenceEqual(originalColors))
+                throw new InvalidDataException("Изменился исходный скан.");
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                SourceSha256 = initialHash, SourcePoints = scan.Points.Length, AxisNodes = axis.Length, Sections = root.Sections.Length,
+                MeshTriangles = mesh.ObservedTriangles.Length / 3, CompletedTriangles = mesh.CompletedTriangles.Length / 3,
+                WalkableSections = places, MaximumWalkedMeters = furthest, CollisionPreparationMilliseconds = collisionClock.Elapsed.TotalMilliseconds,
+                SourceUnchanged = true, SessionRoundTrip = true, PlyRoundTrip = true, ElapsedSeconds = clock.Elapsed.TotalSeconds,
+                Note = "CPU-проверка предложенной оси и производной модели. Независимые контрольные размеры и точность реальной геометрии не проверялись."
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        finally
+        {
+            var parent = Path.GetDirectoryName(Path.GetFullPath(temporary.FullName));
+            if (!string.Equals(parent, Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ||
+                !temporary.Name.StartsWith("SubTerra-tunnel-audit-", StringComparison.Ordinal)) throw new IOException("Неожиданный путь временной проверки.");
+            Directory.Delete(temporary.FullName, true);
+        }
+        return 0;
     }
 
     private static int PrepareIndoor(string input, string output)

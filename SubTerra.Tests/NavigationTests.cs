@@ -2,12 +2,92 @@ using System.Numerics;
 using SubTerra.Models;
 using SubTerra.Navigation;
 using SubTerra.Simulation;
+using SubTerra.Services;
 using Xunit;
 
 namespace SubTerra.Tests;
 
 public sealed class NavigationTests
 {
+    private static TunnelReconstruction Corridor(float slope = .1f, float ceiling = 3, bool gap = false, bool lowBeam = false)
+    {
+        var vertices = new List<InspectionPoint>(); var observed = new List<int>(); var completed = new List<int>();
+        void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, bool inferred = false)
+        {
+            var start = vertices.Count; vertices.AddRange(new[] { a, b, c, d }.Select(InspectionPoint.From));
+            (inferred ? completed : observed).AddRange([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+        void Floor(float from, float to, bool inferred = false) => Quad(new(from, -1.5f, from * slope), new(to, -1.5f, to * slope), new(to, 1.5f, to * slope), new(from, 1.5f, from * slope), inferred);
+        if (gap) { Floor(0, 4); Floor(5, 12); Floor(4, 5, true); } else Floor(0, 12);
+        Quad(new(0, -1.5f, ceiling), new(12, -1.5f, 12 * slope + ceiling), new(12, 1.5f, 12 * slope + ceiling), new(0, 1.5f, ceiling));
+        foreach (var y in new[] { -1.5f, 1.5f }) Quad(new(0, y, 0), new(12, y, 12 * slope), new(12, y, 12 * slope + ceiling), new(0, y, ceiling));
+        if (lowBeam) Quad(new(3, -1.5f, 3 * slope + 1.75f), new(4, -1.5f, 4 * slope + 1.75f), new(4, 1.5f, 4 * slope + 1.75f), new(3, 1.5f, 3 * slope + 1.75f));
+        return new(new(), vertices.ToArray(), observed.ToArray(), completed.ToArray(), [], "");
+    }
+
+    [Theory]
+    [InlineData(0)] [InlineData(.12f)] [InlineData(.7f)] [InlineData(1f)]
+    public void TunnelWalkingFollowsObservedSlopeAtEyeHeight(float slope)
+    {
+        var surface = TunnelWalkSurface.Prepare(Corridor(slope));
+        Assert.True(surface.TryCreate(new(1, 0, slope + 1.5f), Vector3.UnitX, out var walker));
+        for (var i = 0; i < 100; i++) walker!.Move(1, 0, .02f, false);
+        Assert.InRange(walker!.Position.X, 5.8f, 6.2f);
+        Assert.InRange(walker.Position.Z - slope * walker.Position.X, TunnelNavigator.EyeHeight - .001f, TunnelNavigator.EyeHeight + .001f);
+    }
+
+    [Fact]
+    public void TunnelCameraVolumeStopsAtWallsAndLowHeadroom()
+    {
+        Assert.False(TunnelWalkSurface.Prepare(Corridor(ceiling: 1.7f)).TryCreate(new(1, 0, 1), Vector3.UnitX, out _));
+        var surface = TunnelWalkSurface.Prepare(Corridor(lowBeam: true));
+        Assert.True(surface.TryCreate(new(1, 0, 1.5f), Vector3.UnitX, out var walker));
+        for (var i = 0; i < 100; i++) walker!.Move(1, 0, .05f, true);
+        Assert.InRange(walker!.Position.X, 2, 3);
+        for (var i = 0; i < 100; i++) walker.Move(0, 1, .05f, true);
+        Assert.InRange(walker.Position.Y, -1.26f, -1.1f);
+        var stopped = walker.Position; walker.Move(0, 1, .05f, true); Assert.Equal(stopped, walker.Position);
+    }
+
+    [Fact]
+    public void MissingObservedGroundIsNotReplacedByCompletedTrianglesOrLongFrames()
+    {
+        var mesh = Corridor(gap: true); var surface = TunnelWalkSurface.Prepare(mesh);
+        Assert.True(surface.TryCreate(new(1, 0, 1.5f), Vector3.UnitX, out var walker));
+        walker!.Speed = 8; walker.FastMultiplier = 5;
+        for (var i = 0; i < 20; i++) walker.Move(1, 0, 10, true);
+        Assert.InRange(walker.Position.X, 3.5f, 3.8f);
+        Assert.NotEmpty(mesh.CompletedTriangles);
+        var before = walker.Position;
+        walker.Move(float.NaN, 0, .02f, true); walker.Move(1, float.PositiveInfinity, .02f, true); walker.Move(1, 0, float.NaN, true);
+        Assert.Equal(before, walker.Position);
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => TunnelWalkSurface.Prepare(mesh, cancellation.Token));
+    }
+
+    [Fact]
+    public void CapsuleQueriesCatchWallsEdgesAndCeilingBetweenRayHeights()
+    {
+        var index = new TriangleIndex([new(0, -2, 0), new(0, 2, 0), new(0, 0, 3)], [0, 1, 2]);
+        Assert.True(index.IntersectsCapsule(new(.2f, 0, .3f), new(.2f, 0, 1.6f), .25f));
+        Assert.False(index.IntersectsCapsule(new(.4f, 0, .3f), new(.4f, 0, 1.6f), .25f));
+        Assert.True(index.IntersectsCapsule(new(-1, 0, 1), new(1, 0, 1), .01f));
+        Assert.True(index.Cast(new(1, 0, 1), -Vector3.UnitX, 2, out var point, out var normal));
+        Assert.InRange(point.X, -.0001f, .0001f); Assert.InRange(Math.Abs(normal.X), .999f, 1.001f);
+    }
+
+    [Fact]
+    public void TunnelMovementDoesNotAllocateAndUnsupportedSteepSurfaceCannotStartWalk()
+    {
+        Assert.False(TunnelWalkSurface.Prepare(Corridor(slope: 1.2f)).HasGround);
+        var mesh = Corridor(); var surface = TunnelWalkSurface.Prepare(mesh);
+        Assert.Same(surface, TunnelWalkSurface.Prepared(mesh));
+        Assert.True(surface.TryCreate(new(1, 0, 1.5f), Vector3.UnitX, out var walker));
+        for (var i = 0; i < 20; i++) walker!.Move(1, 0, .02f, false);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 300; i++) walker!.Move(1, 0, .02f, true);
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
     [Fact]
     public void InvalidInputDoesNotMoveCameraAndRunningDoesNotAllocatePerStep()
     {

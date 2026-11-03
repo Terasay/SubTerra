@@ -53,6 +53,8 @@
         <CheckBox Content="Поверхность по наблюдениям" IsChecked="{Binding ShowTunnelObserved}" Margin="0,0,0,6"/>
         <CheckBox Content="Достройка · оранжевым" IsChecked="{Binding ShowTunnelCompletion}" Margin="0,0,0,6"/>
         <TextBlock Text="{Binding TunnelMeshSummary}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
+        <Button Content="Прогулка по сетке" Command="{Binding InsideCommand}" ToolTip="{Binding TunnelWalkingHint}" ToolTipService.ShowOnDisabled="True" Margin="0,0,0,6"/>
+        <TextBlock Text="{Binding TunnelWalkingHint}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
         <Button Content="Экспорт сетки PLY" Click="ExportMesh_Click" IsEnabled="{Binding CanExportTunnelMesh}" Margin="0,0,0,6"/>
         <Button Content="Экспорт только достройки PLY" Click="ExportCompletion_Click" IsEnabled="{Binding CanExportTunnelMesh}" Margin="0,0,0,8"/>
         <TextBlock Text="Свод, уклон и радиальные ниши сохраняются по сечениям. Сложные нависающие полости требуют отдельной оси. Значение достройки 0 оставляет все разрывы; исходные точки не меняются." Style="{StaticResource Muted}"/>

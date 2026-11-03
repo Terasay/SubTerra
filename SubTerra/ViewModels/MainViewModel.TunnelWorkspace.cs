@@ -36,6 +36,7 @@ public sealed partial class MainViewModel
         {
             if (_syncingTunnelBranches || !CanInteract || HasEditPreview || value is null || !TunnelBranches.Contains(value) || value.Id == _activeTunnelBranchId) return;
             if (TunnelDraftPending) { Notification = "Примените или сбросьте черновик перед переключением ветви."; Raise(nameof(SelectedTunnelBranch)); return; }
+            if (IsWalking) ReturnToOverview();
             _activeTunnelBranchId = value.Id; SyncTunnelState(true); Notification = "";
         }
     }
@@ -47,7 +48,35 @@ public sealed partial class MainViewModel
     public bool IsTunnelSurfaceView => HasTunnelReconstruction && IsSurface;
     public bool TunnelCompletionVisible => IsTunnelSurfaceView && ShowTunnelCompletion;
     public bool ShowTunnelCompletion { get => _showTunnelCompletion; set { if (Set(ref _showTunnelCompletion, value)) Raise(nameof(TunnelCompletionVisible)); } }
-    public bool ShowTunnelObserved { get => _showTunnelObserved; set { if (Set(ref _showTunnelObserved, value)) RefreshGeometry(); } }
+    public bool ShowTunnelObserved
+    {
+        get => _showTunnelObserved;
+        set
+        {
+            if (!value && IsWalking && IsTunnelMode) ReturnToOverview();
+            if (Set(ref _showTunnelObserved, value)) { RefreshGeometry(); Raise(nameof(CanWalk)); Raise(nameof(ExploreText)); Raise(nameof(TunnelWalkingHint)); }
+        }
+    }
+    private Navigation.TunnelNavigator? _tunnelNavigator;
+    private TunnelReconstruction? _walkingTunnelMesh;
+    public bool CanWalkTunnel => HasTunnelReconstruction && ShowTunnelObserved &&
+        _scanProject?.Tunnel?.Reconstruction is { } mesh && Navigation.TunnelWalkSurface.Prepared(mesh)?.HasGround == true;
+    public string TunnelWalkingHint => !HasTunnelReconstruction ? "Сначала постройте сетку тоннеля по точкам." : !ShowTunnelObserved ?
+        "Включите поверхность по наблюдениям для прогулки." : !CanWalkTunnel ? "В сетке нет подходящей опорной поверхности." :
+        "Старт — у выбранного сечения. Ходьба по наблюдаемой сетке; пропуски и оранжевая достройка не служат опорой.";
+    private bool PrepareTunnelNavigator()
+    {
+        if (!CanWalkTunnel || _scanProject?.Tunnel?.Reconstruction is not { } mesh || CurrentTunnelSection is not { } section) return false;
+        if (Navigation.TunnelWalkSurface.Prepared(mesh)?.TryCreate(section.Center.Position, section.Forward.Position, out var navigator) != true)
+        {
+            Notification = "У выбранного сечения недостаточно опоры или места для камеры. Выберите другое сечение; свободный полёт остаётся доступен.";
+            return false;
+        }
+        _tunnelNavigator = navigator; _walkingTunnelMesh = mesh;
+        navigator!.Speed = (float)WalkSpeed; navigator.FastMultiplier = (float)FastMultiplier;
+        Notification = ""; return true;
+    }
+    public Navigation.TunnelNavigator CreateTunnelNavigator() => _tunnelNavigator ?? throw new InvalidOperationException("Сначала выберите место для прогулки по тоннелю.");
     public bool ShowTunnelRecognition { get => _showTunnelRecognition; set { if (Set(ref _showTunnelRecognition, value)) Raise(nameof(TunnelRecognitionVisible)); } }
     public bool HasTunnelRecognition => IsTunnelMode && !HasEditPreview && _scanProject?.Tunnel?.Recognition is { IsStale: false };
     public bool TunnelRecognitionVisible => HasTunnelRecognition && ShowTunnelRecognition;
@@ -167,6 +196,8 @@ public sealed partial class MainViewModel
         try
         {
             var result = mesh ? await TunnelMeshBuilder.BuildAsync(snapshot, root, options, token) : await TunnelRecognitionService.AnalyzeAsync(snapshot, root, token);
+            if (mesh && result.Reconstruction is { } reconstruction)
+                await Task.Run(() => Navigation.TunnelWalkSurface.Prepare(reconstruction, token), token);
             token.ThrowIfCancellationRequested(); if (_disposed || !IsAdministrator || !ReferenceEquals(_scanProject, snapshot)) return;
             CommitTunnelProject(snapshot with { Tunnel = result }, mesh ? "построение сетки тоннеля" : "распознавание геометрии тоннеля");
             if (mesh) SetView(true, false);
@@ -240,6 +271,8 @@ public sealed partial class MainViewModel
         _syncingTunnelBranches = false; _tunnelBranchName = SelectedTunnelBranch?.Name ?? "";
         Raise(nameof(SelectedTunnelBranch)); Raise(nameof(TunnelBranchName));
         var mesh = root?.Reconstruction;
+        if (IsWalking && _walkingTunnelMesh is not null && (!IsTunnelMode || HasEditPreview || mesh is null || mesh.IsStale ||
+            !ReferenceEquals(mesh.Vertices, _walkingTunnelMesh.Vertices) || !ReferenceEquals(mesh.ObservedTriangles, _walkingTunnelMesh.ObservedTriangles))) ReturnToOverview();
         if (!ReferenceEquals(mesh?.Vertices, _renderedTunnelMesh?.Vertices))
         {
             _tunnelObservedMesh = mesh is null ? null : TunnelMeshGeometry(mesh, mesh.ObservedTriangles, new(.66f, .73f, .78f, 1));
@@ -267,6 +300,7 @@ public sealed partial class MainViewModel
         for (var i = 0; i < indices.Length; i += 3)
         {
             var a = indices[i]; var b = indices[i + 1]; var c = indices[i + 2]; var normal = Vector3.Cross(positions[b] - positions[a], positions[c] - positions[a]);
+            if (!mesh.HasInteriorWinding) normal = -normal;
             normals[a] += normal; normals[b] += normal; normals[c] += normal;
         }
         return new() { Positions = new(positions), Indices = new(indices), Normals = new(normals.Select(n => n.LengthSquared() < 1e-12f ? Vector3.UnitZ : Vector3.Normalize(n))), Colors = new(Enumerable.Repeat(color, positions.Length)) };
@@ -315,6 +349,7 @@ public sealed partial class MainViewModel
     private void NotifyTunnelWorkspace()
     {
         foreach (var name in new[] { nameof(CanRemoveTunnelBranch), nameof(HasTunnelReconstruction), nameof(IsTunnelSurfaceView), nameof(TunnelCompletionVisible), nameof(HasTunnelRecognition),
-            nameof(TunnelRecognitionVisible), nameof(TunnelMeshSummary), nameof(TunnelRecognitionSummary), nameof(CanExportTunnelMesh), nameof(CanExportTunnelLabels), nameof(CanShowSurface), nameof(CanSelectSurface), nameof(CanOpenSurface), nameof(SurfaceModeHint) }) Raise(name);
+            nameof(TunnelRecognitionVisible), nameof(TunnelMeshSummary), nameof(TunnelRecognitionSummary), nameof(CanExportTunnelMesh), nameof(CanExportTunnelLabels), nameof(CanShowSurface), nameof(CanSelectSurface), nameof(CanOpenSurface), nameof(SurfaceModeHint),
+            nameof(CanWalk), nameof(CanWalkTunnel), nameof(ExploreText), nameof(TunnelWalkingHint) }) Raise(name);
     }
 }

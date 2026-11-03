@@ -81,7 +81,8 @@ public sealed record TunnelMeshOptions(double Spacing = .3, double MaximumEdge =
 }
 
 public sealed record TunnelReconstruction(TunnelMeshOptions Options, InspectionPoint[] Vertices,
-    int[] ObservedTriangles, int[] CompletedTriangles, StructureInputStamp[] Inputs, string AxisHash, bool IsStale = false);
+    int[] ObservedTriangles, int[] CompletedTriangles, StructureInputStamp[] Inputs, string AxisHash, bool IsStale = false,
+    bool HasInteriorWinding = false);
 
 public enum TunnelPointClass { Unknown, LowerSurface, Side, Roof, Support, Equipment, Person }
 public sealed record TunnelPointLabel(Guid ObjectId, int PointIndex, TunnelPointClass Class);

@@ -210,11 +210,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsWalking => _isWalking;
     public bool IsFlying => _isFlying;
     public bool IsNavigating => IsWalking || IsFlying;
-    public bool CanWalk => CanInteract && _viewFrames > 0 && (IsImported ? !IsTunnelMode && _indoorFloor is not null : WalkCoverage.End - WalkCoverage.Start >= .06f);
+    public bool CanWalk => CanInteract && _viewFrames > 0 && (IsImported ? IsTunnelMode ? CanWalkTunnel : _indoorFloor is not null : WalkCoverage.End - WalkCoverage.Start >= .06f);
     public bool CanFly => CanInteract && (IsPoints || IsImported) && _viewFrames > 0;
     public bool IsOverview => !IsNavigating;
-    public string ExploreText => IsImported ? CanWalk ? "Прогулка по поверхностям" : "Свободный полёт" : IsPoints ? "Свободный полёт" : "Прогулка внутри";
-    public string NavigationTitle => IsFlying ? "Свободный полёт" : IsImported ? "Прогулка по скану" : "Прогулка по пещере";
+    public string ExploreText => IsImported ? CanWalk ? IsTunnelMode ? "Прогулка по тоннелю" : "Прогулка по поверхностям" : "Свободный полёт" : IsPoints ? "Свободный полёт" : "Прогулка внутри";
+    public string NavigationTitle => IsFlying ? "Свободный полёт" : IsImported ? IsTunnelMode ? "Прогулка по тоннелю" : "Прогулка по скану" : "Прогулка по пещере";
     public System.Windows.Media.Color WalkAmbientColor => IsImported ? System.Windows.Media.Color.FromRgb(112, 119, 131) : System.Windows.Media.Color.FromRgb(36, 44, 56);
     public float FlightSpeedScale => IsImported ? Math.Clamp((_importedBounds.Maximum - _importedBounds.Minimum).Length() / 10, .001f, 1) : 1;
     public float EffectiveFlightSpeed => _flightSpeed * FlightSpeedScale;
@@ -789,6 +789,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (!CanWalk) return;
         EndInspection();
         ExitWalking();
+        if (IsTunnelMode && !PrepareTunnelNavigator()) return;
         _navigationOrbitDistance = Math.Clamp(Camera.LookDirection.Length, 2, 15);
         Pause();
         FollowScanner = false;
@@ -822,6 +823,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (!IsNavigating) return;
         _isWalking = false;
         _isFlying = false;
+        _tunnelNavigator = null; _walkingTunnelMesh = null;
         Camera.FieldOfView = 47;
         NotifyWalking();
         RefreshGeometry();
@@ -845,7 +847,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Camera.Position = new(p.X, p.Y, p.Z);
         Camera.LookDirection = new(d.X, d.Y, d.Z);
         Camera.UpDirection = new(0, 0, 1);
-        if (navigator is WalkNavigator or Navigation.IndoorNavigator)
+        if (navigator is WalkNavigator or Navigation.IndoorNavigator or Navigation.TunnelNavigator)
         {
             var right = Vector3.Normalize(Vector3.Cross(d, Vector3.UnitZ));
             var lamp = p + right * .18f + Vector3.UnitZ * -.08f;
@@ -857,7 +859,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (Math.Abs(EffectiveFlightSpeed - flight.Speed) > .000001f) FlightSpeed = flight.Speed / FlightSpeedScale;
             CameraLabel = $"Полёт · {navigator.DistanceTravelled:F1} м";
         }
-        else CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м";
+        else CameraLabel = $"Прогулка · {navigator.DistanceTravelled:F1} м" +
+            (navigator is Navigation.TunnelNavigator { BlockedBy: not Navigation.TunnelMotionBlock.None } tunnel ? " · " + tunnel.MotionHint : "");
     }
     private void FollowCamera()
     {

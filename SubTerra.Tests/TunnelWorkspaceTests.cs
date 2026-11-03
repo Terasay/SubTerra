@@ -7,6 +7,7 @@ using SubTerra.Models;
 using SubTerra.Services;
 using SubTerra.Simulation;
 using SubTerra.ViewModels;
+using SubTerra.Navigation;
 using SubTerra.Views;
 using Xunit;
 
@@ -14,6 +15,89 @@ namespace SubTerra.Tests;
 
 public sealed class TunnelWorkspaceTests
 {
+    [Fact]
+    public async Task WalkCanPassMeasuredJunctionAndTurnIntoBranch()
+    {
+        var a = Vector3.Zero; var b = new Vector3(8, 0, 0); var c = new Vector3(4, 0, 0); var e = new Vector3(4, 6, 0);
+        bool InsideBranch(Vector3 p) => p.Y > 0 && p.Y < 6 && Math.Pow((p.X - 4) / 2, 2) + Math.Pow(p.Z / 1.5, 2) < .99;
+        bool InsideMain(Vector3 p) => p.X > 0 && p.X < 8 && Math.Pow(p.Y / 2, 2) + Math.Pow(p.Z / 1.5, 2) < .99;
+        var project = Project(Tube(a, b).Where(p => !InsideBranch(p)).Concat(Tube(c, e).Where(p => !InsideMain(p))));
+        var root = TunnelAnalyzer.Create([InspectionPoint.From(a), InspectionPoint.From(b)], new(SectionSpacing: 1)) with
+        { Version = 2, Branches = [new(Guid.NewGuid(), "Боковой проход", TunnelAnalyzer.Create([InspectionPoint.From(c), InspectionPoint.From(e)], new(SectionSpacing: 1)))] };
+        var result = await TunnelMeshBuilder.BuildAsync(project, root, new(CompletionGap: 0));
+        var surface = TunnelWalkSurface.Prepare(result.Reconstruction!);
+        Assert.True(surface.TryCreate(new(1, 0, 0), Vector3.UnitX, out var walker));
+        for (var i = 0; i < 60; i++) walker!.Move(1, 0, .02f, false);
+        Assert.True(walker!.Position.X >= 3.85f && walker.Position.X <= 4.15f, $"Stopped at {walker.Position}: {walker.BlockedBy}");
+        walker.Look(MathF.PI / 2, 0);
+        for (var i = 0; i < 80; i++) walker.Move(1, 0, .02f, false);
+        Assert.InRange(walker.Position.Y, 3.5f, 4.2f);
+        Assert.InRange(walker.Position.X, 3.7f, 4.3f);
+    }
+
+    [Fact]
+    public Task WalkingUsesCurrentObservedMeshAndSupportsSavedGuestViewing() => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: new TestAccess(true), interaction: new TestInteraction());
+        await vm.LoadTunnelDemoAsync(); Assert.False(vm.CanWalk);
+        await vm.BuildTunnelMeshAsync(); Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.CanWalk);
+        vm.InsideCommand.Execute(null); Assert.True(vm.IsWalking, vm.Notification);
+        var walker = vm.CreateTunnelNavigator(); var start = walker.Position;
+        walker.Move(1, 0, .02f, false); vm.UpdateWalkPosition(walker);
+        Assert.True(Vector3.Distance(start, walker.Position) > .01);
+        Assert.Equal((double)walker.Position.Z - .08, vm.LampCamera.Position.Z, 4);
+        vm.ShowTunnelObserved = false; Assert.False(vm.IsWalking); Assert.False(vm.CanWalk);
+        vm.ShowTunnelObserved = true; Assert.True(vm.CanWalk);
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "walk.subterra"); Assert.True(await vm.SaveAsync(path));
+            using var guest = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: new TestAccess(false));
+            await guest.OpenAsync(path); Assert.True(guest.CanWalk);
+            var dirty = guest.HasUnsavedChanges; guest.InsideCommand.Execute(null); Assert.True(guest.IsWalking, guest.Notification);
+            guest.ReturnToOverview(); Assert.Equal(dirty, guest.HasUnsavedChanges);
+        }
+        finally { Directory.Delete(directory, true); }
+        vm.ObjectX += 1; await vm.ApplyObjectCommand.ExecuteAsync(); Assert.False(vm.CanWalk);
+        await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.CanWalk);
+        await vm.RedoProjectCommand.ExecuteAsync(); Assert.False(vm.CanWalk);
+    });
+
+    [Fact]
+    public Task LegacyOutwardMeshKeepsInteriorLightingAndExportsCorrectFaceDirections() => ScanControlTests.OnSta(async () =>
+    {
+        var project = TunnelDemoFactory.Create();
+        var document = await TunnelMeshBuilder.BuildAsync(project, project.Tunnel!, new(CompletionGap: 0));
+        var mesh = document.Reconstruction!;
+        var reversed = (int[])mesh.ObservedTriangles.Clone();
+        for (var i = 0; i < reversed.Length; i += 3) (reversed[i + 1], reversed[i + 2]) = (reversed[i + 2], reversed[i + 1]);
+        var legacy = mesh with { ObservedTriangles = reversed, HasInteriorWinding = false };
+        var freshExport = TunnelMeshBuilder.Export(mesh); var legacyExport = TunnelMeshBuilder.Export(legacy);
+        for (var i = 0; i < freshExport.Triangles.Length; i++)
+            Assert.Equal(freshExport.Points[freshExport.Triangles[i]], legacyExport.Points[legacyExport.Triangles[i]]);
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var storage = new SessionStorage(); var freshPath = Path.Combine(directory, "fresh.subterra"); var oldPath = Path.Combine(directory, "old.subterra");
+            await storage.SaveAsync(freshPath, (project with { Tunnel = document }).ToSession(), 1);
+            await storage.SaveAsync(oldPath, (project with { Tunnel = document with { Reconstruction = legacy } }).ToSession(), 1);
+            using (var zip = ZipFile.Open(oldPath, ZipArchiveMode.Update))
+            {
+                var entry = zip.GetEntry("tunnel/analysis.json")!; JsonNode json;
+                using (var reader = new StreamReader(entry.Open())) json = JsonNode.Parse(reader.ReadToEnd())!;
+                json["Reconstruction"]!.AsObject().Remove("HasInteriorWinding"); entry.Delete();
+                using var writer = new StreamWriter(zip.CreateEntry("tunnel/analysis.json").Open()); writer.Write(json.ToJsonString());
+            }
+            using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), storage, access: new TestAccess(false));
+            await vm.OpenAsync(freshPath); await vm.ShowSurfaceAsync(); var normals = vm.Surface!.Normals!.ToArray();
+            await vm.OpenAsync(oldPath); await vm.ShowSurfaceAsync();
+            Assert.False(vm.HasNotification, vm.Notification); var restoredNormals = vm.Surface!.Normals!.ToArray();
+            Assert.Equal(normals.Length, restoredNormals.Length);
+            for (var i = 0; i < normals.Length; i++) Assert.True(Vector3.DistanceSquared(normals[i], restoredNormals[i]) < 1e-10f);
+            Assert.True(vm.CanWalk);
+        }
+        finally { Directory.Delete(directory, true); }
+    });
     private static readonly InspectionPoint[] Axis = [new(0, 0, 0), new(8, 0, .8f)];
     private static IEnumerable<Vector3> Tube(Vector3 start, Vector3 end, Func<double, double, bool>? keep = null, bool niche = false)
     {
@@ -41,6 +125,14 @@ public sealed class TunnelWorkspaceTests
         var project = Project(Tube(Axis[0].Position, Axis[1].Position, niche: true)); var original = project.Active!.Source.Points.ToArray();
         var result = await TunnelMeshBuilder.BuildAsync(project, project.Tunnel!, new(CompletionGap: 0)); var mesh = result.Reconstruction!;
         Assert.True(mesh.ObservedTriangles.Length > 1000); Assert.Empty(mesh.CompletedTriangles);
+        Assert.True(mesh.HasInteriorWinding);
+        var axisDirection = Vector3.Normalize(Axis[1].Position - Axis[0].Position);
+        for (var i = 0; i < mesh.ObservedTriangles.Length; i += 3 * 31)
+        {
+            var a = mesh.Vertices[mesh.ObservedTriangles[i]].Position; var b = mesh.Vertices[mesh.ObservedTriangles[i + 1]].Position; var c = mesh.Vertices[mesh.ObservedTriangles[i + 2]].Position;
+            var center = (a + b + c) / 3; var along = Vector3.Dot(center - Axis[0].Position, axisDirection);
+            Assert.True(Vector3.Dot(Vector3.Cross(b - a, c - a), Axis[0].Position + axisDirection * along - center) > 0, "Tunnel faces must receive a light placed inside the passage.");
+        }
         Assert.Contains(mesh.Vertices, p => p.Y < -2.5); Assert.Contains(mesh.Vertices, p => p.X > 6 && p.Z > 2);
         Assert.Equal(original, project.Active.Source.Points); Assert.Empty(project.Active.Source.Triangles); Assert.Empty(project.Active.Source.Colors);
         TunnelAnalyzer.Validate(result, project);
@@ -160,6 +252,7 @@ public sealed class TunnelWorkspaceTests
             var loaded = (await storage.LoadAsync(path)).Project!;
             Assert.Equal(branchId, Assert.Single(loaded.Tunnel!.Branches).Id); Assert.Equal("Продолжение", loaded.Tunnel.Branches[0].Name);
             Assert.Equal(root.Reconstruction!.ObservedTriangles, loaded.Tunnel!.Reconstruction!.ObservedTriangles);
+            Assert.True(loaded.Tunnel.Reconstruction.HasInteriorWinding);
             Assert.Equal(root.Recognition.Objects[0].ReviewedClass, loaded.Tunnel.Recognition!.Objects[0].ReviewedClass);
             var changed = project.Replace(project.Active! with { IsVisible = false }); var stale = TunnelAnalyzer.Refresh(root, changed);
             Assert.True(stale.Reconstruction!.IsStale); Assert.True(stale.Recognition!.IsStale);

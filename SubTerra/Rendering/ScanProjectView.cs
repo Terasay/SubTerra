@@ -17,6 +17,8 @@ public sealed record ScanProjectView(EvaluatedScanProject Data, ImportedGeometry
                 if (project.Structure is not null) StructureProvenance.WarmHashes(project, token);
                 var geometry = data.VisibleScan is null ? null : new ImportedGeometry(data.VisibleScan);
                 geometry?.PrepareMeshPreviews(token);
+                if (project.Tunnel?.Reconstruction is { IsStale: false } tunnelMesh)
+                    Navigation.TunnelWalkSurface.Prepare(tunnelMesh, token);
                 ImportedGeometry? cloudOnly = null;
                 if (data.VisibleScan is { } scan && data.CloudOnlyIndices.Length > 0 && scan.HasMesh)
                     cloudOnly = new(new ImportedScan { Metadata = scan.Metadata,

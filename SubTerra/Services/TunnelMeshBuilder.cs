@@ -54,7 +54,9 @@ public static class TunnelMeshBuilder
                 {
                     if ((++visits & 4095) == 0) token.ThrowIfCancellationRequested();
                     if (visits > 100_000_000) throw new InvalidDataException("Слишком сложное пересечение ветвей. Увеличьте шаг сетки или сократите оси.");
-                    if (branch == own || section.Contour.Length < section.AngularBins * .75) continue;
+                    // An open profile does not bound an interior. At a junction its floor/roof
+                    // returns may span the other passage; treating that as a volume deletes real ground.
+                    if (branch == own || !section.IsClosed) continue;
                     var delta = point - section.Center.Position;
                     if (Math.Abs(Vector3.Dot(delta, section.Forward.Position)) > options.Spacing * .55) continue;
                     var px = Vector3.Dot(delta, section.Right.Position); var py = Vector3.Dot(delta, section.Up.Position);
@@ -127,12 +129,12 @@ public static class TunnelMeshBuilder
                     var edge = options.MaximumEdge * options.MaximumEdge;
                     if (Vector3.DistanceSquared(vertices[a].Position, vertices[b].Position) > edge || Vector3.DistanceSquared(vertices[c].Position, vertices[e].Position) > edge ||
                         Vector3.DistanceSquared(vertices[a].Position, vertices[c].Position) > edge || Vector3.DistanceSquared(vertices[b].Position, vertices[e].Position) > edge) continue;
-                    Triangle(a, c, b); Triangle(b, c, e);
+                    Triangle(a, b, c); Triangle(b, e, c);
                 }
             }
         }
         if (observed.Count == 0) throw new InvalidDataException("Недостаточно соседних наблюдений для сетки. Уточните ось, шаг или радиус поиска.");
-        return new(options, vertices.ToArray(), observed.ToArray(), completed.ToArray(), root.Inputs, TunnelWorkspace.AxisHash(root));
+        return new(options, vertices.ToArray(), observed.ToArray(), completed.ToArray(), root.Inputs, TunnelWorkspace.AxisHash(root), HasInteriorWinding: true);
     }
 
     public static ImportedScan Export(TunnelReconstruction mesh, bool completionOnly = false)
@@ -153,6 +155,8 @@ public static class TunnelMeshBuilder
             }
             triangles.Add(mapped);
         }
+        if (!mesh.HasInteriorWinding)
+            for (var i = 0; i < triangles.Count; i += 3) (triangles[i + 1], triangles[i + 2]) = (triangles[i + 2], triangles[i + 1]);
         return new() { Metadata = new("tunnel-reconstruction.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0) { IsSynthetic = true },
             Points = points.ToArray(), Colors = colors.ToArray(), Triangles = triangles.ToArray() };
     }
