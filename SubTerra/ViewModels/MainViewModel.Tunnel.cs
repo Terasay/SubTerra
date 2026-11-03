@@ -56,7 +56,7 @@ public sealed partial class MainViewModel
     public string TunnelAxisText
     {
         get => _tunnelAxisText;
-        set { if (CanEditTunnel && value is not null && value.Length <= 24000 && Set(ref _tunnelAxisText, value)) Raise(nameof(TunnelDraftPending)); }
+        set { if (CanEditTunnel && value is not null && value.Length <= 24000 && Set(ref _tunnelAxisText, value)) { Raise(nameof(TunnelDraftPending)); UpdateTunnelDraftGeometry(); } }
     }
     public double TunnelSectionSpacing
     {
@@ -73,14 +73,14 @@ public sealed partial class MainViewModel
         get => _tunnelMaximumRadius;
         set { if (CanEditTunnel && double.IsFinite(value) && Set(ref _tunnelMaximumRadius, value)) Raise(nameof(TunnelDraftPending)); }
     }
-    private TunnelAnalysisOptions TunnelOptions => (_scanProject?.Tunnel?.Options ?? new()) with
+    private TunnelAnalysisOptions TunnelOptions => (ActiveTunnelDocument?.Options ?? new()) with
         { SectionSpacing = TunnelSectionSpacing, SliceThickness = TunnelSliceThickness, MaximumRadius = TunnelMaximumRadius };
-    public double TunnelContourGap => _scanProject?.Tunnel?.Options.MaximumContourGap ?? .75;
-    public bool TunnelDraftPending => _scanProject?.Tunnel is { } d ?
+    public double TunnelContourGap => ActiveTunnelDocument?.Options.MaximumContourGap ?? .75;
+    public bool TunnelDraftPending => ActiveTunnelDocument is { } d ?
         TunnelAxisText != FormatAxis(d.Axis) || TunnelOptions != d.Options : TunnelAxisText.Length > 0 || TunnelOptions != new TunnelAnalysisOptions();
-    public bool TunnelIsStale => _scanProject?.Tunnel?.IsStale == true;
+    public bool TunnelIsStale => ActiveTunnelDocument?.IsStale == true;
     public bool HasTunnelSections => IsTunnelMode && !TunnelIsStale && !HasEditPreview && TunnelSections.Count > 0;
-    public string TunnelSummary => _scanProject?.Tunnel is not { } d ? "Задайте ось внутри прохода. Цвет точек не используется." :
+    public string TunnelSummary => ActiveTunnelDocument is not { } d ? "Предложите маршрут автоматически или задайте ось внутри прохода." :
         (d.IsStale ? "СКАНЫ ИЗМЕНИЛИСЬ · повторите расчёт. " : "") +
         $"Ось {d.AxisLength:F2} м · сечений: {d.Sections.Length} · замкнутых: {d.Sections.Count(s => s.IsClosed)}. " +
         (d.Sections.Length == 0 ? "Ось сохранена; сечения ещё не рассчитаны." : $"Выборка {d.SampleCount:N0} из {d.SourcePointCount:N0} точек.");
@@ -112,6 +112,7 @@ public sealed partial class MainViewModel
 
     private void InitializeTunnelCommands()
     {
+        InitializeTunnelWorkspaceCommands();
         ApplyTunnelAxisCommand = new(ApplyTunnelAxis, () => CanEditTunnel && IsTunnelMode);
         AnalyzeTunnelCommand = new(AnalyzeTunnelAsync, () => CanAnalyzeTunnel, ex => ReportError("Не удалось рассчитать сечения", ex));
         AppendTunnelCameraCommand = new(() => AppendTunnelAxisPoint(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z)), () => CanAppendTunnelCamera && IsTunnelMode);
@@ -150,6 +151,7 @@ public sealed partial class MainViewModel
             if (points.Length >= 128 || !InspectionPoint.From(point).IsValid) throw new InvalidDataException("Нельзя добавить точку оси.");
             _tunnelAxisText = FormatAxis([.. points, InspectionPoint.From(point)]);
             Raise(nameof(TunnelAxisText)); Raise(nameof(TunnelDraftPending));
+            UpdateTunnelDraftGeometry();
             Status = "Точка добавлена в черновик оси · примените ось или рассчитайте сечения";
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException) { ReportError("Проверьте ось", ex); }
@@ -160,8 +162,9 @@ public sealed partial class MainViewModel
         try
         {
             var axis = ParseTunnelAxis(); var options = TunnelOptions; options.Validate();
+            if (ActiveTunnelDocument is { } current && axis.SequenceEqual(current.Axis) && options == current.Options) { Notification = ""; return; }
             var document = TunnelAnalyzer.Create(axis, options);
-            CommitTunnelProject(_scanProject! with { Tunnel = document }, "изменение оси тоннеля");
+            CommitTunnelProject(_scanProject! with { Tunnel = ReplaceActiveTunnel(document) }, "изменение оси тоннеля");
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException) { ReportError("Проверьте ось и параметры", ex); }
     }
@@ -178,7 +181,7 @@ public sealed partial class MainViewModel
             var document = await TunnelAnalyzer.AnalyzeAsync(snapshot, axis, options, OperationProgress(token), token);
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator || !ReferenceEquals(_scanProject, snapshot)) return;
-            CommitTunnelProject(snapshot with { Tunnel = document }, "расчёт сечений тоннеля");
+            CommitTunnelProject(snapshot with { Tunnel = ReplaceActiveTunnel(document) }, "расчёт сечений тоннеля");
             Notification = "";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
@@ -195,7 +198,8 @@ public sealed partial class MainViewModel
     }
     private void SyncTunnelState(bool force = false)
     {
-        var document = _scanProject?.Tunnel; var mode = _scanProject?.AnalysisMode ?? ProjectAnalysisMode.Room;
+        SyncTunnelWorkspace();
+        var document = ActiveTunnelDocument; var mode = _scanProject?.AnalysisMode ?? ProjectAnalysisMode.Room;
         if (!force && ReferenceEquals(document, _loadedTunnel) && mode == _loadedProjectMode) return;
         if (mode != _loadedProjectMode) { _geometryShading = mode == ProjectAnalysisMode.Tunnel; NotifyReliefState(); NotifyRoomState(); NotifyIndoorState(); }
         var keepDraft = !force && mode == _loadedProjectMode && document is not null && _loadedTunnel is not null &&
@@ -212,7 +216,7 @@ public sealed partial class MainViewModel
         if (document is not null) foreach (var section in document.Sections) TunnelSections.Add(new(section));
         _selectedTunnelSection = TunnelSections.FirstOrDefault(s => s.Section.Id == selected) ?? TunnelSections.FirstOrDefault();
         foreach (var name in new[] { nameof(TunnelAxisText), nameof(TunnelSectionSpacing), nameof(TunnelSliceThickness), nameof(TunnelMaximumRadius), nameof(SelectedTunnelSection) }) Raise(name);
-        UpdateTunnelGeometry(); NotifyTunnelState();
+        UpdateTunnelGeometry(); UpdateTunnelDraftGeometry(); NotifyTunnelState();
     }
     private void NotifyReliefState()
     {
@@ -223,10 +227,11 @@ public sealed partial class MainViewModel
         foreach (var name in new[] { nameof(SelectedProjectMode), nameof(IsTunnelMode), nameof(IsRoomMode), nameof(CanEditTunnel), nameof(CanAnalyzeTunnel),
             nameof(CanAppendTunnelCamera), nameof(TunnelDraftPending), nameof(TunnelSummary), nameof(TunnelIsStale), nameof(HasTunnelSections), nameof(TunnelSectionMetrics), nameof(CurrentTunnelSection), nameof(TunnelContourGap) }) Raise(name);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        NotifyTunnelWorkspace();
     }
     private void UpdateTunnelGeometry()
     {
-        var document = IsTunnelMode && !HasEditPreview ? _scanProject?.Tunnel : null;
+        var document = IsTunnelMode && !HasEditPreview ? ActiveTunnelDocument : null;
         var axis = document?.Axis ?? [];
         var lines = new List<Vector3>();
         for (var i = 1; i < axis.Length; i++) lines.AddRange([axis[i - 1].Position, axis[i].Position]);
@@ -241,6 +246,7 @@ public sealed partial class MainViewModel
             }
         TunnelSectionGeometry = SceneGeometry.Lines(lines);
         Raise(nameof(TunnelAxisGeometry)); Raise(nameof(TunnelAxisNodes)); Raise(nameof(TunnelSectionGeometry));
+        UpdateTunnelBranchGeometry();
     }
     private void FocusTunnelSection()
     {

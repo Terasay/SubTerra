@@ -51,6 +51,9 @@ public sealed record TunnelAnalysisDocument(int Version, InspectionPoint[] Axis,
     TunnelSection[] Sections, StructureInputStamp[] Inputs, DateTimeOffset CreatedAtUtc,
     int SourcePointCount, int SampleCount, bool IsStale = false)
 {
+    public TunnelBranch[] Branches { get; init; } = [];
+    public TunnelReconstruction? Reconstruction { get; init; }
+    public TunnelRecognition? Recognition { get; init; }
     [JsonIgnore] public double AxisLength
     {
         get
@@ -62,4 +65,41 @@ public sealed record TunnelAnalysisDocument(int Version, InspectionPoint[] Axis,
         }
     }
     [JsonIgnore] public bool HasResults => Sections is { Length: > 0 };
+}
+
+/// <summary>The primary passage is the root document; children contain no further branches.</summary>
+public sealed record TunnelBranch(Guid Id, string Name, TunnelAnalysisDocument Analysis);
+
+public sealed record TunnelMeshOptions(double Spacing = .3, double MaximumEdge = .85, double CompletionGap = .5)
+{
+    public void Validate()
+    {
+        if (!double.IsFinite(Spacing) || Spacing is < .2 or > 2 || !double.IsFinite(MaximumEdge) ||
+            MaximumEdge < Spacing || MaximumEdge > 3 || !double.IsFinite(CompletionGap) || CompletionGap is < 0 or > 2)
+            throw new ArgumentException("Сетка: шаг 0,2–2 м; ребро от шага до 3 м; достройка 0–2 м (0 отключает её).");
+    }
+}
+
+public sealed record TunnelReconstruction(TunnelMeshOptions Options, InspectionPoint[] Vertices,
+    int[] ObservedTriangles, int[] CompletedTriangles, StructureInputStamp[] Inputs, string AxisHash, bool IsStale = false);
+
+public enum TunnelPointClass { Unknown, LowerSurface, Side, Roof, Support, Equipment, Person }
+public sealed record TunnelPointLabel(Guid ObjectId, int PointIndex, TunnelPointClass Class);
+public sealed record TunnelObjectCandidate(Guid Id, string Name, InspectionPoint Minimum, InspectionPoint Maximum,
+    TunnelPointLabel[] Points, TunnelPointClass SuggestedClass, TunnelPointClass? ReviewedClass = null)
+{
+    [JsonIgnore] public string Title => $"{Name} · {Points.Length:N0} точек";
+    [JsonIgnore] public string ReviewText => ReviewedClass is { } c ? $"Подтверждено оператором: {ClassName(c)}" :
+        $"Геометрическая гипотеза: {ClassName(SuggestedClass)} · нужна проверка";
+    public static string ClassName(TunnelPointClass c) => c switch
+    {
+        TunnelPointClass.LowerSurface => "нижняя поверхность", TunnelPointClass.Side => "борта", TunnelPointClass.Roof => "свод",
+        TunnelPointClass.Support => "крепь", TunnelPointClass.Equipment => "оборудование", TunnelPointClass.Person => "человек", _ => "неизвестно"
+    };
+}
+public sealed record TunnelRecognition(TunnelPointLabel[] Surfaces, TunnelObjectCandidate[] Objects,
+    StructureInputStamp[] Inputs, string AxisHash, int SampleCount, bool IsStale = false)
+{
+    public const string Method = "xyz-radial-geometry-v1";
+    public const string PeopleStatus = "Люди без RGB: модель не подключена. Нужны отдельные XYZ-веса и размеченные реальные сканы.";
 }

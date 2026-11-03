@@ -9,6 +9,20 @@ namespace SubTerra.Views;
 public partial class TunnelAnalysisPanel : UserControl
 {
     public TunnelAnalysisPanel() => InitializeComponent();
+    private async void ExportMesh_Click(object sender, RoutedEventArgs e) => await ExportMesh(false);
+    private async void ExportCompletion_Click(object sender, RoutedEventArgs e) => await ExportMesh(true);
+    private async Task ExportMesh(bool completionOnly)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm || !vm.CanExportTunnelMesh) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Модель PLY (*.ply)|*.ply", DefaultExt = ".ply", FileName = completionOnly ? "tunnel-completion" : "tunnel-mesh" };
+        if (dialog.ShowDialog() == true) await vm.ExportTunnelMeshAsync(dialog.FileName, completionOnly);
+    }
+    private async void ExportLabels_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm || !vm.CanExportTunnelLabels) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "XYZ-разметка CSV (*.csv)|*.csv", DefaultExt = ".csv", FileName = "tunnel-xyz-labels" };
+        if (dialog.ShowDialog() == true) await vm.ExportTunnelLabelsAsync(dialog.FileName);
+    }
 }
 
 /// <summary>Observed radial profile in the section's own metric coordinates; gaps remain open.</summary>

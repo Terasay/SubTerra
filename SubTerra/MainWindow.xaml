@@ -121,6 +121,11 @@
                             <h:ShadowMap3D Resolution="2048,2048" Bias=".001" Intensity=".55" LightCamera="{Binding ShadowCamera}" IsRendering="{Binding ShadowsVisible}"/>
                             <h:LineGeometryModel3D Geometry="{Binding Grid}" Color="#253B48" Thickness=".5" IsRendering="{Binding GridVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding TunnelAxisGeometry}" Color="#70D7E6" Thickness="2.5" DepthBias="-20" IsRendering="{Binding IsTunnelMode}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding TunnelOtherBranchesGeometry}" Color="#8DA6B6" Thickness="1.5" DepthBias="-20" IsRendering="{Binding IsTunnelMode}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding TunnelDraftGeometry}" Color="#F2A8E0" Thickness="3" DepthBias="-25" IsRendering="{Binding IsTunnelMode}" IsHitTestVisible="False"/>
+                            <h:MeshGeometryModel3D Geometry="{Binding TunnelCompletedGeometry}" Material="{Binding TunnelCompletionMaterial}" IsRendering="{Binding TunnelCompletionVisible}" CullMode="None" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding TunnelRecognitionGeometry}" Color="White" Size="3,3" Figure="Ellipse" DepthBias="-20" IsRendering="{Binding TunnelRecognitionVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding TunnelObjectOutline}" Color="#FFF0A0" Thickness="2" DepthBias="-30" IsRendering="{Binding TunnelRecognitionVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding TunnelAxisNodes}" Color="#B5F3FF" Size="7,7" Figure="Ellipse" IsRendering="{Binding IsTunnelMode}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding TunnelSectionGeometry}" Color="#FAD582" Thickness="3" DepthBias="-25" IsRendering="{Binding HasTunnelSections}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding Cloud}" Color="White" Size="2,2" Figure="Ellipse" IsRendering="{Binding IsPoints}" IsHitTestVisible="{Binding IsPicking}" HitTestThickness="6"/>

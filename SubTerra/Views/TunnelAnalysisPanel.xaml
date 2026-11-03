@@ -8,11 +8,16 @@
         <TextBlock Text="Анализ использует форму точек. RGB и плоскость пола не требуются. Выберите тип пространства «Тоннель / шахта»." Style="{StaticResource Muted}" Margin="0,8,0,12"/>
         <Button Content="Учебный тоннель · без RGB" Command="{Binding LoadTunnelDemoCommand}" Margin="0,0,0,14"/>
         <TextBlock Text="01  Задать ось внутри прохода" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <TextBlock Text="Одна строка — X Y Z в метрах. Точки идут по порядку движения. Для развилки рассчитывайте каждую ветвь отдельно." Style="{StaticResource Muted}"/>
+        <ComboBox ItemsSource="{Binding TunnelBranches}" SelectedItem="{Binding SelectedTunnelBranch}" DisplayMemberPath="Name" AutomationProperties.Name="Активная ветвь тоннеля" Margin="0,0,0,8"/>
+        <WrapPanel><Button Content="Добавить ветвь" Command="{Binding AddTunnelBranchCommand}" Margin="0,0,6,6"/><Button Content="Удалить ветвь" Command="{Binding RemoveTunnelBranchCommand}" Margin="0,0,0,6"/></WrapPanel>
+        <TextBox Text="{Binding TunnelBranchName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanRemoveTunnelBranch}" AutomationProperties.Name="Название ветви" Margin="0,0,0,6"/>
+        <Button Content="Сохранить название ветви" Command="{Binding RenameTunnelBranchCommand}" Margin="0,0,0,8"/>
+        <TextBlock Text="Одна строка — X Y Z в метрах. Автомаршрут использует точки как ориентиры; пустое поле — поиск основного прохода. Розовая линия — черновик, голубая — применённая ось." Style="{StaticResource Muted}"/>
         <TextBox Text="{Binding TunnelAxisText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Height="110" FontFamily="Consolas" IsEnabled="{Binding CanEditTunnel}" AutomationProperties.Name="Точки оси тоннеля" Margin="0,8,0,8"/>
+        <Button Content="Предложить маршрут по XYZ" Command="{Binding SuggestTunnelRouteCommand}" Margin="0,0,0,8"/>
         <Button Content="Середина измерения → точка оси" Command="{Binding AppendTunnelMidpointCommand}" Margin="0,0,0,6" ToolTip="Измерьте расстояние между противоположными сторонами прохода. Добавится середина этих двух точек."/>
         <Button Content="Положение камеры → точка оси" Command="{Binding AppendTunnelCameraCommand}" Margin="0,0,0,8" ToolTip="Добавляйте точки во время полёта внутри тоннеля; затем выйдите в обзор для расчёта."/>
-        <TextBlock Text="Ось должна проходить внутри одного прохода. В этой версии профиль описывается вокруг оси; отдельные ниши и предметы могут влиять на результат." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
+        <TextBlock Text="Проверьте предложенный маршрут внутри прохода и исправьте координаты. Для ответвления добавьте свою ось от развилки. Пол и свод нужны для автоматического предложения; неизвестные области не пересекаются." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
         <Grid IsEnabled="{Binding CanEditTunnel}">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="82"/></Grid.ColumnDefinitions>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -35,5 +40,36 @@
         <TextBlock Text="{Binding TunnelSectionMetrics}" TextWrapping="Wrap" Margin="0,0,0,8"/>
         <Button Content="Показать сечение в 3D" Command="{Binding FocusTunnelSectionCommand}"/>
         <TextBlock Text="Разрывы профиля оставлены открытыми. Угловое покрытие — доля направлений с точками, не оценка точности. Полная площадь выводится только для замкнутого профиля." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
+        <TextBlock Text="03  Криволинейная сетка всех ветвей" Style="{StaticResource Section}" Margin="0,18,0,8" TextWrapping="Wrap"/>
+        <Grid IsEnabled="{Binding CanEditTunnel}">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="82"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="Шаг сетки, м" TextWrapping="Wrap" Margin="0,0,8,6"/>
+            <TextBox Grid.Column="1" Text="{Binding TunnelMeshSpacing, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Шаг сетки тоннеля" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="1" Text="Достроить пропуски до, м" TextWrapping="Wrap" Margin="0,0,8,6"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TunnelCompletionGap, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Максимальная достройка тоннеля" Margin="0,0,0,6"/>
+        </Grid>
+        <Button Content="Построить сетку из точек" Command="{Binding BuildTunnelMeshCommand}" Margin="0,4,0,8"/>
+        <CheckBox Content="Поверхность по наблюдениям" IsChecked="{Binding ShowTunnelObserved}" Margin="0,0,0,6"/>
+        <CheckBox Content="Достройка · оранжевым" IsChecked="{Binding ShowTunnelCompletion}" Margin="0,0,0,6"/>
+        <TextBlock Text="{Binding TunnelMeshSummary}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
+        <Button Content="Экспорт сетки PLY" Click="ExportMesh_Click" IsEnabled="{Binding CanExportTunnelMesh}" Margin="0,0,0,6"/>
+        <Button Content="Экспорт только достройки PLY" Click="ExportCompletion_Click" IsEnabled="{Binding CanExportTunnelMesh}" Margin="0,0,0,8"/>
+        <TextBlock Text="Свод, уклон и радиальные ниши сохраняются по сечениям. Сложные нависающие полости требуют отдельной оси. Значение достройки 0 оставляет все разрывы; исходные точки не меняются." Style="{StaticResource Muted}"/>
+        <TextBlock Text="04  Распознавание и разметка XYZ" Style="{StaticResource Section}" Margin="0,18,0,8" TextWrapping="Wrap"/>
+        <Button Content="Распознать 3D-геометрию" Command="{Binding RecognizeTunnelCommand}" Margin="0,0,0,8"/>
+        <CheckBox Content="Показать классы в 3D" IsChecked="{Binding ShowTunnelRecognition}" Margin="0,0,0,8"/>
+        <TextBlock Text="Зелёный — нижняя поверхность; синий — борта; фиолетовый — свод; серый — непроверенные группы." Style="{StaticResource Muted}"/>
+        <TextBlock Text="{Binding TunnelRecognitionSummary}" Style="{StaticResource Muted}" Margin="0,8,0,8"/>
+        <ListBox ItemsSource="{Binding TunnelObjects}" SelectedItem="{Binding SelectedTunnelObject}" DisplayMemberPath="Title" MaxHeight="150" AutomationProperties.Name="Группы XYZ для разметки"/>
+        <TextBlock Text="{Binding TunnelObjectReview}" TextWrapping="Wrap" Margin="0,8,0,8"/>
+        <Button Content="Показать группу в 3D" Command="{Binding FocusTunnelObjectCommand}" Margin="0,0,0,8"/>
+        <ComboBox ItemsSource="{Binding TunnelClasses}" SelectedItem="{Binding SelectedTunnelClass}" DisplayMemberPath="Name" IsEnabled="{Binding CanEditTunnel}" AutomationProperties.Name="Проверенный класс XYZ" Margin="0,0,0,8"/>
+        <WrapPanel><Button Content="Подтвердить класс" Command="{Binding ReviewTunnelObjectCommand}" Margin="0,0,6,6"/><Button Content="Снять подтверждение" Command="{Binding ResetTunnelObjectReviewCommand}" Margin="0,0,0,6"/></WrapPanel>
+        <TextBlock Text="Если группа не найдена или склеена: инструментом измерения задайте два противоположных угла её 3D-области, затем выделите и подтвердите класс." Style="{StaticResource Muted}"/>
+        <Button Content="Область измерения → группа разметки" Command="{Binding AddTunnelLabelBoxCommand}" Margin="0,8,0,8"/>
+        <Button Content="Экспорт XYZ-разметки CSV" Click="ExportLabels_Click" IsEnabled="{Binding CanExportTunnelLabels}" Margin="0,0,0,8"/>
+        <TextBlock Text="{Binding TunnelPeopleStatus}" Style="{StaticResource Muted}"/>
+        <TextBlock Text="Крепь и оборудование предлагаются по форме и требуют проверки. В экспорт обучающих меток входят только подтверждения оператора; гипотезы сохраняются отдельно." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
     </StackPanel>
 </UserControl>

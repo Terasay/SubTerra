@@ -21,7 +21,7 @@ public sealed partial class SessionStorage
         if (session.Frames.Length != 0 || session.Adjustments.Length != 0) throw new InvalidDataException("Проект сканов не содержит кадров симулятора.");
         var objects = project.Objects.Select(o => new ObjectManifest(o.Id, o.Name, o.IsVisible, o.Tint, o.Transform,
             o.Source.Metadata, o.Source.Points.Length, o.Source.Triangles.Length / 3, o.Source.Colors.Length > 0, o.Mask is not null, o.Source.Appearance is not null)).ToArray();
-        var schema = project.AnalysisMode != ProjectAnalysisMode.Room || tunnelBytes is not null ? 13 :
+        var schema = project.Tunnel?.Version == 2 ? 14 : project.AnalysisMode != ProjectAnalysisMode.Room || tunnelBytes is not null ? 13 :
             objects.Any(o => o.HasAppearance) ? 11 : structureBytes is null ? 5 : project.Structure!.Rooms is not null ? 10 : project.Structure.Objects is not null ? 9 : project.Structure.Room is null ? 6 : project.Structure.Room.IsManuallyEdited ? 8 : 7;
         var manifest = new Manifest(schema, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
             Annotations: session.Annotations, TriangleCount: objects.Sum(o => o.TriangleCount),
@@ -110,6 +110,7 @@ public sealed partial class SessionStorage
         project.Validate(token);
         if (info.HasStructure) project = project with { Structure = ReadStructure(archive, project, token) };
         if (info.HasTunnel) project = project with { Tunnel = ReadTunnel(archive, project, token) };
+        if ((manifest.SchemaVersion == 14) != (project.Tunnel?.Version == 2)) throw new InvalidDataException("Версия анализа тоннеля не соответствует схеме проекта.");
         if (manifest.SchemaVersion <= 10 && ((manifest.SchemaVersion == 10) != (project.Structure?.Rooms is not null) ||
             (manifest.SchemaVersion < 10 && ((manifest.SchemaVersion == 9) != (project.Structure?.Objects is not null) ||
             (manifest.SchemaVersion < 9 && ((manifest.SchemaVersion is 7 or 8) != (project.Structure?.Room is not null) ||

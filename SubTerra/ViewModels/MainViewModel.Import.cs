@@ -23,15 +23,15 @@ public sealed partial class MainViewModel
     public bool HasSyntheticScans => _scanProject?.Objects.Any(o => o.Source.Metadata.IsSynthetic) == true;
     public AsyncRelayCommand LoadCollegeBuildingCommand { get; private set; } = null!;
     private ScanProjectView? CurrentProjectView => _previewView ?? _projectView;
-    public bool CanShowSurface => !IsImported || !IsTunnelMode && HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
-    public bool CanSelectSurface => CanInteract && (!IsImported || CanShowSurface || !IsTunnelMode && !HasEditPreview && !IsScreenSelecting && !HasRecovery &&
+    public bool CanShowSurface => !IsImported || HasTunnelReconstruction || !IsTunnelMode && HasIndoorPreview || CurrentProjectView?.Data.VisibleScan?.HasMesh == true;
+    public bool CanSelectSurface => CanInteract && (!IsImported || CanShowSurface || CanAnalyzeTunnel || !IsTunnelMode && !HasEditPreview && !IsScreenSelecting && !HasRecovery &&
         (HasStructureAnalysis && !StructureIsStale || IsAdministrator && _scanProject?.Objects.Where(o => o.IsVisible).Sum(o => o.PointCount) >= 64));
     private bool NeedsSurfaceLogin => IsImported && !IsTunnelMode && IsGuest && !CanShowSurface && !(HasStructureAnalysis && !StructureIsStale);
     public bool CanOpenSurface => CanSelectSurface || NeedsSurfaceLogin && CanInteract && !HasEditPreview && !IsScreenSelecting && !HasRecovery;
-    public string SurfaceModeHint => CanShowSurface ? "Показать поверхности" : IsTunnelMode ? "Сечения тоннеля работают по точкам. Для поверхности импортируйте готовую сетку PLY или GLB." : HasStructureAnalysis && !StructureIsStale ? "Восстановить поверхности по имеющемуся анализу" :
+    public string SurfaceModeHint => CanShowSurface ? "Показать поверхности" : IsTunnelMode ? "Построить криволинейную сетку по осям ветвей во вкладке «Тоннель»." : HasStructureAnalysis && !StructureIsStale ? "Восстановить поверхности по имеющемуся анализу" :
         IsAdministrator ? "Построить поверхности по цветным точкам; анализ можно отменить" : "Для первого построения сетки нужен администратор. Нажмите, чтобы войти и продолжить.";
     public string SurfaceModeText => IsImported ? HasReconstruction ? "Реконструкция" : HasIndoorPreview ? "Поверхности" : CanShowSurface ? "Сетка" : "Построить сетку" : "Пещера";
-    public bool UsesOriginalMaterials => IsImported && IsSurface && !IsHeight && !IsGeometryShading && CurrentProjectView?.Data.VisibleScan?.Appearance is not null &&
+    public bool UsesOriginalMaterials => IsImported && IsSurface && !IsTunnelSurfaceView && !IsHeight && !IsGeometryShading && CurrentProjectView?.Data.VisibleScan?.Appearance is not null &&
         (!IsIndoorSurfaceView || IndoorStyle.Style == IndoorSurfaceStyle.SourceColors);
     private async Task OpenSurfaceAsync()
     {
@@ -50,6 +50,12 @@ public sealed partial class MainViewModel
     public async Task ShowSurfaceAsync()
     {
         if (!CanSelectSurface) return;
+        if (IsTunnelMode)
+        {
+            if (CanShowSurface) SetView(true, false);
+            else { SelectAnalysisTool("Тоннель"); await BuildTunnelMeshAsync(); }
+            return;
+        }
         if (!IsImported || HasReconstruction || CurrentProjectView?.Data.VisibleScan?.HasMesh == true) { SetView(true, false); return; }
         ReturnToOverview(); EndInspection();
         if (!CanPrepareIndoorPreview)
@@ -177,8 +183,9 @@ public sealed partial class MainViewModel
         TexturedMeshParts = UsesOriginalMaterials ? _importedGeometry?.MaterialMeshes ?? [] : [];
         Raise(nameof(TexturedMeshParts)); Raise(nameof(UsesOriginalMaterials)); Raise(nameof(SourceBadge));
         if (IsPoints) Cloud = _viewFrames == 0 ? null : _importedGeometry?.Cloud(EffectivePointLimit, ActiveClipPlane, IsHeight, IsGeometryShading && !IsHeight);
-        else Surface = _viewFrames == 0 || TexturedMeshParts.Count > 0 ? null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
-        CloudOnly = !IsSurface ? null : IsIndoorSurfaceView && !UsesOriginalMaterials ? _indoorRemaining?.Cloud(EffectivePointLimit, null, IsHeight, IsGeometryShading && !IsHeight) : CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight, IsGeometryShading && !IsHeight);
+        else Surface = _viewFrames == 0 || TexturedMeshParts.Count > 0 ? null : IsTunnelSurfaceView ? ShowTunnelObserved ? _tunnelObservedMesh : null : IsIndoorSurfaceView ? _indoorMeshes[IndoorStyle.Style] : _importedGeometry?.Mesh(IsHeight, CoarseMesh);
+        CloudOnly = !IsSurface || IsTunnelSurfaceView ? null : IsIndoorSurfaceView && !UsesOriginalMaterials ? _indoorRemaining?.Cloud(EffectivePointLimit, null, IsHeight, IsGeometryShading && !IsHeight) : CurrentProjectView?.CloudOnly?.Cloud(EffectivePointLimit, null, IsHeight, IsGeometryShading && !IsHeight);
+        NotifyTunnelWorkspace();
         _geometryMilliseconds = clock.Elapsed.TotalMilliseconds;
         Raise(nameof(GeometryMilliseconds)); Raise(nameof(PerformanceText)); Raise(nameof(RenderedPointCount)); Raise(nameof(CloudDisplayText)); Raise(nameof(MeshPreviewText));
     }

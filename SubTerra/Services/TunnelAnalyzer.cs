@@ -111,8 +111,15 @@ public static class TunnelAnalyzer
     public static TunnelAnalysisDocument Refresh(TunnelAnalysisDocument document, ScanProject project, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
-        if (!document.HasResults) return document with { IsStale = false };
-        return document with { IsStale = !document.Inputs.OrderBy(i => i.ObjectId).SequenceEqual(StructureProvenance.CaptureInputs(project, token)) };
+        var inputs = StructureProvenance.CaptureInputs(project, token);
+        bool Stale(StructureInputStamp[] saved) => !saved.OrderBy(i => i.ObjectId).SequenceEqual(inputs);
+        return document with
+        {
+            IsStale = document.HasResults && Stale(document.Inputs),
+            Branches = document.Branches.Select(b => b with { Analysis = Refresh(b.Analysis, project, token) }).ToArray(),
+            Reconstruction = document.Reconstruction is { } mesh ? mesh with { IsStale = Stale(mesh.Inputs) } : null,
+            Recognition = document.Recognition is { } recognition ? recognition with { IsStale = Stale(recognition.Inputs) } : null
+        };
     }
 
     /// <summary>Checks saved axes, frames, coverage and derived dimensions without fabricating observations.</summary>
@@ -120,10 +127,11 @@ public static class TunnelAnalyzer
     {
         static InvalidDataException Bad() => new("Некорректные данные анализа тоннеля.");
         static bool Hash(string? value) => value?.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F');
-        if (document is null || document.Version != 1 || document.Options is null || document.Axis is null ||
+        if (document is null || document.Version is not (1 or 2) || document.Options is null || document.Axis is null ||
             document.Sections is null || document.Inputs is null || document.CreatedAtUtc < DateTimeOffset.UnixEpoch) throw Bad();
         try { document.Options.Validate(); ValidateAxis(document.Axis, document.HasResults); }
         catch (ArgumentException ex) { throw new InvalidDataException("Некорректная ось или параметры тоннеля.", ex); }
+        TunnelWorkspace.ValidateExtensions(document, project, token);
         if (!document.HasResults)
         {
             if (document.Inputs.Length != 0 || document.SourcePointCount != 0 || document.SampleCount != 0) throw Bad();

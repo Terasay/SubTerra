@@ -87,7 +87,7 @@ public sealed partial class SessionStorage
         Manifest manifest;
         using (var stream = metadata.Open())
             manifest = JsonSerializer.Deserialize<Manifest>(stream) ?? throw new InvalidDataException("Не удалось прочитать сеанс.");
-        if (manifest.SchemaVersion is 5 or 6 or 7 or 8 or 9 or 10 or 11 or 13) return LoadProject(archive, manifest, cancellationToken, progressReporter);
+        if (manifest.SchemaVersion is 5 or 6 or 7 or 8 or 9 or 10 or 11 or 13 or 14) return LoadProject(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion is 4 or 12 && manifest.HasAppearance == (manifest.SchemaVersion == 12)) return LoadImported(archive, manifest, cancellationToken, progressReporter);
         if (manifest.SchemaVersion is not (1 or 2 or 3) || manifest.SourceType != "simulation" || manifest.CoordinateUnit != "m")
             throw new InvalidDataException("Версия или тип сеанса не поддерживается.");
