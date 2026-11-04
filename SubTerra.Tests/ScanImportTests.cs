@@ -436,6 +436,10 @@ public sealed class ScanImportTests
         Assert.Equal(ScanUnit.Meters, dialog.Options.Unit); Assert.Equal(ScanUpAxis.Y, dialog.Options.UpAxis);
         Assert.False(((System.Windows.Controls.ComboBox)dialog.FindName("Units")).IsEnabled);
         Assert.Equal(System.Windows.Visibility.Collapsed, ((System.Windows.Controls.StackPanel)dialog.FindName("TextOptions")).Visibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, ((System.Windows.Controls.StackPanel)dialog.FindName("CoordinateOptions")).Visibility);
+        Assert.Equal("Создать проект", ((System.Windows.Controls.Button)dialog.FindName("ImportButton")).Content);
+        var add = new SubTerra.Views.ScanImportWindow("model.glb", addToProject: true);
+        Assert.Equal("Добавить в проект", ((System.Windows.Controls.Button)add.FindName("ImportButton")).Content);
         return Task.CompletedTask;
     });
 

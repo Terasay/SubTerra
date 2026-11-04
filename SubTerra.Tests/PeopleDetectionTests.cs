@@ -16,6 +16,81 @@ namespace SubTerra.Tests;
 public sealed class PeopleDetectionTests
 {
     [Fact]
+    public void WallImageFilterRequiresDenseSupportOnOneFiniteWallAndKeepsForegroundPeople()
+    {
+        var positions = new Vector3[64 * 64];
+        for (var i = 0; i < positions.Length; i++) positions[i] = new(i % 64 / 32f, 3, i / 64 / 32f);
+        var image = new ScanImage(new(Vector3.Zero, Vector3.UnitY, Vector3.UnitZ), 64, [],
+            Enumerable.Repeat(3f, positions.Length).ToArray(), positions);
+        var wall = new StructureSurface(1, StructureSurfaceKind.Wall, Vector3.UnitY, -3, new(1, 3, 1),
+            [new(0, 3, 0), new(2, 3, 0), new(2, 3, 2), new(0, 3, 2)], 4, 0, []);
+        var box = new ImageBox(2, 4, 60, 62, .7f);
+        Assert.True(PersonScanAnalyzer.LiesOnWall(image, box, [wall]));
+        Assert.False(PersonScanAnalyzer.LiesOnWall(image, box, [wall with { Review = StructureReviewState.Rejected }]));
+        Assert.False(PersonScanAnalyzer.LiesOnWall(image, box, [wall with { Boundary = wall.Boundary.Select(p => p + Vector3.UnitX * 4).ToArray() }]));
+        for (var y = 8; y < 58; y++)
+            for (var x = 21; x < 43; x++) positions[y * 64 + x].Y -= .25f;
+        Assert.False(PersonScanAnalyzer.LiesOnWall(image, box, [wall]));
+        Array.Fill(image.Depth, float.PositiveInfinity);
+        Assert.False(PersonScanAnalyzer.LiesOnWall(image, box, [wall]));
+    }
+
+    [Fact]
+    public void CrossViewGroupingKeepsNeighboursUnlocatedBoxesAndSameViewDetectionsSeparate()
+    {
+        static PersonFinding At(int id, int view, float x) =>
+            new(id, view, new(4, 8, 20, 48, .8f), new(x, 1, 0), new(x + .5f, 1.5f, 1.7f));
+        var observations = new[] { At(1, 0, 0), At(2, 0, .4f), At(3, 1, .03f),
+            At(4, 1, .42f), At(5, 2, 3) with { Minimum = null, Maximum = null }, At(6, 1, .02f) };
+        var grouped = PersonScanAnalyzer.GroupAcrossViews(observations);
+        Assert.Equal(new int?[] { 1, 2, 1, 2, null, 3 }, grouped.Select(f => f.SpatialGroup));
+        Assert.Equal(observations.Select(f => f.Box), grouped.Select(f => f.Box));
+    }
+
+    [Fact]
+    public void ReviewedExamplesTrainOnOneSetAndChangeDecisionsOnUnseenCandidatesAfterRestart()
+    {
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var path = new WorkspaceStateStore(directory).PersonExamplesPath;
+            var training = new PersonCandidateLearning(path);
+            var pose = new ScanViewPose(Vector3.Zero, Vector3.UnitY, Vector3.UnitZ);
+            ScanImage View(int seed)
+            {
+                var rgb = new byte[64 * 64 * 3];
+                new Random(seed).NextBytes(rgb);
+                return new(pose, 64, rgb, new float[64 * 64], []);
+            }
+            static PersonFinding Candidate(bool tall, float score) => new(tall ? 1 : 2, 0,
+                tall ? new(10, 3, 20, 57, score) : new(24, 25, 58, 40, score),
+                Vector3.Zero, tall ? new(.5f, .4f, 1.7f) : new(1.2f, .8f, .5f));
+            for (var i = 0; i < 3; i++)
+            {
+                training.Review(View(i), Candidate(true, .5f), StructureReviewState.Confirmed);
+                training.Review(View(i), Candidate(false, .5f), StructureReviewState.Rejected);
+            }
+            var restored = new PersonCandidateLearning(path); restored.Reload();
+            Assert.True(restored.Ready);
+            var unseen = new PersonDetectionResult([View(99)], [Candidate(true, .46f), Candidate(false, .56f)], "test");
+            var corrected = Assert.Single(restored.Apply(unseen, .5f, true, default).Findings);
+            Assert.Equal(1, corrected.Id);
+            Assert.True(corrected.Box.Score > .5f);
+            Assert.Equal(.46f, corrected.DetectorScore);
+            Assert.Equal(StructureReviewState.Proposed, corrected.Review);
+            Assert.Equal(2, Assert.Single(restored.Apply(unseen, .5f, false, default).Findings).Id);
+            restored.Review(View(0), Candidate(false, .5f), StructureReviewState.Confirmed);
+            training.Reload();
+            Assert.Equal((4, 2), (training.Positives, training.Negatives));
+            training.Review(View(0), Candidate(false, .5f), StructureReviewState.Proposed);
+            restored.Reload(); Assert.False(restored.Ready);
+            Assert.Equal((3, 2), (restored.Positives, restored.Negatives));
+            Assert.Equal(2, Assert.Single(restored.Apply(unseen, .5f, true, default).Findings).Id);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public void ProjectionUsesMeasuredRgbDepthAndMasksWithoutDesktopOrGpu()
     {
         var scan = new ImportedScan { Metadata = new("rgb.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
@@ -108,6 +183,20 @@ public sealed class PeopleDetectionTests
         Assert.Equal(login, vm.HasStructureAnalysis); Assert.Equal(login, vm.HasReconstruction);
         Assert.Equal(login, vm.IsIndoorSurfaceView); Assert.False(vm.HasNotification, vm.Notification);
         if (!login) { Assert.True(vm.IsPointMode); Assert.Equal(dirty, vm.HasUnsavedChanges); }
+    });
+
+    [Fact]
+    public Task FullyMaskedRgbScanDoesNotOfferPeopleSearchOrLogin() => ScanControlTests.OnSta(async () =>
+    {
+        var access = new TestAccess();
+        using var vm = Vm(access);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        await vm.PreviewBoxAsync(false); // The initial box encloses the whole scan.
+        vm.ApplyCleanPreviewCommand.Execute(null);
+        Assert.Equal("0", vm.PointCountText);
+        Assert.False(vm.FindPeopleCommand.CanExecute(null));
+        access.Logout();
+        Assert.Contains("RGB", vm.PeopleAvailabilityHint);
     });
 
     [Fact]
@@ -214,6 +303,56 @@ public sealed class PeopleDetectionTests
     });
 
     [Fact]
+    public Task GlbPeopleSearchUsesTheBundledDetectorFromTheWorkspace() => ScanControlTests.OnSta(async () =>
+    {
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var path = Environment.GetEnvironmentVariable("SUBTERRA_REVIEW_GLB");
+            int? expectedGroups = null;
+            if (string.IsNullOrEmpty(path))
+            {
+                path = Path.Combine(directory, "flat-texture.glb");
+                ScanImportTests.CreateGlb(path);
+                expectedGroups = 0;
+            }
+            else if (int.TryParse(Environment.GetEnvironmentVariable("SUBTERRA_REVIEW_GROUPS"), out var count))
+                expectedGroups = count;
+            using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+                access: new TestAccess(), interaction: new TestInteraction(), workspaceStore: new(directory));
+            await vm.ImportAsync(path, new());
+            Assert.True(vm.UsesOriginalMaterials);
+            await vm.FindPeopleCommand.ExecuteAsync();
+            Assert.False(vm.HasNotification, vm.Notification);
+            Assert.True(vm.IsPeoplePreviewVisible);
+            if (expectedGroups.HasValue)
+            {
+                Assert.All(vm.PersonFindings, f => Assert.True(f.SpatialGroup.HasValue, vm.PeopleSummary));
+                Assert.Equal(expectedGroups.Value, vm.PersonFindings.Select(f => f.SpatialGroup).Distinct().Count());
+            }
+            Console.WriteLine(vm.PeopleSummary);
+            var preview = Environment.GetEnvironmentVariable("SUBTERRA_UI_PREVIEW_DIR");
+            if (!string.IsNullOrWhiteSpace(preview))
+            {
+                Directory.CreateDirectory(preview);
+                foreach (var view in vm.PersonViews)
+                {
+                    vm.SelectedPersonView = view;
+                    var visual = new DrawingVisual();
+                    using (var drawing = visual.RenderOpen()) drawing.DrawImage(vm.PersonPreview, new Rect(0, 0, 416, 416));
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(416, 416, 96, 96, PixelFormats.Pbgra32);
+                    bitmap.Render(visual);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var stream = File.Create(Path.Combine(preview, $"people-view-{view.Index + 1:00}.png"));
+                    encoder.Save(stream);
+                }
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+    });
+
+    [Fact]
     public Task FindPeopleRunsTheBundledModelAcrossRoomViewsWithoutChangingTheScan() => ScanControlTests.OnSta(async () =>
     {
         using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
@@ -266,13 +405,19 @@ public sealed class PeopleDetectionTests
         var directory = WorkspaceFeatureTests.TemporaryDirectory();
         try
         {
-            using var vm = Vm(); await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+            var store = new WorkspaceStateStore(directory);
+            using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+                access: new TestAccess(), interaction: new TestInteraction(), workspaceStore: store, personAnalyzer: new FakeAnalyzer());
+            await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
             Assert.True(await vm.SaveAsync(Path.Combine(directory, "scan.subterra")));
             await vm.DetectPeopleAsync(); Assert.False(vm.HasNotification, vm.Notification); Assert.True(vm.HasPeopleDetection);
             Assert.Single(vm.PersonFindings); Assert.NotNull(vm.PersonPreview); Assert.NotNull(vm.PersonOutline); Assert.False(vm.HasUnsavedChanges);
             vm.ConfirmPersonCommand.Execute(null); Assert.Equal(StructureReviewState.Confirmed, vm.SelectedPerson!.Review);
             vm.RejectPersonCommand.Execute(null); Assert.Equal(StructureReviewState.Rejected, vm.SelectedPerson!.Review);
+            var persisted = new PersonCandidateLearning(store.PersonExamplesPath);
+            persisted.Reload(); Assert.Equal((0, 1), (persisted.Positives, persisted.Negatives));
             Assert.Contains("ложных: 1", vm.PeopleSummary); vm.ResetPersonReviewCommand.Execute(null);
+            persisted.Reload(); Assert.Equal((0, 0), (persisted.Positives, persisted.Negatives));
             var panel = new PeopleAnalysisPanel { DataContext = vm }; ThemeRenderingTests.Layout(panel, 312, 1600);
             await Dispatcher.Yield(DispatcherPriority.DataBind); panel.UpdateLayout(); ThemeRenderingTests.CheckReadableText(panel);
             vm.FocusPersonViewCommand.Execute(null); Assert.Equal("Ракурс проверки людей", vm.CameraLabel);

@@ -33,6 +33,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         if (poses.Length is < 1 or > 16) throw new ArgumentException("Для анализа нужны 1–16 ракурсов.");
         using var detector = detectorFactory?.Invoke() ?? new OnnxPersonDetector();
         var views = new List<ScanImage>(); var findings = new List<PersonFinding>(); var rejectedChairs = 0;
+        var rejectedWallImages = 0;
         foreach (var pose in poses)
         {
             token.ThrowIfCancellationRequested();
@@ -42,13 +43,93 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             foreach (var box in boxes)
             {
                 var (min, max) = Locate(image, box, surfaces, token);
+                if (min is null && LiesOnWall(image, box, surfaces))
+                {
+                    rejectedWallImages++;
+                    continue;
+                }
                 findings.Add(new(findings.Count + 1, views.Count, box, min, max));
             }
             views.Add(image); progress?.Report(100d * views.Count / poses.Length);
         }
         token.ThrowIfCancellationRequested();
-        return new PersonDetectionResult(views.ToArray(), findings.ToArray(), OnnxPersonDetector.ModelName, rejectedChairs);
+        return new PersonDetectionResult(views.ToArray(), GroupAcrossViews(findings), OnnxPersonDetector.ModelName, rejectedChairs)
+        { RejectedWallCandidates = rejectedWallImages };
     }, token);
+
+    public static bool LiesOnWall(ScanImage image, ImageBox box, StructureSurface[] surfaces)
+    {
+        // Sample the inside of the candidate. A hole or a single background pixel is not wall evidence.
+        var points = new List<Vector3>(64);
+        for (var y = 0; y < 8; y++)
+        for (var x = 0; x < 8; x++)
+        {
+            var px = (int)Math.Clamp(box.Left + (.15f + .1f * x) * (box.Right - box.Left), 0, image.Size - 1);
+            var py = (int)Math.Clamp(box.Top + (.15f + .1f * y) * (box.Bottom - box.Top), 0, image.Size - 1);
+            var slot = py * image.Size + px;
+            if (float.IsFinite(image.Depth[slot])) points.Add(image.Positions[slot]);
+        }
+        if (points.Count < 58) return false;
+        foreach (var wall in surfaces)
+        {
+            if (wall.Kind != StructureSurfaceKind.Wall || wall.Review == StructureReviewState.Rejected || wall.Boundary.Length < 3) continue;
+            var onPatch = points.Count(p => Math.Abs(PlanePatch.Distance(wall.Normal, wall.Offset, p)) <= .045 &&
+                InsideWallBoundary(wall, p));
+            if (onPatch >= points.Count * .95) return true;
+        }
+        return false;
+    }
+
+    private static bool InsideWallBoundary(StructureSurface wall, Vector3 point)
+    {
+        // The measured patch is a convex hull. Accept either boundary winding.
+        var positive = false;
+        var negative = false;
+        var last = wall.Boundary[^1];
+        foreach (var next in wall.Boundary)
+        {
+            var side = Vector3.Dot(Vector3.Cross(next - last, point - last), wall.Normal);
+            positive |= side > .0001f;
+            negative |= side < -.0001f;
+            if (positive && negative) return false;
+            last = next;
+        }
+        return true;
+    }
+
+    public static PersonFinding[] GroupAcrossViews(IReadOnlyList<PersonFinding> findings)
+    {
+        var groups = new List<List<PersonFinding>>();
+        var result = findings.ToArray();
+        for (var i = 0; i < result.Length; i++)
+        {
+            var finding = result[i];
+            if (finding.Minimum is null || finding.Maximum is null) continue;
+            var best = -1;
+            var bestOverlap = .30f;
+            for (var j = 0; j < groups.Count; j++)
+            {
+                if (groups[j].Any(other => other.ViewIndex == finding.ViewIndex)) continue;
+                // Require overlap with every member. A chain of weak matches can join two neighbours.
+                var overlap = groups[j].Min(other => VolumeIoU(finding, other));
+                if (overlap > bestOverlap) { bestOverlap = overlap; best = j; }
+            }
+            if (best < 0) { best = groups.Count; groups.Add([]); }
+            groups[best].Add(finding);
+            result[i] = finding with { SpatialGroup = best + 1 };
+        }
+        return result;
+    }
+
+    private static float VolumeIoU(PersonFinding a, PersonFinding b)
+    {
+        static float Volume(Vector3 size) => size.X * size.Y * size.Z;
+        var amin = a.Minimum!.Value; var amax = a.Maximum!.Value;
+        var bmin = b.Minimum!.Value; var bmax = b.Maximum!.Value;
+        var common = Vector3.Max(Vector3.Zero, Vector3.Min(amax, bmax) - Vector3.Max(amin, bmin));
+        var overlap = Volume(common);
+        return overlap / Math.Max(1e-9f, Volume(amax - amin) + Volume(bmax - bmin) - overlap);
+    }
 
     private static (Vector3? Min, Vector3? Max) Locate(ScanImage image, ImageBox box, StructureSurface[] surfaces, CancellationToken token)
     {

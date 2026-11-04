@@ -458,6 +458,32 @@ public sealed class ScanProjectTests
         return new() { Metadata = new("sphere.ply", ScanUnit.Meters, ScanUpAxis.Z, 0,0,0), Points = positions.Select(p => new ScanPoint(p.X,p.Y,p.Z,1)).ToArray(), Colors = Enumerable.Repeat(0x44aabbu, positions.Count).ToArray(), Triangles = triangles.ToArray() };
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AddingGlbAndMillimeterCloudPreservesTheirSharedCoordinates(bool glbFirst) => ScanControlTests.OnSta(async () =>
+    {
+        using var files = new Files();
+        var storage = new SessionStorage();
+        using var vm = Vm(storage);
+        var glb = Path.Combine(files.Directory, "room.glb");
+        ScanImportTests.CreateGlb(glb); // First vertex in Z-up meters is (10, -30, 20).
+        var cloud = files.Write("survey.asc", "7000 -32000 15000\n7100 -32000 15000");
+        await vm.ImportAsync(glbFirst ? glb : cloud, new());
+        await vm.ImportAsync(glbFirst ? cloud : glb, new(), addToProject: true);
+        Assert.False(vm.HasNotification, vm.Notification);
+        var sign = glbFirst ? -1 : 1;
+        Assert.Equal(3 * sign, vm.ObjectX);
+        Assert.Equal(2 * sign, vm.ObjectY);
+        Assert.Equal(5 * sign, vm.ObjectZ);
+        var path = Path.Combine(files.Directory, "combined.subterra");
+        Assert.True(await vm.SaveAsync(path));
+        var saved = (await storage.LoadAsync(path)).Project!;
+        var visible = ScanProjectEvaluator.Evaluate(saved).VisibleScan!;
+        Assert.Equal(6, visible.Points.Length);
+        Assert.Single(visible.Appearance!.Textures);
+    });
+
     [Fact]
     public Task MultipleObjectsVisibilityPropertiesUndoAndPersistenceWorkTogether() => ScanControlTests.OnSta(async () =>
     {

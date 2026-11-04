@@ -7,23 +7,25 @@
     <Grid Margin="26">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,18">
-            <TextBlock Text="Импорт 3D-скана" FontSize="23" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="23" FontWeight="SemiBold"/>
             <TextBlock x:Name="FileLabel" TextTrimming="CharacterEllipsis" Foreground="#A4BDC9" Margin="0,8,0,0"/>
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,12,0">
             <Border Background="#1D302B" Padding="14" CornerRadius="8" Margin="0,0,0,18"><StackPanel>
-                <TextBlock Text="Скан с iPhone или 3DeVOK" FontWeight="SemiBold" Foreground="#CCE7BB"/>
-                <TextBlock Text="Для просмотра с текстурами перенесите GLB со встроенными изображениями. PLY подходит для облака точек или цветной сетки. Отдельные этажи экспортируйте в общей системе координат; из 3DeVOK Studio можно использовать ASC или PLY." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
+                <TextBlock x:Name="FormatTitle" Text="Параметры исходного скана" FontWeight="SemiBold" Foreground="#CCE7BB"/>
+                <TextBlock x:Name="FormatHint" Text="Выберите единицы и вертикальную ось из настроек экспорта. Если несколько проходов сняты в общей системе координат, SubTerra учтёт их исходное смещение." TextWrapping="Wrap" Foreground="#B9CDC5" Margin="0,7,0,0" LineHeight="19"/>
             </StackPanel></Border>
-            <TextBlock Text="Единицы исходного файла" FontWeight="SemiBold"/>
-            <ComboBox x:Name="Units" SelectedIndex="2" Margin="0,8,0,5" AutomationProperties.Name="Единицы исходного скана">
-                <ComboBoxItem Content="Метры (m)"/><ComboBoxItem Content="Сантиметры (cm)"/><ComboBoxItem Content="Миллиметры (mm)"/>
-            </ComboBox>
-            <TextBlock x:Name="UnitsHint" Text="Укажите единицы из настроек приложения, создавшего файл. PLY и ASC не гарантируют единицы. После импорта проверьте масштаб по известной длине, например ширине двери. В SubTerra всё измеряется в метрах." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
-            <TextBlock Text="Какая ось направлена вверх?" FontWeight="SemiBold" Margin="0,18,0,8"/>
-            <ComboBox x:Name="UpAxis" SelectedIndex="0" AutomationProperties.Name="Ось высоты скана">
-                <ComboBoxItem Content="Z вверх"/><ComboBoxItem Content="Y вверх → повернуть в Z вверх"/>
-            </ComboBox>
+            <StackPanel x:Name="CoordinateOptions">
+                <TextBlock Text="Единицы исходного файла" FontWeight="SemiBold"/>
+                <ComboBox x:Name="Units" SelectedIndex="2" Margin="0,8,0,5" AutomationProperties.Name="Единицы исходного скана">
+                    <ComboBoxItem Content="Метры (m)"/><ComboBoxItem Content="Сантиметры (cm)"/><ComboBoxItem Content="Миллиметры (mm)"/>
+                </ComboBox>
+                <TextBlock Text="После импорта проверьте масштаб по известной длине, например ширине двери." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+                <TextBlock Text="Какая ось направлена вверх?" FontWeight="SemiBold" Margin="0,18,0,8"/>
+                <ComboBox x:Name="UpAxis" SelectedIndex="0" AutomationProperties.Name="Ось высоты скана">
+                    <ComboBoxItem Content="Z вверх"/><ComboBoxItem Content="Y вверх → повернуть в Z вверх"/>
+                </ComboBox>
+            </StackPanel>
             <StackPanel x:Name="TextOptions" Margin="0,18,0,0">
                 <TextBlock Text="Столбцы ASC / XYZ / TXT" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <ComboBox x:Name="Columns" SelectedIndex="0" AutomationProperties.Name="Столбцы текстового облака">
@@ -33,11 +35,11 @@
                 <TextBlock Text="Нормали Nx Ny Nz не являются цветом. По умолчанию читаются только XYZ. Разделители: пробел, табуляция, запятая или ;. Десятичная точка — точка." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" Margin="0,7,0,0" LineHeight="17"/>
             </StackPanel>
             <CheckBox x:Name="LocalOrigin" Content="Локальное начало у первой точки" IsChecked="True" Margin="0,20,0,7"/>
-            <TextBlock Text="Помогает сохранять точность при больших координатах. Исходное смещение, единицы и ось сохранятся в сеансе .subterra. После импорта проверьте масштаб по известному размеру." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
-            <TextBlock Text="До 5 млн вершин и 5 млн треугольников. GLB: статическая сетка со встроенными PNG/JPEG, без Draco-сжатия. PLY: ASCII и binary. Захват через USB и сшивка 3DeVOK выполняются в Studio." TextWrapping="Wrap" Foreground="#D3BF9D" FontSize="12" Margin="0,18,0,10" LineHeight="17"/>
+            <TextBlock Text="Сохраняет точность при больших координатах. Исходное смещение записывается в проект." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>
+            <TextBlock x:Name="LimitsHint" Text="До 5 млн вершин и 5 млн треугольников." TextWrapping="Wrap" Foreground="#D3BF9D" FontSize="12" Margin="0,18,0,10" LineHeight="17"/>
         </StackPanel></ScrollViewer>
         <Grid Grid.Row="2" Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <Button Content="Импортировать" Style="{StaticResource Primary}" IsDefault="True" Click="Import_Click" Margin="0,0,10,0"/>
+            <Button x:Name="ImportButton" Style="{StaticResource Primary}" IsDefault="True" Click="Import_Click" Margin="0,0,10,0"/>
             <Button Grid.Column="1" Content="Отмена" IsCancel="True"/>
         </Grid>
     </Grid>

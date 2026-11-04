@@ -50,13 +50,17 @@ public sealed partial class MainViewModel
     public async Task ShowSurfaceAsync()
     {
         if (!CanSelectSurface) return;
-        if (IsTunnelMode)
+        if (CanShowSurface)
         {
-            if (CanShowSurface) SetView(true, false);
-            else { SelectAnalysisTool("Тоннель"); await BuildTunnelMeshAsync(); }
+            SetView(true, false);
             return;
         }
-        if (!IsImported || HasReconstruction || CurrentProjectView?.Data.VisibleScan?.HasMesh == true) { SetView(true, false); return; }
+        if (IsTunnelMode)
+        {
+            SelectAnalysisTool("Тоннель");
+            await BuildTunnelMeshAsync();
+            return;
+        }
         ReturnToOverview(); EndInspection();
         if (!CanPrepareIndoorPreview)
         {
@@ -122,13 +126,8 @@ public sealed partial class MainViewModel
             if (append)
             {
                 var o = next.Objects[0];
-                if (_scanProject!.Origin is { } origin && origin.Unit == scan.Metadata.Unit && origin.UpAxis == scan.Metadata.UpAxis)
-                {
-                    var scale = new ScanImportOptions(scan.Metadata.Unit).Scale;
-                    var delta = new Vector3((float)((scan.Metadata.OriginX - origin.OriginX) * scale), (float)((scan.Metadata.OriginY - origin.OriginY) * scale), (float)((scan.Metadata.OriginZ - origin.OriginZ) * scale));
-                    if (origin.UpAxis == ScanUpAxis.Y) delta = new(delta.X, -delta.Z, delta.Y);
-                    o = o with { Transform = new(delta.X, delta.Y, delta.Z) };
-                }
+                if (_scanProject!.Origin is { } origin)
+                    o = o with { Transform = RelativePlacement(scan.Metadata, origin) };
                 next = _scanProject! with { Objects = [.. _scanProject.Objects, o], ActiveObjectId = o.Id };
             }
             var view = await ScanProjectView.PrepareAsync(next, token);
@@ -144,11 +143,27 @@ public sealed partial class MainViewModel
             if (view.Geometry?.ReducedTextureCount > 0) Status += " · текстуры просмотра адаптированы, оригиналы сохранены";
             Notification = "";
             AddEvent("Импортирован скан " + Path.GetFileName(path));
+            if (append) Inspect("Скан");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
         catch (Exception ex) { ReportError("Не удалось импортировать скан", ex); }
         finally { EndOperation(); }
     }
+    private static ScanTransform RelativePlacement(ImportMetadata scan, ImportMetadata project)
+    {
+        static (double X, double Y, double Z) ZUp(ImportMetadata m) => m.UpAxis == ScanUpAxis.Y
+            ? (m.OriginX, -m.OriginZ, m.OriginY)
+            : (m.OriginX, m.OriginY, m.OriginZ);
+
+        var source = ZUp(scan);
+        var reference = ZUp(project);
+        var metersPerUnit = new ScanImportOptions(scan.Unit).Scale;
+        var projectToSourceUnits = new ScanImportOptions(project.Unit).Scale / metersPerUnit;
+        // Subtract the survey origins in double precision before converting local offsets to floats.
+        float Offset(double value, double origin) => (float)((value - origin * projectToSourceUnits) * metersPerUnit);
+        return new(Offset(source.X, reference.X), Offset(source.Y, reference.Y), Offset(source.Z, reference.Z));
+    }
+
     private void AssignImported(ScanDataset dataset, ScanProjectView? prepared)
     {
         _map = null; _geometry = null;

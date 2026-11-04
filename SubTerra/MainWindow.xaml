@@ -27,7 +27,7 @@
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,12,0" Visibility="{Binding IsWorkspaceVisible, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding SessionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding SaveStateText}" Style="{StaticResource Muted}" Foreground="#B9CEA7" Margin="0,2,0,0"/></StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button Click="Open_Click" Content="Открыть" IsEnabled="{Binding CanInteract}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="Открыть проект · Ctrl+O"/>
-                <Button Click="Import_Click" Content="Импорт" IsEnabled="{Binding CanInteract}" Padding="12,6" Margin="4,0"/>
+                <Button Click="Import_Click" Content="Импорт" IsEnabled="{Binding CanInteract}" Padding="12,6" Margin="4,0" ToolTip="Создать проект из скана. Для второго файла используйте «Добавить скан» в панели проекта."/>
                 <Button Click="Save_Click" Content="Сохранить" IsEnabled="{Binding CanSave}" Padding="12,6" Margin="0,0,6,0"/>
                 <Button Command="{Binding ToggleSettingsCommand}" Style="{StaticResource Ghost}" Padding="10,6" AutomationProperties.Name="Настройки" ToolTip="Настройки"><TextBlock Style="{StaticResource Icon}" Text="&#xE713;"/></Button>
                 <Button Click="Access_Click" Content="{Binding AccessButtonText}" IsEnabled="{Binding CanInteract}" Style="{StaticResource Ghost}" Padding="10,6" ToolTip="{Binding AccessLabel}"/>
@@ -103,7 +103,7 @@
                                 <RadioButton Content="Высота" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsHeight, Mode=OneWay}" Command="{Binding HeightCommand}" GroupName="RenderMode"/>
                                 <RadioButton Content="Точки" Style="{StaticResource Segment}" Padding="9,6" IsChecked="{Binding IsPointMode, Mode=OneWay}" Command="{Binding PointsCommand}" GroupName="RenderMode"/>
                                 <CheckBox Content="Рельеф без RGB" IsChecked="{Binding IsGeometryShading}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" VerticalAlignment="Center" Margin="8,0,0,0" ToolTip="Нейтральный материал и виртуальное освещение; исходные цвета сохраняются"/>
-                                <Button Content="Найти людей" Command="{Binding FindPeopleCommand}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Padding="10,6" Margin="8,0,0,0" ToolTip="Запустить поиск людей и открыть результат. Ракурсы помещения подготавливаются автоматически."/>
+                                <Button Content="Найти людей" Command="{Binding FindPeopleCommand}" Visibility="{Binding IsImported, Converter={StaticResource BoolVisibility}}" Padding="10,6" Margin="8,0,0,0" ToolTip="{Binding PeopleAvailabilityHint}" ToolTipService.ShowOnDisabled="True"/>
                             </WrapPanel>
                         </DockPanel>
                         <Grid Grid.Row="1">                        <h:Viewport3DX x:Name="Viewport" Camera="{Binding Camera}" EffectsManager="{Binding EffectsManager, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -220,7 +220,7 @@
                                         <Button Content="Ошибка" Command="{Binding RejectPersonCommand}" Padding="12,7" Margin="0,0,8,0"/>
                                         <Button Content="Показать в 3D" Command="{Binding FocusPersonViewCommand}" Style="{StaticResource Ghost}" Padding="12,7"/>
                                     </WrapPanel>
-                                    <TextBlock Text="Нажмите на рамку, чтобы выбрать кандидата. Находки требуют проверки." Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0"/>
+                                    <TextBlock Text="Выберите рамку и проверьте её. Ваша отметка сохранит пример для локального обучения." Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0"/>
                                 </StackPanel>
                             </Grid>
                         </Border>

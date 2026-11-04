@@ -250,11 +250,10 @@ internal static class Program
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
         var token = cancellation.Token; var clock = Stopwatch.StartNew();
-        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z, LocalOrigin: false), token).GetAwaiter().GetResult();
+        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z), token).GetAwaiter().GetResult();
         var project = ScanProject.FromSession(scan.ToSession());
-        var structure = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(DistanceTolerance: .035, MaximumPlanes: 24, UseNeuralClasses: true), null, token).GetAwaiter().GetResult();
-        var document = StructureProvenance.Create(project, structure, token);
-        var poses = PersonScanAnalyzer.RoomViews(document);
+        var structure = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(), null, token).GetAwaiter().GetResult();
+        var poses = PersonScanAnalyzer.RoomViews(structure.Surfaces);
         var result = new PersonScanAnalyzer().AnalyzeAsync(project, poses, structure.Surfaces, .3f, null, null, token).GetAwaiter().GetResult();
         Directory.CreateDirectory(directory);
         for (var i = 0; i < result.Views.Length; i++)
@@ -269,7 +268,7 @@ internal static class Program
                 {
                     var box = finding.Box;
                     drawing.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Orange, 2), new(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
-                    var text = new System.Windows.Media.FormattedText($"person? {box.Score:P0}", CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
+                    var text = new System.Windows.Media.FormattedText($"#{finding.SpatialGroup?.ToString() ?? "?"} · {box.Score:P0}", CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
                         new System.Windows.Media.Typeface("Segoe UI"), 12, System.Windows.Media.Brushes.Orange, 1);
                     drawing.DrawText(text, new(box.Left, Math.Max(0, box.Top - 18)));
                 }
@@ -278,11 +277,12 @@ internal static class Program
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rendered));
             using var stream = File.Create(Path.Combine(directory, $"people-view-{i + 1:00}.png")); encoder.Save(stream);
         }
-        var report = new { result.Model, Threshold = .3, Findings = result.Findings, Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
+        var groups = result.Findings.Select(f => f.SpatialGroup).Where(id => id.HasValue).Distinct().Count();
+        var report = new { result.Model, Threshold = .3, SpatialGroups = groups, result.RejectedWallCandidates, result.RejectedChairCandidates, Findings = result.Findings, Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
             ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local RGB projections; per-view candidates, not unique people or measured accuracy" };
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
         File.WriteAllText(Path.Combine(directory, "people.json"), json);
-        Console.WriteLine($"Views: {result.Views.Length}; candidates: {result.Findings.Length}; elapsed: {clock.Elapsed.TotalSeconds:F2}s; output: {directory}");
+        Console.WriteLine($"Views: {result.Views.Length}; boxes: {result.Findings.Length}; 3D groups: {groups}; elapsed: {clock.Elapsed.TotalSeconds:F2}s; output: {directory}");
         return 0;
     }
 

@@ -55,6 +55,11 @@ public sealed class StructureWorkflowTests
         Assert.Equal(StructureAnalysisResult.NeuralAlgorithm, saved.Project.Structure!.Algorithm);
         using var guest = Vm(new(false)); await guest.OpenAsync(path);
         Assert.True(guest.HasIndoorPreview); Assert.True(guest.CanPrepareIndoorPreview);
+        var savedPreview = guest.Surface;
+        guest.PointsCommand.Execute(null);
+        await guest.SurfaceCommand.ExecuteAsync();
+        Assert.False(guest.HasReconstruction);
+        Assert.Same(savedPreview, guest.Surface);
         Assert.False(guest.HasUnsavedChanges); Assert.False(guest.AnalyzeIndoorCommand.CanExecute(null));
         guest.FlyCommand.Execute(null); Assert.True(guest.IsFlying); guest.ReturnToOverview();
         vm.SelectedStructureSurface = vm.StructureSurfaces.First(); vm.ConfirmStructureSurfaceCommand.Execute(null);

@@ -26,10 +26,15 @@
             <Button Content="Показать ракурс в 3D" Command="{Binding FocusPersonViewCommand}" Margin="0,0,0,10"/>
             <CheckBox Content="Рамки людей в 3D" IsChecked="{Binding ShowPeople}"/>
         </StackPanel>
+        <Expander Header="Обучение по отметкам" Margin="0,12,0,0"><StackPanel Margin="0,8,0,0">
+            <TextBlock Text="{Binding PersonLearningSummary}" Style="{StaticResource Muted}"/>
+            <CheckBox Content="Учитывать примеры при поиске" IsChecked="{Binding UsePersonLearning}" IsEnabled="{Binding CanInteract}" Margin="0,8,0,0"/>
+            <TextBlock Text="«Это человек» и «Ошибка» сохраняют признаки рамки для обучения. Повторная отметка заменяет предыдущую, «Сбросить проверку» удаляет пример. Для сравнения снимите флажок и повторите поиск." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+        </StackPanel></Expander>
         <Expander Header="Параметры и ограничения" Margin="0,18,0,0"><StackPanel Margin="0,10,0,0">
             <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог модели: {0:P0}}" Style="{StaticResource Muted}"/>
             <Slider Value="{Binding PersonThreshold}" Minimum=".1" Maximum=".9" TickFrequency=".05" IsSnapToTickEnabled="True" IsEnabled="{Binding CanFindPeople}" AutomationProperties.Name="Порог детектора людей"/>
-            <TextBlock Text="Локальная YOLOX-Nano проверяет исходные RGB-цвета и увеличенные фрагменты кандидатов. Уверенный стул исключается, если фрагмент не подтверждает человека. Модель обучена на фотографиях; пропуски и склейки скана могут давать ошибки. Один человек может попасть в несколько ракурсов. Находки требуют проверки, результаты действуют в текущем сеансе." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
+            <TextBlock Text="YOLOX-Nano предлагает рамки на цветных ракурсах. Локальная модель учится оценивать эти рамки по вашим отметкам. Близкие 3D-рамки с разных ракурсов объединяются в группы. Движение человека при сканировании может дать две отдельные фигуры." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
         </StackPanel></Expander>
     </StackPanel>
 </UserControl>

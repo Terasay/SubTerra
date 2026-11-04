@@ -118,7 +118,7 @@ public partial class MainWindow : Window
     private async void Open_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanInteract) return;
-        var dialog = new OpenFileDialog { Title = "Открыть проект или 3D-скан", Filter = "Проекты и 3D-сканы|*.subterra;*.glb;*.ply;*.asc;*.xyz;*.txt|Проект SubTerra|*.subterra|Модель GLB с текстурами|*.glb|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = "Открыть проект или 3D-скан", Filter = ScanImportWindow.ProjectOrScanFilter, CheckFileExists = true };
         if (dialog.ShowDialog(this) != true) return;
         if (System.IO.Path.GetExtension(dialog.FileName).Equals(".subterra", StringComparison.OrdinalIgnoreCase)) await _viewModel.OpenAsync(dialog.FileName);
         else await ImportScanFileAsync(dialog.FileName);
@@ -126,7 +126,7 @@ public partial class MainWindow : Window
     private async void Import_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanInteract) return;
-        var dialog = new OpenFileDialog { Title = "Импорт 3D-скана или модели", Filter = "3D-сканы и модели|*.glb;*.ply;*.asc;*.xyz;*.txt|Модель GLB с текстурами|*.glb|Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = "Новый проект из скана", Filter = ScanImportWindow.ScanFilter, CheckFileExists = true };
         if (dialog.ShowDialog(this) == true) await ImportScanFileAsync(dialog.FileName);
     }
     private async Task ImportScanFileAsync(string path)

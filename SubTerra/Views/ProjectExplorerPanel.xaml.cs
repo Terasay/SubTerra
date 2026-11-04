@@ -20,13 +20,10 @@ public partial class ProjectExplorerPanel : UserControl
     {
         if (DataContext is not MainViewModel vm || !vm.CanManageProject) return;
         var owner = Window.GetWindow(this);
-        var file = new OpenFileDialog { Title = "Добавить скан в проект", Filter = "Сканы PLY / ASC / XYZ / TXT|*.ply;*.asc;*.xyz;*.txt", CheckFileExists = true };
+        var file = new OpenFileDialog { Title = "Добавить скан в проект", Filter = ScanImportWindow.ScanFilter, CheckFileExists = true };
         if (file.ShowDialog(owner) != true) return;
-        var options = new ScanImportWindow(file.FileName) { Owner = owner };
+        var options = new ScanImportWindow(file.FileName, addToProject: true) { Owner = owner };
         if (options.ShowDialog() == true)
-        {
             await vm.ImportAsync(file.FileName, options.Options, addToProject: true);
-            vm.Inspect("Скан");
-        }
     }
 }
