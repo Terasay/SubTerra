@@ -278,7 +278,9 @@ internal static class Program
             using var stream = File.Create(Path.Combine(directory, $"people-view-{i + 1:00}.png")); encoder.Save(stream);
         }
         var groups = result.Findings.Select(f => f.SpatialGroup).Where(id => id.HasValue).Distinct().Count();
-        var report = new { result.Model, Threshold = .3, SpatialGroups = groups, result.RejectedWallCandidates, result.RejectedChairCandidates, Findings = result.Findings, Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
+        var report = new { result.Model, Threshold = .3, SpatialGroups = groups, result.RejectedWallCandidates, result.RejectedChairCandidates,
+            result.RejectedFurnitureGroups, result.RejectedDecorGroups, Findings = result.Findings,
+            Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
             ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local RGB projections; per-view candidates, not unique people or measured accuracy" };
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
         File.WriteAllText(Path.Combine(directory, "people.json"), json);

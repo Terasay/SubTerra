@@ -15,6 +15,49 @@ namespace SubTerra.Tests;
 
 public sealed class PeopleDetectionTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(39)]
+    public void ElongatedMeasuredFloorAddsCamerasInBothDirectionsRegardlessOfRotation(int rotation)
+    {
+        var origin = new Vector3(3, -6, .25f);
+        var transform = Matrix4x4.CreateRotationZ(rotation * MathF.PI / 180) * Matrix4x4.CreateTranslation(origin);
+        Vector3 Point(float x, float y) => Vector3.Transform(new Vector3(x, y, 0), transform);
+        var samples = (from x in Enumerable.Range(-48, 97)
+                       from y in Enumerable.Range(-6, 13)
+                       select new StructureSample(default, Point(x / 4f, y / 4f))).ToArray();
+        var floor = new StructureSurface(1, StructureSurfaceKind.Floor, Vector3.UnitZ, -origin.Z, origin,
+            [Point(-12, -1.5f), Point(12, -1.5f), Point(12, 1.5f), Point(-12, 1.5f)], 72, 0, samples);
+        var views = PersonScanAnalyzer.RoomViews([floor]);
+        Assert.Equal(16, views.Length);
+        Assert.Single(views.Take(8).Select(p => p.Position).Distinct());
+        Assert.True(Matrix4x4.Invert(transform, out var inverse));
+        var extra = views.Skip(8).GroupBy(p => p.Position).ToArray();
+        Assert.Equal(4, extra.Length);
+        foreach (var station in extra)
+        {
+            var local = Vector3.Transform(station.Key, inverse);
+            Assert.InRange(local.X, -11.5f, 11.5f);
+            Assert.InRange(local.Y, -.1f, .1f);
+            Assert.InRange(local.Z, 1.54f, 1.56f);
+            Assert.Equal(2, station.Count());
+            Assert.InRange(Vector3.Dot(station.First().Forward, station.Last().Forward), -1, -.98f);
+        }
+        Assert.Equal(8, PersonScanAnalyzer.RoomViews([floor with { Samples = [] }]).Length);
+    }
+
+    [Fact]
+    public void PartialBodyMatchesAcrossViewsAndNestedFragmentNeedsSharedDepth()
+    {
+        var person = new PersonFinding(1, 0, new(50, 40, 90, 300, .8f), new(0, 0, 0), new(.5f, .5f, 1.75f));
+        var partial = new PersonFinding(2, 1, new(53, 45, 81, 92, .6f), new(.08f, .1f, 1.3f), new(.4f, .4f, 1.7f));
+        var neighbour = partial with { Id = 3, ViewIndex = 0, Minimum = new(.55f, .1f, 1.3f), Maximum = new(.9f, .4f, 1.7f) };
+        Assert.Equal(new int?[] { 1, 1, 2 }, PersonScanAnalyzer.GroupAcrossViews([person, partial, neighbour]).Select(f => f.SpatialGroup));
+        Assert.True(PersonScanAnalyzer.IsNestedFragment(partial with { ViewIndex = 0 }, person));
+        Assert.False(PersonScanAnalyzer.IsNestedFragment(neighbour, person));
+        Assert.False(PersonScanAnalyzer.IsNestedFragment(partial, person));
+    }
+
     [Fact]
     public void WallImageFilterRequiresDenseSupportOnOneFiniteWallAndKeepsForegroundPeople()
     {
@@ -65,27 +108,45 @@ public sealed class PeopleDetectionTests
             static PersonFinding Candidate(bool tall, float score) => new(tall ? 1 : 2, 0,
                 tall ? new(10, 3, 20, 57, score) : new(24, 25, 58, 40, score),
                 Vector3.Zero, tall ? new(.5f, .4f, 1.7f) : new(1.2f, .8f, .5f));
+            string[] trainingScan = [new('A', 64)];
+            string[] holdoutScan = [new('B', 64)];
             for (var i = 0; i < 3; i++)
             {
-                training.Review(View(i), Candidate(true, .5f), StructureReviewState.Confirmed);
-                training.Review(View(i), Candidate(false, .5f), StructureReviewState.Rejected);
+                training.Review(View(i), Candidate(true, .5f), StructureReviewState.Confirmed, trainingScan);
+                training.Review(View(i), Candidate(false, .5f), StructureReviewState.Rejected, trainingScan);
             }
+            Assert.Null(training.Train(.5f, null, default).Trained);
+            training.Review(View(98), Candidate(true, .46f), StructureReviewState.Confirmed, holdoutScan);
+            training.Review(View(98), Candidate(false, .56f), StructureReviewState.Rejected, holdoutScan);
+            training.Review(View(97), Candidate(true, .5f), StructureReviewState.Confirmed, [.. trainingScan, .. holdoutScan]);
+            training.Review(View(96), Candidate(true, .5f), StructureReviewState.Confirmed); // v1 metadata is unknown.
             var restored = new PersonCandidateLearning(path); restored.Reload();
             Assert.True(restored.Ready);
+            var run = restored.Train(.5f, null, default);
+            Assert.Equal(6, run.TrainingCount);
+            Assert.Equal(2, run.ValidationCount);
+            Assert.Equal(new(0, 1, 1, 0), run.Baseline);
+            Assert.Equal(new(1, 0, 0, 1), run.Trained);
+            Assert.True(run.Loss[^1] < run.Loss[0]);
+            var journal = new PersonTrainingJournal(new WorkspaceStateStore(directory).PersonModelsPath);
+            journal.Add(run);
+            Assert.Null(journal.Active);
+            journal.Activate(run.Id);
+            var reopened = new PersonTrainingJournal(new WorkspaceStateStore(directory).PersonModelsPath);
+            reopened.Reload(); Assert.Equal(run.Id, reopened.Active?.Id);
             var unseen = new PersonDetectionResult([View(99)], [Candidate(true, .46f), Candidate(false, .56f)], "test");
-            var corrected = Assert.Single(restored.Apply(unseen, .5f, true, default).Findings);
+            var corrected = Assert.Single(restored.Apply(unseen, .5f, reopened.Active, default).Findings);
             Assert.Equal(1, corrected.Id);
             Assert.True(corrected.Box.Score > .5f);
             Assert.Equal(.46f, corrected.DetectorScore);
             Assert.Equal(StructureReviewState.Proposed, corrected.Review);
-            Assert.Equal(2, Assert.Single(restored.Apply(unseen, .5f, false, default).Findings).Id);
-            restored.Review(View(0), Candidate(false, .5f), StructureReviewState.Confirmed);
-            training.Reload();
-            Assert.Equal((4, 2), (training.Positives, training.Negatives));
+            reopened.Activate(null);
+            journal.Reload(); Assert.Null(journal.Active);
+            Assert.Equal(2, Assert.Single(restored.Apply(unseen, .5f, journal.Active, default).Findings).Id);
+            restored.Review(View(0), Candidate(false, .5f), StructureReviewState.Confirmed, trainingScan);
+            training.Reload(); Assert.Equal((6, 3), (training.TaggedPositives, training.TaggedNegatives));
             training.Review(View(0), Candidate(false, .5f), StructureReviewState.Proposed);
-            restored.Reload(); Assert.False(restored.Ready);
-            Assert.Equal((3, 2), (restored.Positives, restored.Negatives));
-            Assert.Equal(2, Assert.Single(restored.Apply(unseen, .5f, true, default).Findings).Id);
+            restored.Reload(); Assert.Equal((5, 3), (restored.TaggedPositives, restored.TaggedNegatives));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -143,6 +204,67 @@ public sealed class PeopleDetectionTests
         Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [new(90, 50, 320, 365, .5f)], [new(92, 52, 318, 360, .95f)]));
         Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [], [new(100, 240, 310, 360, .95f)]));
         Assert.False(OnnxPersonDetector.ChairExplainsCandidate(target, [], [])); // Missing person evidence alone is not a rejection.
+    }
+
+    [Fact]
+    public void CloseupClassifiesVaseButGivesMatchingPersonPriorityOverFurniture()
+    {
+        var output = new float[3549 * 85];
+        var target = new ImageBox(100, 60, 308, 360, .6f);
+        void Box(int row, int category, float score, ImageBox bounds)
+        {
+            var i = row * 85;
+            output[i] = (bounds.Left + bounds.Right) / 16 - row;
+            output[i + 1] = (bounds.Top + bounds.Bottom) / 16;
+            output[i + 2] = MathF.Log((bounds.Right - bounds.Left) / 8);
+            output[i + 3] = MathF.Log((bounds.Bottom - bounds.Top) / 8);
+            output[i + 4] = 1;
+            output[i + 5 + category] = score;
+        }
+        Box(0, 56, .96f, new(120, 270, 290, 360, 0));
+        Assert.Equal(PersonCloseupEvidence.None, OnnxPersonDetector.ClassifyCloseup(output, target));
+        Box(1, 75, .2f, target);
+        Assert.Equal(PersonCloseupEvidence.PlantOrVase, OnnxPersonDetector.ClassifyCloseup(output, target));
+        Box(2, 0, .61f, target);
+        Assert.Equal(PersonCloseupEvidence.Person, OnnxPersonDetector.ClassifyCloseup(output, target));
+    }
+
+    [Theory]
+    [InlineData(1, false, false)]
+    [InlineData(2, false, true)]
+    [InlineData(2, true, false)]
+    public async Task CloseupVerificationNeedsRepeatedDecorEvidenceAndKeepsReviewProposals(int votes, bool person, bool excluded)
+    {
+        var points = (from x in Enumerable.Range(-20, 41)
+                      from z in Enumerable.Range(0, 86)
+                      select new ScanPoint(x * .02f, 3, z * .02f, 1)).ToArray();
+        var scan = new ImportedScan { Metadata = new("target.ply", ScanUnit.Meters, ScanUpAxis.Z, 0, 0, 0),
+            Points = points, Colors = Enumerable.Repeat(0x906030u, points.Length).ToArray() };
+        var project = ScanProject.FromSession(scan.ToSession());
+        ScanViewPose[] views = [new(new(0, 0, 1), Vector3.UnitY, Vector3.UnitZ)];
+        var detector = new ScriptedCloseupDetector(votes, person);
+        var analyzer = new PersonScanAnalyzer(() => detector);
+        var proposals = await analyzer.AnalyzeForReviewAsync(project, views, [], .3f, null, null, default);
+        Assert.Single(proposals.Findings);
+        Assert.Equal(0, detector.Checks);
+        var result = await analyzer.AnalyzeAsync(project, views, [], .3f, null, null, default);
+        Assert.True(detector.Checks >= 3);
+        Assert.Equal(excluded ? 0 : 1, result.Findings.Length);
+        Assert.Equal(excluded ? 1 : 0, result.RejectedDecorGroups);
+    }
+
+    private sealed class ScriptedCloseupDetector(int decorVotes, bool person) : IPersonImageDetector
+    {
+        public int Checks { get; private set; }
+        public bool SupportsCloseupVerification => true;
+        public ImageBox[] Detect(ScanImage image, float threshold, CancellationToken token) => [new(171, 143, 245, 302, .61f)];
+        public PersonCloseupEvidence CheckCloseup(ScanImage image, ImageBox target, CancellationToken token)
+        {
+            Checks++;
+            if (Checks <= decorVotes) return PersonCloseupEvidence.PlantOrVase;
+            return person ? PersonCloseupEvidence.Person : PersonCloseupEvidence.None;
+        }
+        public void Dispose() { }
     }
 
     [Fact]
@@ -438,6 +560,82 @@ public sealed class PeopleDetectionTests
         Assert.False(vm.HasPeopleDetection); Assert.False(vm.IsBusy);
     });
 
+    [Fact]
+    public Task TrainingPanelIsAdminOnlyAndSwitchesTheModelUsedBySearch() => ScanControlTests.OnSta(async () =>
+    {
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var store = new WorkspaceStateStore(directory);
+            var examples = new PersonCandidateLearning(store.PersonExamplesPath);
+            var pose = new ScanViewPose(Vector3.Zero, Vector3.UnitY, Vector3.UnitZ);
+            for (var i = 0; i < 4; i++)
+            {
+                var rgb = new byte[64 * 64 * 3];
+                new Random(i).NextBytes(rgb);
+                var view = new ScanImage(pose, 64, rgb, new float[64 * 64], []);
+                var source = i < 3 ? new string('A', 64) : new string('B', 64);
+                examples.Review(view, new(1, 0, new(5, 4, 14, 55, .47f), Vector3.Zero, new(.5f, .4f, 1.8f)),
+                    StructureReviewState.Confirmed, [source]);
+                examples.Review(view, new(2, 0, new(19, 24, 58, 42, .55f), Vector3.Zero, new(1, .6f, .5f)),
+                    StructureReviewState.Rejected, [source]);
+            }
+            var access = new TestAccess(false);
+            var analyzer = new FakeAnalyzer();
+            using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+                access: access, interaction: new TestInteraction(), workspaceStore: store, personAnalyzer: analyzer);
+            await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+            Assert.False(vm.OpenTrainingPanelCommand.CanExecute(null));
+            Assert.False(vm.TrainPersonModelCommand.CanExecute(null));
+            Assert.False(vm.CollectPersonExamplesCommand.CanExecute(null));
+            access.Login();
+            vm.OpenTrainingPanelCommand.Execute(null);
+            Assert.True(vm.IsTrainingPanelOpen);
+            vm.PersonThreshold = .5;
+            await vm.TrainPersonModelCommand.ExecuteAsync();
+            Assert.False(vm.HasNotification, vm.Notification);
+            var run = Assert.Single(vm.PersonTrainingRuns);
+            Assert.Same(run, vm.SelectedTrainingRun);
+            Assert.Equal(4, vm.TrainingComparison.Count);
+            Assert.Equal(21, vm.TrainingLossCurve.Count);
+            Assert.Contains("базовая YOLOX", vm.ActivePersonModelText);
+
+            var shell = ThemeRenderingTests.ShellPreview(vm);
+            ThemeRenderingTests.Layout(shell, 1040, 700);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var panel = WorkspacePresentationTests.Descendants(shell).OfType<PersonTrainingPanel>().Single();
+            Assert.Equal(Visibility.Visible, ((FrameworkElement)panel.Parent).Visibility);
+            Assert.True(panel.ActualHeight > 0);
+            Assert.Equal(21, WorkspacePresentationTests.Descendants(panel).OfType<System.Windows.Shapes.Polyline>().Single().Points.Count);
+            ThemeRenderingTests.Layout(shell, 1040, 820);
+            WorkspacePresentationTests.SavePreview(shell, "training-admin.png");
+
+            vm.ActivatePersonModelCommand.Execute(null);
+            var saved = new PersonTrainingJournal(store.PersonModelsPath);
+            saved.Reload();
+            Assert.Equal(run.Id, saved.Active?.Id);
+            vm.CloseTrainingPanelCommand.Execute(null);
+            await vm.DetectPeopleAsync();
+            Assert.True(analyzer.Threshold < .5f);
+            Assert.Contains("обученная оценка", vm.PeopleRunMode);
+
+            vm.OpenTrainingPanelCommand.Execute(null);
+            await vm.CollectPersonExamplesCommand.ExecuteAsync();
+            Assert.False(vm.IsTrainingPanelOpen);
+            Assert.Equal(.1f, analyzer.Threshold);
+            Assert.Contains("разметка", vm.PeopleRunMode);
+
+            vm.OpenTrainingPanelCommand.Execute(null);
+            vm.UseBaselinePersonModelCommand.Execute(null);
+            saved.Reload();
+            Assert.Null(saved.Active);
+            access.Logout();
+            Assert.False(vm.IsTrainingPanelOpen);
+            Assert.False(vm.ActivatePersonModelCommand.CanExecute(null));
+        }
+        finally { Directory.Delete(directory, true); }
+    });
+
     private static MainViewModel Vm(TestAccess? access = null, IPersonScanAnalyzer? analyzer = null) => new(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
         access: access ?? new(), interaction: new TestInteraction(), personAnalyzer: analyzer ?? new FakeAnalyzer());
     private static PersonDetectionResult FakeResult(ScanProject project, ScanViewPose[] poses)
@@ -447,9 +645,9 @@ public sealed class PeopleDetectionTests
     }
     private sealed class FakeAnalyzer : IPersonScanAnalyzer
     {
-        public int Calls; public ScanViewPose[]? Poses; public StructureSurface[]? Surfaces;
+        public int Calls; public float Threshold; public ScanViewPose[]? Poses; public StructureSurface[]? Surfaces;
         public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token)
-        { Calls++; Poses = poses; Surfaces = surfaces; return Task.FromResult(FakeResult(project, poses)); }
+        { Calls++; Threshold = threshold; Poses = poses; Surfaces = surfaces; return Task.FromResult(FakeResult(project, poses)); }
     }
     private sealed class MultipleViewsAnalyzer : IPersonScanAnalyzer
     {

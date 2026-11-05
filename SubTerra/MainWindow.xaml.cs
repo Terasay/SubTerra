@@ -154,6 +154,16 @@ public partial class MainWindow : Window
     }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_viewModel.IsTrainingPanelOpen)
+        {
+            if (e.Key == Key.Escape && !e.IsRepeat)
+            {
+                if (_viewModel.CanCancelOperation) _viewModel.CancelOperation();
+                else _viewModel.CloseTrainingPanelCommand.Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
         if (e.Key == Key.Escape && _viewModel.IsPeoplePreviewVisible && !_viewModel.IsSettingsOpen && !_viewModel.IsBusy && Keyboard.FocusedElement is not ComboBox { IsDropDownOpen: true })
         {
             _viewModel.ClosePeoplePreviewCommand.Execute(null); e.Handled = true; return;

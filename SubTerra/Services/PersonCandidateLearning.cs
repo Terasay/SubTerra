@@ -10,30 +10,34 @@ namespace SubTerra.Services;
 /// <summary>A supervised correction to the detector log odds. Only explicit operator labels enter the fit.</summary>
 public sealed class PersonCandidateLearning(string? path = null)
 {
-    private sealed record Example(string Key, double[] Features, float DetectorScore, bool Person);
+    private sealed record Example(string Key, double[] Features, float DetectorScore, bool Person, string[]? Sources = null);
     private sealed record Archive(int Version, Example[] Examples);
-    private const int FeatureCount = 9, MaximumExamples = 2048;
+    internal const int FeatureCount = 9;
+    private const int MaximumExamples = 2048;
     private const double MaxCorrection = 1.25;
     private readonly ConditionalWeakTable<ScanImage, byte[]> _imageHashes = new();
     private Dictionary<string, Example> _examples = [];
     public int Positives => _examples.Values.Count(s => s.Person);
     public int Negatives => _examples.Count - Positives;
-    public bool Ready => Positives >= 3 && Negatives >= 3;
+    public int TaggedPositives => _examples.Values.Count(s => s.Person && s.Sources is { Length: > 0 });
+    public int TaggedNegatives => _examples.Values.Count(s => !s.Person && s.Sources is { Length: > 0 });
+    public int SourceCount => _examples.Values.SelectMany(s => s.Sources ?? []).Distinct().Count();
+    public bool Ready => TaggedPositives >= 3 && TaggedNegatives >= 3;
 
     private Dictionary<string, Example> Read()
     {
         if (path is null) return _examples;
         using var stream = File.OpenRead(path);
-        if (stream.Length > 2_000_000) throw new InvalidDataException("Слишком большой файл примеров.");
+        if (stream.Length > 6_000_000) throw new InvalidDataException("Слишком большой файл примеров.");
         var data = JsonSerializer.Deserialize<Archive>(stream);
-        if (data?.Version != 1 || data.Examples is null || data.Examples.Length > MaximumExamples)
+        if (data?.Version is not (1 or 2) || data.Examples is null || data.Examples.Length > MaximumExamples)
             throw new InvalidDataException("Неизвестный формат примеров обучения.");
         var examples = new Dictionary<string, Example>();
         foreach (var s in data.Examples)
         {
             if (s is null || s.Key is not { Length: 64 } || !s.Key.All(Uri.IsHexDigit) ||
                 s.Features is not { Length: FeatureCount } || s.Features.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1) ||
-                !float.IsFinite(s.DetectorScore) || s.DetectorScore is < 0 or > 1 || !examples.TryAdd(s.Key, s))
+                !float.IsFinite(s.DetectorScore) || s.DetectorScore is < 0 or > 1 || !ValidSources(s.Sources) || !examples.TryAdd(s.Key, s))
                 throw new InvalidDataException("Повреждён пример обучения.");
         }
         return examples;
@@ -44,10 +48,20 @@ public sealed class PersonCandidateLearning(string? path = null)
         try { _examples = Read(); }
         catch (FileNotFoundException) { _examples = []; }
         catch (DirectoryNotFoundException) { _examples = []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            _examples = [];
+            throw;
+        }
     }
 
-    public void Review(ScanImage view, PersonFinding finding, StructureReviewState label)
+    private static bool ValidSources(string[]? sources) => sources is null || (sources.Length <= ScanProject.MaximumObjects &&
+        sources.All(s => s is { Length: 64 } && s.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F')) &&
+        sources.Distinct().Count() == sources.Length);
+
+    public void Review(ScanImage view, PersonFinding finding, StructureReviewState label, string[]? sources = null)
     {
+        if (!ValidSources(sources)) throw new InvalidDataException("Некорректные идентификаторы сканов.");
         if (path is not null) Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var gate = path is null ? null : new FileStream(path + ".lock", FileMode.OpenOrCreate,
             FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
@@ -55,15 +69,19 @@ public sealed class PersonCandidateLearning(string? path = null)
         var next = new Dictionary<string, Example>(_examples);
         var key = Key(view, finding.Box);
         if (label == StructureReviewState.Proposed) next.Remove(key);
-        else next[key] = new(key, Features(view, finding), finding.DetectorScore ?? finding.Box.Score,
-            label == StructureReviewState.Confirmed);
+        else
+        {
+            var provenance = sources is { Length: > 0 } ? sources : next.GetValueOrDefault(key)?.Sources;
+            next[key] = new(key, Features(view, finding), finding.DetectorScore ?? finding.Box.Score,
+                label == StructureReviewState.Confirmed, provenance?.ToArray());
+        }
         if (next.Count > MaximumExamples) throw new InvalidDataException($"Сохранено максимальное число примеров ({MaximumExamples}).");
         if (path is not null)
         {
             var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                using (var stream = File.Create(temporary)) JsonSerializer.Serialize(stream, new Archive(1, next.Values.ToArray()));
+                using (var stream = File.Create(temporary)) JsonSerializer.Serialize(stream, new Archive(2, next.Values.ToArray()));
                 File.Move(temporary, path, overwrite: true);
             }
             finally { File.Delete(temporary); }
@@ -124,27 +142,75 @@ public sealed class PersonCandidateLearning(string? path = null)
     public static float ProposalThreshold(float threshold) =>
         Math.Max(.1f, (float)Probability(LogOdds(threshold) - MaxCorrection));
 
-    // Class-balanced logistic loss plus L2 regularization around the bundled detector.
-    private double[] Fit(CancellationToken token)
+    public PersonTrainingRun Train(float threshold, IProgress<double>? progress, CancellationToken token)
     {
+        if (!float.IsFinite(threshold) || threshold is < .1f or > .9f) throw new ArgumentOutOfRangeException(nameof(threshold));
+        var tagged = _examples.Values.Where(s => s.Sources is { Length: > 0 }).OrderBy(s => s.Key).ToArray();
+        static bool Enough(Example[] rows) => rows.Count(s => s.Person) >= 3 && rows.Count(s => !s.Person) >= 3;
+        if (!Enough(tagged)) throw new InvalidOperationException("Для обучения нужны минимум три примера каждого класса с известным сканом.");
+        var training = tagged;
+        Example[] validation = [];
+        // Only single-source examples can enter validation. Remove every training example that saw that scan.
+        foreach (var group in tagged.Where(s => s.Sources!.Length == 1).GroupBy(s => s.Sources![0])
+                     .Where(g => g.Any(s => s.Person) && g.Any(s => !s.Person))
+                     .OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal))
+        {
+            token.ThrowIfCancellationRequested();
+            var candidates = tagged.Where(s => !s.Sources!.Contains(group.Key)).ToArray();
+            if (!Enough(candidates)) continue;
+            training = candidates;
+            validation = group.ToArray();
+            break;
+        }
+        var (weights, loss) = Fit(training, progress, token);
+        token.ThrowIfCancellationRequested();
+        return new(Guid.NewGuid(), DateTimeOffset.UtcNow, weights, loss, training.Length, validation.Length, threshold,
+            validation.Length > 0 ? Evaluate(validation, threshold, null) : null,
+            validation.Length > 0 ? Evaluate(validation, threshold, weights) : null);
+    }
+
+    private static PersonTrainingMetrics Evaluate(Example[] rows, float threshold, double[]? weights)
+    {
+        var tp = 0; var fp = 0; var fn = 0; var tn = 0;
+        foreach (var row in rows)
+        {
+            var predicted = Score(row.DetectorScore, row.Features, weights) >= threshold;
+            if (predicted && row.Person) tp++;
+            else if (predicted) fp++;
+            else if (row.Person) fn++;
+            else tn++;
+        }
+        return new(tp, fp, fn, tn);
+    }
+
+    // Class-balanced logistic loss with a regularizer around the original YOLOX estimate.
+    private static (double[] Weights, double[] Loss) Fit(Example[] training, IProgress<double>? progress, CancellationToken token)
+    {
+        const int steps = 100;
         var weights = new double[FeatureCount];
-        var positives = Positives;
-        var negatives = _examples.Count - positives;
-        var rows = _examples.Values.Select(s => (s, prior: LogOdds(s.DetectorScore),
+        var loss = new double[steps / 5 + 1];
+        var positives = training.Count(s => s.Person);
+        var negatives = training.Length - positives;
+        var rows = training.Select(s => (s, prior: LogOdds(s.DetectorScore),
             weight: .5 / (s.Person ? positives : negatives))).ToArray();
         var gradient = new double[FeatureCount];
-        for (var epoch = 0; epoch < 100; epoch++)
+        for (var epoch = 0; epoch <= steps; epoch++)
         {
             token.ThrowIfCancellationRequested();
             Array.Clear(gradient);
+            double objective = .03 * Dot(weights, weights);
             foreach (var (s, prior, weight) in rows)
             {
-                var error = (Probability(prior + Dot(weights, s.Features)) - (s.Person ? 1 : 0)) * weight;
+                var probability = Probability(prior + Dot(weights, s.Features));
+                var error = (probability - (s.Person ? 1 : 0)) * weight;
+                if (epoch % 5 == 0) objective -= weight * Math.Log(Math.Max(1e-12, s.Person ? probability : 1 - probability));
                 for (var j = 0; j < FeatureCount; j++) gradient[j] += error * s.Features[j];
             }
+            if (epoch % 5 == 0) { loss[epoch / 5] = objective; progress?.Report(epoch); }
+            if (epoch == steps) break;
             for (var j = 0; j < FeatureCount; j++) weights[j] -= .45 * (gradient[j] + .06 * weights[j]);
         }
-        return weights;
+        return (weights, loss);
     }
 
     private static double Dot(double[] weights, double[] features)
@@ -154,21 +220,19 @@ public sealed class PersonCandidateLearning(string? path = null)
         return value;
     }
 
-    public PersonDetectionResult Apply(PersonDetectionResult result, float threshold, bool learn, CancellationToken token)
+    private static float Score(float original, double[] features, double[]? weights) => weights is null ? original :
+        (float)Probability(LogOdds(original) + Math.Clamp(Dot(weights, features), -MaxCorrection, MaxCorrection));
+
+    public PersonDetectionResult Apply(PersonDetectionResult result, float threshold, PersonTrainingRun? model, CancellationToken token)
     {
-        if (_examples.Count == 0) return result;
-        var weights = learn && Ready ? Fit(token) : null;
+        if (_examples.Count == 0 && model is null) return result;
         var findings = new List<PersonFinding>();
         foreach (var f in result.Findings)
         {
             token.ThrowIfCancellationRequested();
             var view = result.Views[f.ViewIndex];
             var score = f.Box.Score;
-            if (weights is not null)
-            {
-                var correction = Math.Clamp(Dot(weights, Features(view, f)), -MaxCorrection, MaxCorrection);
-                score = (float)Probability(LogOdds(score) + correction);
-            }
+            if (model is not null) score = Score(score, Features(view, f), model.Weights);
             if (score < threshold) continue;
             var review = _examples.TryGetValue(Key(view, f.Box), out var example)
                 ? (example.Person ? StructureReviewState.Confirmed : StructureReviewState.Rejected) : f.Review;

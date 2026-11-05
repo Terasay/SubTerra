@@ -10,7 +10,11 @@ public interface IPersonImageDetector : IDisposable
 {
     ImageBox[] Detect(ScanImage image, float threshold, CancellationToken token);
     int RejectedChairCandidates => 0;
+    bool SupportsCloseupVerification => false;
+    PersonCloseupEvidence CheckCloseup(ScanImage image, ImageBox target, CancellationToken token) => PersonCloseupEvidence.None;
 }
+
+public enum PersonCloseupEvidence { None, Person, WeakFurniture, Furniture, StrongChair, PlantOrVase }
 
 /// <summary>Official YOLOX-Nano export. Decoding adapted from Megvii YOLOX demo_utils.py (Apache-2.0; bundled license).
 /// Raw BGR CHW, grid/stride decode, objectness × COCO person probability.</summary>
@@ -21,6 +25,7 @@ public sealed class OnnxPersonDetector : IPersonImageDetector
     public static string DefaultModelPath => Path.Combine(AppContext.BaseDirectory, "Assets", "Models", "yolox_nano.onnx");
     private readonly InferenceSession _session;
     public int RejectedChairCandidates { get; private set; }
+    public bool SupportsCloseupVerification => true;
     public OnnxPersonDetector(string? path = null)
     {
         path ??= DefaultModelPath;
@@ -74,6 +79,27 @@ public sealed class OnnxPersonDetector : IPersonImageDetector
     public static bool ChairExplainsCandidate(ImageBox target, ImageBox[] people, ImageBox[] chairs) =>
         chairs.Any(chair => chair.Score >= .7f && IntersectionOverUnion(target, chair) >= .65f &&
             !people.Any(person => person.Score >= .3f && IntersectionOverUnion(target, person) >= .3f));
+
+    public PersonCloseupEvidence CheckCloseup(ScanImage image, ImageBox target, CancellationToken token) =>
+        ClassifyCloseup(Infer(image, token), target);
+
+    public static PersonCloseupEvidence ClassifyCloseup(float[] output, ImageBox target)
+    {
+        // A competing class must explain the whole candidate, not a chair or a person beside it.
+        bool Matches(int kind, float score, float overlap) =>
+            Decode(output, score, kind).Any(box => IntersectionOverUnion(target, box) >= overlap);
+
+        if (Matches(0, .45f, .42f)) return PersonCloseupEvidence.Person;
+        if (Matches(56, .50f, .55f)) return PersonCloseupEvidence.StrongChair;
+        if (Matches(56, .27f, .48f) || Matches(57, .30f, .48f) || Matches(13, .30f, .48f))
+            return PersonCloseupEvidence.Furniture;
+        // Plants and vases can alternate as the best COCO class for the same flower arrangement.
+        // This weak evidence is only used if it repeats from another camera position.
+        if (Matches(58, .12f, .48f) || Matches(75, .12f, .48f)) return PersonCloseupEvidence.PlantOrVase;
+        if (Matches(56, .13f, .52f) || Matches(57, .15f, .52f) || Matches(13, .15f, .52f))
+            return PersonCloseupEvidence.WeakFurniture;
+        return PersonCloseupEvidence.None;
+    }
     private static ScanImage EnlargedCrop(ScanImage source, ImageBox box, float side, CancellationToken token, out ImageBox target)
     {
         var left = (box.Left + box.Right - side) * .5f; var top = (box.Top + box.Bottom - side) * .5f;

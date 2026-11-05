@@ -23,4 +23,6 @@ public sealed record PersonFinding(int Id, int ViewIndex, ImageBox Box, Vector3?
 public sealed record PersonDetectionResult(ScanImage[] Views, PersonFinding[] Findings, string Model, int RejectedChairCandidates = 0)
 {
     public int RejectedWallCandidates { get; init; }
+    public int RejectedFurnitureGroups { get; init; }
+    public int RejectedDecorGroups { get; init; }
 }

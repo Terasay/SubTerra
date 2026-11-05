@@ -16,6 +16,7 @@ public sealed class WorkspaceStateStore
     public bool HasRecovery => File.Exists(RecoveryPath);
     public string PreferencesPath => Path.Combine(_directory, "workspace.json");
     public string PersonExamplesPath => Path.Combine(_directory, "person-examples-v1.json");
+    public string PersonModelsPath => Path.Combine(_directory, "person-models.json");
 
     public WorkspaceStateStore(string? directory = null) => _directory = directory ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Subterra");

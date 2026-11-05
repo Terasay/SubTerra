@@ -56,7 +56,7 @@ public sealed partial class MainViewModel
 
     private void AccessChanged(object? sender, EventArgs e)
     {
-        if (!IsAdministrator) Pause();
+        if (!IsAdministrator) { Pause(); IsTrainingPanelOpen = false; }
         Raise(nameof(IsAdministrator)); Raise(nameof(IsGuest)); Raise(nameof(AccessLabel)); Raise(nameof(AccessButtonText));
         NotifyState();
     }

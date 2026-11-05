@@ -1,0 +1,99 @@
+<UserControl x:Class="SubTerra.Views.PersonTrainingPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Language="ru-RU" KeyboardNavigation.TabNavigation="Cycle">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel MaxWidth="1040" Margin="24,20,24,24">
+            <DockPanel Margin="0,0,0,12">
+                <Button x:Name="CloseTrainingButton" DockPanel.Dock="Right" Command="{Binding CloseTrainingPanelCommand}" Content="Закрыть · Esc" Style="{StaticResource Ghost}"/>
+                <TextBlock Text="Администрирование модели людей" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            </DockPanel>
+            <TextBlock Text="{Binding ActivePersonModelText}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,0,0,12"/>
+            <Border Style="{StaticResource InsetCard}">
+                <StackPanel>
+                    <TextBlock Text="{Binding TrainingExamplesText}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding TrainingExamplesHint}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
+                    <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                        <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог сравнения · {0:P0}}" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Slider Minimum=".1" Maximum=".9" TickFrequency=".05" IsSnapToTickEnabled="True" Width="156" Value="{Binding PersonThreshold}"
+                                AutomationProperties.Name="Порог поиска и сравнения моделей"/>
+                    </DockPanel>
+                    <WrapPanel>
+                        <Button Content="Собрать рамки на текущем скане" Command="{Binding CollectPersonExamplesCommand}" Margin="0,0,8,4"
+                                ToolTip="Открывает RGB-поиск от порога 10 %. Проверьте предложенные рамки кнопками «Это человек» и «Ошибка»." ToolTipService.ShowOnDisabled="True"/>
+                        <Button Content="Обучить новую версию" Command="{Binding TrainPersonModelCommand}" Style="{StaticResource Primary}" Margin="0,0,0,4"/>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Border Style="{StaticResource InsetCard}" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="История обучения" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding PersonTrainingRuns}" SelectedItem="{Binding SelectedTrainingRun}" MaxHeight="240"
+                                 AutomationProperties.Name="Версии модели людей">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding TrainedAt.LocalDateTime, StringFormat={}{0:g}}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding TrainingCount, StringFormat=Рамок для обучения · {0}}" Style="{StaticResource Muted}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <Button Content="Применить выбранную" Command="{Binding ActivatePersonModelCommand}" Margin="0,8,0,0"/>
+                        <Button Content="Вернуть базовую YOLOX" Command="{Binding UseBaselinePersonModelCommand}" Style="{StaticResource Ghost}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource InsetCard}">
+                    <StackPanel>
+                        <TextBlock Text="Результат запуска" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding TrainingRunDetails}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
+                        <TextBlock Text="Потери при обучении" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding TrainingLossText}" Style="{StaticResource Muted}"/>
+                        <Border Background="#0B131B" CornerRadius="6" Margin="0,6,0,0">
+                            <Viewbox Height="102" Stretch="Fill" AutomationProperties.Name="График потерь за 100 шагов обучения">
+                                <Canvas Width="560" Height="102">
+                                    <Line X1="8" Y1="94" X2="552" Y2="94" Stroke="#526775"/>
+                                    <Line X1="8" Y1="12" X2="8" Y2="94" Stroke="#526775"/>
+                                    <Line X1="8" Y1="53" X2="552" Y2="53" Stroke="#263B49"/>
+                                    <Polyline Points="{Binding TrainingLossCurve}" Stroke="{StaticResource AccentBrush}" StrokeThickness="2.5"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Border>
+                        <DockPanel Margin="0,2,0,10">
+                            <TextBlock DockPanel.Dock="Right" Text="100 шагов" Style="{StaticResource Muted}"/>
+                            <TextBlock Text="Старт" Style="{StaticResource Muted}"/>
+                        </DockPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="На отложенном скане" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text="YOLOX" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="2" Text="Новая модель" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding TrainingComparison}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Metric}" Style="{StaticResource Muted}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Baseline}" HorizontalAlignment="Right"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Trained}" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding TrainingValidationText}" Style="{StaticResource Muted}" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

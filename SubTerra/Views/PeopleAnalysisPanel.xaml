@@ -28,8 +28,9 @@
         </StackPanel>
         <Expander Header="Обучение по отметкам" Margin="0,12,0,0"><StackPanel Margin="0,8,0,0">
             <TextBlock Text="{Binding PersonLearningSummary}" Style="{StaticResource Muted}"/>
-            <CheckBox Content="Учитывать примеры при поиске" IsChecked="{Binding UsePersonLearning}" IsEnabled="{Binding CanInteract}" Margin="0,8,0,0"/>
-            <TextBlock Text="«Это человек» и «Ошибка» сохраняют признаки рамки для обучения. Повторная отметка заменяет предыдущую, «Сбросить проверку» удаляет пример. Для сравнения снимите флажок и повторите поиск." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+            <Button Content="Открыть панель обучения" Command="{Binding OpenTrainingPanelCommand}" Margin="0,8,0,0"
+                    Visibility="{Binding IsAdministrator, Converter={StaticResource BoolVisibility}}"/>
+            <TextBlock Text="«Это человек» и «Ошибка» добавляют пример. Повторная отметка его заменяет. «Сбросить проверку» удаляет пример из набора для будущих запусков обучения." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
         </StackPanel></Expander>
         <Expander Header="Параметры и ограничения" Margin="0,18,0,0"><StackPanel Margin="0,10,0,0">
             <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог модели: {0:P0}}" Style="{StaticResource Muted}"/>

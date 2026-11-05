@@ -8,6 +8,9 @@ public interface IPersonScanAnalyzer
 {
     Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
         float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token);
+    Task<PersonDetectionResult> AnalyzeForReviewAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
+        float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) =>
+        AnalyzeAsync(project, poses, surfaces, threshold, clip, progress, token);
 }
 
 public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFactory = null) : IPersonScanAnalyzer
@@ -24,14 +27,68 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             ?? throw new ArgumentException("Сначала найдите пол помещения.");
         var eye = floor.Center + Vector3.UnitZ * 1.55f;
         if (interior is { } seed) eye = new(seed.X, seed.Y, floor.Center.Z + 1.55f);
-        return Enumerable.Range(0, 8).Select(i => new ScanViewPose(eye, new(MathF.Cos(i * MathF.PI / 4), MathF.Sin(i * MathF.PI / 4), -.03f), Vector3.UnitZ, 80)).ToArray();
+        var overview = Enumerable.Range(0, 8).Select(i => new ScanViewPose(eye,
+            new(MathF.Cos(i * MathF.PI / 4), MathF.Sin(i * MathF.PI / 4), -.03f), Vector3.UnitZ, 80));
+        return overview.Concat(ViewsAlongFloor(floor, eye)).ToArray();
     }
+
+    private static IEnumerable<ScanViewPose> ViewsAlongFloor(StructureSurface floor, Vector3 overview)
+    {
+        if (floor.Boundary.Length < 3 || floor.Samples.Length < 64) yield break;
+        // The principal XY direction of the measured floor makes the layout rotation-independent.
+        double xx = 0, yy = 0, xy = 0;
+        foreach (var sample in floor.Samples)
+        {
+            var delta = sample.Position - floor.Center;
+            xx += delta.X * (double)delta.X;
+            yy += delta.Y * (double)delta.Y;
+            xy += delta.X * (double)delta.Y;
+        }
+        var angle = (float)(.5 * Math.Atan2(2 * xy, xx - yy));
+        var along = new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0);
+        var across = new Vector3(-along.Y, along.X, 0);
+        var bounds = floor.Boundary.Select(p => p - floor.Center).ToArray();
+        var start = bounds.Min(p => Vector3.Dot(p, along));
+        var length = bounds.Max(p => Vector3.Dot(p, along)) - start;
+        var width = bounds.Max(p => Vector3.Dot(p, across)) - bounds.Min(p => Vector3.Dot(p, across));
+        if (length < 8 || width < .6f || length / width < 2.8f) yield break;
+
+        var floorPoints = floor.Samples.Select(s =>
+        {
+            var p = s.Position - floor.Center;
+            return (Along: Vector3.Dot(p, along), Across: Vector3.Dot(p, across), Z: s.Position.Z);
+        }).ToArray();
+        foreach (var fraction in new[] { .12f, .33f, .67f, .88f })
+        {
+            var station = start + fraction * length;
+            // Sample the local cross-section. A global bounding rectangle can put a camera beyond a wall or over a gap.
+            var support = floorPoints.Where(p => Math.Abs(p.Along - station) <= .65f).ToArray();
+            if (support.Length < 12) continue;
+            var lateral = support.Select(p => p.Across).Order().ToArray();
+            var middle = (lateral[lateral.Length / 5] + lateral[lateral.Length - 1 - lateral.Length / 5]) / 2;
+            var point = floor.Center + along * station + across * middle;
+            point.Z = support.Select(p => p.Z).Order().ElementAt(support.Length / 2) + 1.55f;
+            if (Vector3.DistanceSquared(point, overview) < 1) continue;
+            yield return new(point, along - Vector3.UnitZ * .12f, Vector3.UnitZ, 84);
+            yield return new(point, -along - Vector3.UnitZ * .12f, Vector3.UnitZ, 84);
+        }
+    }
+
     public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
-        float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) => Task.Run(() =>
+        float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) =>
+        Analyze(project, poses, surfaces, threshold, clip, progress, verifyObjects: true, token);
+
+    public Task<PersonDetectionResult> AnalyzeForReviewAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
+        float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token) =>
+        Analyze(project, poses, surfaces, threshold, clip, progress, verifyObjects: false, token);
+
+    private Task<PersonDetectionResult> Analyze(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces,
+        float threshold, PointClipPlane? clip, IProgress<double>? progress, bool verifyObjects, CancellationToken token) => Task.Run(() =>
     {
         project.Validate(token);
         if (poses.Length is < 1 or > 16) throw new ArgumentException("Для анализа нужны 1–16 ракурсов.");
         using var detector = detectorFactory?.Invoke() ?? new OnnxPersonDetector();
+        var recheck = verifyObjects && detector.SupportsCloseupVerification;
         var views = new List<ScanImage>(); var findings = new List<PersonFinding>(); var rejectedChairs = 0;
         var rejectedWallImages = 0;
         foreach (var pose in poses)
@@ -40,6 +97,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             var image = ScanImageRenderer.Render(project, pose, clip: clip, token: token);
             var boxes = detector.Detect(image, threshold, token);
             rejectedChairs += detector.RejectedChairCandidates;
+            var frame = new List<PersonFinding>();
             foreach (var box in boxes)
             {
                 var (min, max) = Locate(image, box, surfaces, token);
@@ -48,14 +106,123 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
                     rejectedWallImages++;
                     continue;
                 }
-                findings.Add(new(findings.Count + 1, views.Count, box, min, max));
+                frame.Add(new(0, views.Count, box, min, max));
             }
-            views.Add(image); progress?.Report(100d * views.Count / poses.Length);
+            foreach (var finding in frame)
+                if (!frame.Any(other => IsNestedFragment(finding, other)))
+                    findings.Add(finding with { Id = findings.Count + 1 });
+            views.Add(image);
+            progress?.Report((recheck ? 75d : 100d) * views.Count / poses.Length);
         }
+        var grouped = GroupAcrossViews(findings);
+        var excluded = new Dictionary<int, PersonCloseupEvidence>();
+        if (recheck)
+        {
+            var suspects = grouped.Where(f => f.SpatialGroup.HasValue)
+                .GroupBy(f => f.SpatialGroup!.Value)
+                .Select(g => (Best: g.MaxBy(f => f.Box.Score)!, Views: g.Count()))
+                .Where(g => g.Best.Box.Score < .75f)
+                // Spend the bounded render budget on persistent groups and compact silhouettes first.
+                // Aspect ratio affects scheduling only, so a seated person remains eligible.
+                .OrderByDescending(g => g.Views)
+                .ThenBy(g => (g.Best.Box.Bottom - g.Best.Box.Top) / Math.Max(1, g.Best.Box.Right - g.Best.Box.Left))
+                .ThenByDescending(g => g.Best.Box.Score)
+                .Take(12).Select(g => g.Best).ToArray();
+            for (var i = 0; i < suspects.Length; i++)
+            {
+                var candidate = suspects[i];
+                var objectEvidence = VerifyObject(project, detector, candidate, views[candidate.ViewIndex].Pose, clip, token);
+                if (objectEvidence != PersonCloseupEvidence.None)
+                    excluded.Add(candidate.SpatialGroup!.Value, objectEvidence);
+                progress?.Report(75 + 25d * (i + 1) / suspects.Length);
+            }
+            if (excluded.Count > 0)
+                grouped = grouped.Where(f => !f.SpatialGroup.HasValue || !excluded.ContainsKey(f.SpatialGroup.Value)).ToArray();
+        }
+        progress?.Report(100);
         token.ThrowIfCancellationRequested();
-        return new PersonDetectionResult(views.ToArray(), GroupAcrossViews(findings), OnnxPersonDetector.ModelName, rejectedChairs)
-        { RejectedWallCandidates = rejectedWallImages };
+        return new PersonDetectionResult(views.ToArray(), grouped, OnnxPersonDetector.ModelName, rejectedChairs)
+        {
+            RejectedWallCandidates = rejectedWallImages,
+            RejectedFurnitureGroups = excluded.Values.Count(e => e == PersonCloseupEvidence.Furniture),
+            RejectedDecorGroups = excluded.Values.Count(e => e == PersonCloseupEvidence.PlantOrVase)
+        };
     }, token);
+
+    private static PersonCloseupEvidence VerifyObject(ScanProject project, IPersonImageDetector detector, PersonFinding candidate,
+        ScanViewPose original, PointClipPlane? clip, CancellationToken token)
+    {
+        var min = candidate.Minimum!.Value;
+        var max = candidate.Maximum!.Value;
+        var center = (min + max) / 2;
+        var extent = max - min;
+        var approach = original.Position - center;
+        approach.Z = 0;
+        if (approach.LengthSquared() < .25f) return PersonCloseupEvidence.None;
+        approach = Vector3.Normalize(approach);
+        var lateral = new Vector3(-approach.Y, approach.X, 0);
+        var distance = Math.Clamp(Math.Max(extent.Z, Math.Max(extent.X, extent.Y)) * 1.65f, 1.8f, 3.1f);
+        int furniture = 0, weakFurniture = 0, decor = 0;
+        var strongChair = false;
+        foreach (var shift in new[] { 0f, -.45f, .45f, -.9f, .9f })
+        {
+            token.ThrowIfCancellationRequested();
+            var offset = approach * distance + lateral * shift + Vector3.UnitZ * .55f;
+            var pose = new ScanViewPose(center + offset, -offset, Vector3.UnitZ, 50);
+            if (!InspectionPoint.From(pose.Position).IsValid || !TryProjectBounds(pose, min, max, out var target)) continue;
+            var image = ScanImageRenderer.Render(project, pose, clip: clip, token: token);
+            if (!HasCloseupSupport(image, target, min, max)) continue;
+            switch (detector.CheckCloseup(image, target, token))
+            {
+                case PersonCloseupEvidence.Person: return PersonCloseupEvidence.None;
+                case PersonCloseupEvidence.StrongChair: strongChair = true; break;
+                case PersonCloseupEvidence.Furniture: furniture++; break;
+                case PersonCloseupEvidence.WeakFurniture: weakFurniture++; break;
+                case PersonCloseupEvidence.PlantOrVase: decor++; break;
+            }
+        }
+        if (strongChair || furniture > 0 && furniture + weakFurniture >= 2) return PersonCloseupEvidence.Furniture;
+        return decor >= 2 ? PersonCloseupEvidence.PlantOrVase : PersonCloseupEvidence.None;
+    }
+
+    private static bool TryProjectBounds(ScanViewPose pose, Vector3 min, Vector3 max, out ImageBox target)
+    {
+        const int center = 208;
+        target = null!;
+        var forward = Vector3.Normalize(pose.Forward);
+        var right = Vector3.Normalize(Vector3.Cross(forward, pose.Up));
+        var up = Vector3.Cross(right, forward);
+        var focal = center / MathF.Tan(pose.FieldOfView * MathF.PI / 360);
+        var low = new Vector2(float.MaxValue);
+        var high = new Vector2(float.MinValue);
+        for (var i = 0; i < 8; i++)
+        {
+            var p = new Vector3((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y, (i & 4) == 0 ? min.Z : max.Z);
+            p -= pose.Position;
+            var depth = Vector3.Dot(p, forward);
+            if (depth < .12f) return false;
+            var pixel = new Vector2(center + focal * Vector3.Dot(p, right) / depth, center - focal * Vector3.Dot(p, up) / depth);
+            low = Vector2.Min(low, pixel);
+            high = Vector2.Max(high, pixel);
+        }
+        target = new(Math.Clamp(low.X, 0, 415), Math.Clamp(low.Y, 0, 415), Math.Clamp(high.X, 0, 415), Math.Clamp(high.Y, 0, 415), 0);
+        return target.Area >= 64;
+    }
+
+    private static bool HasCloseupSupport(ScanImage image, ImageBox box, Vector3 min, Vector3 max)
+    {
+        var bounds = new ScanBox(min - new Vector3(.08f), max + new Vector3(.08f));
+        var count = 0;
+        for (var y = 0; y < 10; y++)
+        for (var x = 0; x < 10; x++)
+        {
+            var px = (int)(box.Left + (x + .5f) * (box.Right - box.Left) / 10);
+            var py = (int)(box.Top + (y + .5f) * (box.Bottom - box.Top) / 10);
+            var slot = py * image.Size + px;
+            if (float.IsFinite(image.Depth[slot]) && bounds.Contains(image.Positions[slot]) && ++count >= 8) return true;
+        }
+        return false;
+    }
 
     public static bool LiesOnWall(ScanImage image, ImageBox box, StructureSurface[] surfaces)
     {
@@ -111,7 +278,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             {
                 if (groups[j].Any(other => other.ViewIndex == finding.ViewIndex)) continue;
                 // Require overlap with every member. A chain of weak matches can join two neighbours.
-                var overlap = groups[j].Min(other => VolumeIoU(finding, other));
+                var overlap = groups[j].Min(other => SpatialMatch(finding, other));
                 if (overlap > bestOverlap) { bestOverlap = overlap; best = j; }
             }
             if (best < 0) { best = groups.Count; groups.Add([]); }
@@ -121,14 +288,41 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         return result;
     }
 
-    private static float VolumeIoU(PersonFinding a, PersonFinding b)
+    public static bool IsNestedFragment(PersonFinding small, PersonFinding large)
     {
-        static float Volume(Vector3 size) => size.X * size.Y * size.Z;
+        if (small.ViewIndex != large.ViewIndex || large.Box.Score < small.Box.Score ||
+            small.Box.Area <= 0 || large.Box.Area < small.Box.Area * 1.8f ||
+            small.Minimum is null || small.Maximum is null || large.Minimum is null || large.Maximum is null) return false;
+        var a = small.Box; var b = large.Box;
+        var imageOverlap = Math.Max(0, Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left)) *
+            Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top));
+        if (imageOverlap < .9f * a.Area) return false;
+        var (asize, bsize, common, distance) = SpatialOverlap(small, large);
+        return distance <= .2f && asize.Z < .7f * bsize.Z &&
+            common.X * common.Y >= .82f * asize.X * asize.Y && common.Z >= .85f * asize.Z;
+    }
+
+    private static (Vector3 First, Vector3 Second, Vector3 Common, float CenterDistance) SpatialOverlap(PersonFinding a, PersonFinding b)
+    {
         var amin = a.Minimum!.Value; var amax = a.Maximum!.Value;
         var bmin = b.Minimum!.Value; var bmax = b.Maximum!.Value;
         var common = Vector3.Max(Vector3.Zero, Vector3.Min(amax, bmax) - Vector3.Max(amin, bmin));
-        var overlap = Volume(common);
-        return overlap / Math.Max(1e-9f, Volume(amax - amin) + Volume(bmax - bmin) - overlap);
+        var delta = (amin - bmin + amax - bmax) / 2;
+        return (amax - amin, bmax - bmin, common, new Vector2(delta.X, delta.Y).Length());
+    }
+
+    private static float SpatialMatch(PersonFinding a, PersonFinding b)
+    {
+        static float Volume(Vector3 size) => size.X * size.Y * size.Z;
+        var (asize, bsize, common, distance) = SpatialOverlap(a, b);
+        var volume = Volume(common);
+        var iou = volume / Math.Max(1e-9f, Volume(asize) + Volume(bsize) - volume);
+        // A side view can contain only the upper body. The overlapping footprint and close XY
+        // centers still match that partial observation to the full-height detection.
+        var footprint = common.X * common.Y / Math.Max(1e-9f, Math.Min(asize.X * asize.Y, bsize.X * bsize.Y));
+        return distance <= .3f && footprint >= .45f && common.Z >= .65f * Math.Min(asize.Z, bsize.Z)
+            ? Math.Max(iou, .2f + .25f * footprint)
+            : iou;
     }
 
     private static (Vector3? Min, Vector3? Max) Locate(ScanImage image, ImageBox box, StructureSurface[] surfaces, CancellationToken token)

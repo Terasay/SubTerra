@@ -89,6 +89,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _structureAnalyzer = structureAnalyzer ?? new PlaneStructureAnalyzer();
         _personAnalyzer = personAnalyzer ?? new PersonScanAnalyzer();
         _personLearning = new PersonCandidateLearning(workspaceStore?.PersonExamplesPath);
+        _personModels = new PersonTrainingJournal(workspaceStore?.PersonModelsPath);
         _access = access ?? new AdminAccessService();
         _interaction = interaction ?? new CancelSessionInteraction();
         _workspaceStore = workspaceStore;
