@@ -1,5 +1,6 @@
 ply
 format ascii 1.0
+comment subterra_contains_synthetic_data
 comment Synthetic room 6x5x3 m with tabletop; meters; Z-up
 comment Not measured real-world data; no semantic labels in the input
 element vertex 3747

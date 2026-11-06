@@ -32,7 +32,9 @@
                     <ComboBoxItem Content="X Y Z · остальные столбцы пропустить"/><ComboBoxItem Content="X Y Z R G B · RGB от 0 до 255"/>
                     <ComboBoxItem Content="3DeVOK: X Y Z Nx Ny Nz R G B · RGB от 0 до 1"/>
                 </ComboBox>
-                <TextBlock Text="Нормали Nx Ny Nz не являются цветом. По умолчанию читаются только XYZ. Разделители: пробел, табуляция, запятая или ;. Десятичная точка — точка." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" Margin="0,7,0,0" LineHeight="17"/>
+                <TextBlock x:Name="SampleRow" FontFamily="Consolas" TextTrimming="CharacterEllipsis" Foreground="#A4BDC9" Margin="0,7,0,0"/>
+                <TextBlock x:Name="SampleInterpretation" TextWrapping="Wrap" Margin="0,4,0,0" AutomationProperties.LiveSetting="Polite"/>
+                <TextBlock Text="Сверьте порядок столбцов с настройками экспорта в Studio. Допустимые разделители: пробел, табуляция, запятая или ;. Для дробной части используйте точку." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" Margin="0,7,0,0" LineHeight="17"/>
             </StackPanel>
             <CheckBox x:Name="LocalOrigin" Content="Локальное начало у первой точки" IsChecked="True" Margin="0,20,0,7"/>
             <TextBlock Text="Сохраняет точность при больших координатах. Исходное смещение записывается в проект." TextWrapping="Wrap" Foreground="#A4BDC9" FontSize="12" LineHeight="17"/>

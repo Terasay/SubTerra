@@ -101,6 +101,67 @@ public sealed class StreamingTests
     }
 
     [Fact]
+    public async Task FramesOutsideThePlaybackFormatCannotReplaceAPreviousSession()
+    {
+        var request = new ScanRequest("aurora", new(20, 32, 3));
+        var first = Frame(request, 0);
+        var second = Frame(request, 1);
+        var map = new MapAccumulator(request.ScenarioId, request.Settings);
+        Assert.Throws<InvalidDataException>(() => map.Append(first with { Progress = 0 }));
+        map.Append(first);
+        var path = Path.Combine(Path.GetTempPath(), $"subterra-frame-{Guid.NewGuid():N}.subterra");
+        var storage = new SessionStorage();
+        try
+        {
+            await storage.SaveAsync(path, map.Snapshot(), 1);
+            foreach (var invalid in new[]
+            {
+                second with { Timestamp = first.Timestamp.AddTicks(1) },
+                second with { Pose = new(new(100_001, 0, 0), Quaternion.Identity) },
+                second with { Points = [new(-100_001, 0, 0, 1)] }
+            })
+            {
+                Assert.Throws<InvalidDataException>(() => map.Append(invalid));
+                var session = new ScanSession { ScenarioId = request.ScenarioId, Settings = request.Settings, Frames = [first, invalid] };
+                await Assert.ThrowsAsync<InvalidDataException>(() => storage.SaveAsync(path, session, 2));
+            }
+            var restored = await storage.LoadAsync(path);
+            Assert.Equal(first.Points, Assert.Single(restored.Frames).Points);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task OnlyRecordedHitsCanBeExportedAndRetainTheirSyntheticOrigin(bool hasHits) => ScanControlTests.OnSta(async () =>
+    {
+        var request = new ScanRequest("aurora", new(20, 32, 3));
+        var map = new MapAccumulator(request.ScenarioId, request.Settings);
+        var frame = Frame(request, 0);
+        map.Append(hasHits ? frame : frame with { Points = [] });
+        var storage = new SessionStorage();
+        var path = Path.Combine(Path.GetTempPath(), $"subterra-cave-{Guid.NewGuid():N}.subterra");
+        var exportPath = Path.ChangeExtension(path, ".ply");
+        try
+        {
+            await storage.SaveAsync(path, map.Snapshot(), 1);
+            using var vm = new MainViewModel(new SimulatedScanSource(), storage, access: new TestAccess());
+            await vm.OpenAsync(path);
+            Assert.True(vm.CanSave);
+            Assert.Equal(hasHits, vm.CanExport);
+            await vm.ExportAsync(exportPath);
+            Assert.False(vm.HasNotification, vm.Notification);
+            Assert.Equal(hasHits, File.Exists(exportPath));
+            if (!hasHits) return;
+            var imported = await new ScanImporter().ImportAsync(exportPath, new(ScanUnit.Meters, LocalOrigin: false));
+            Assert.True(imported.Metadata.IsSynthetic);
+            Assert.Equal(map.Snapshot().Frames[0].Points, imported.Points);
+        }
+        finally { File.Delete(path); File.Delete(exportPath); }
+    });
+
+    [Fact]
     public void AppendedGeometryRetainsHistoryAndMatchingColors()
     {
         var scene = CaveFactory.Create(ScenarioDefinition.All[0]);

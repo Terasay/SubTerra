@@ -1,5 +1,6 @@
 ply
 format ascii 1.0
+comment subterra_contains_synthetic_data
 comment GENERATED example, not captured from a scanner. Units millimeters. Z up.
 element vertex 8
 property float x

@@ -38,26 +38,56 @@ public sealed class ScanImporter
         while (ReadBoundedLine(reader) is { } line)
         {
             if ((lineNumber++ & 4095) == 0) { token.ThrowIfCancellationRequested(); progress?.Report(file.Position * 95d / Math.Max(1, file.Length)); }
-            line = line.Trim();
-            if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("//")) continue;
-            var fields = line.Split([' ', '\t', ';', ','], StringSplitOptions.RemoveEmptyEntries);
-            // ASC often carries normals after XYZ. RGB is only read when explicitly selected.
-            var required = options.TextLayout switch { TextPointLayout.XyzRgb => 6, TextPointLayout.XyzNormalRgb => 9, _ => 3 };
-            if (fields.Length < required)
-                throw new InvalidDataException($"Строка {lineNumber}: для выбранного формата ожидается {required} столбцов.");
+            if (line.AsSpan().Trim().SequenceEqual("# subterra_contains_synthetic_data"))
+                builder.IsSynthetic = true;
+            var fields = TextFields(line);
+            if (fields is null) continue;
             try
             {
-                uint? rgb = options.TextLayout switch
-                {
-                    TextPointLayout.XyzRgb => PackColor(Number(fields[3]), Number(fields[4]), Number(fields[5])),
-                    TextPointLayout.XyzNormalRgb => PackColor(Number(fields[6]) * 255, Number(fields[7]) * 255, Number(fields[8]) * 255),
-                    _ => null
-                };
-                builder.Add(Number(fields[0]), Number(fields[1]), Number(fields[2]), 1, rgb);
+                var point = ParseTextPoint(fields, options.TextLayout);
+                builder.Add(point.X, point.Y, point.Z, 1, point.Color);
             }
             catch (Exception ex) when (ex is FormatException or OverflowException or InvalidDataException)
             { throw new InvalidDataException($"Строка {lineNumber}: {ex.Message}", ex); }
         }
+    }
+
+    internal static string[]? TextFields(string line)
+    {
+        line = line.Trim();
+        if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("//")) return null;
+        // Keep empty delimited fields: dropping one would silently shift the remaining axes or RGB.
+        if (line.Contains(';')) return line.Split(';', StringSplitOptions.TrimEntries);
+        if (line.Contains(',')) return line.Split(',', StringSplitOptions.TrimEntries);
+        return line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    internal static (double X, double Y, double Z, uint? Color) ParseTextPoint(string[] fields, TextPointLayout layout)
+    {
+        var required = layout switch { TextPointLayout.XyzRgb => 6, TextPointLayout.XyzNormalRgb => 9, _ => 3 };
+        if (fields.Length < required)
+            throw new InvalidDataException($"Для выбранного формата ожидается не менее {required} столбцов.");
+        try
+        {
+            uint? color = layout switch
+            {
+                TextPointLayout.XyzRgb => PackColor(Number(fields[3]), Number(fields[4]), Number(fields[5])),
+                TextPointLayout.XyzNormalRgb => PackColor(NormalizedColor(fields[6]), NormalizedColor(fields[7]), NormalizedColor(fields[8])),
+                _ => null
+            };
+            return (Number(fields[0]), Number(fields[1]), Number(fields[2]), color);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidDataException("Проверьте числа и разделители столбцов. В дробных числах используйте точку.", ex);
+        }
+    }
+
+    private static double NormalizedColor(string field)
+    {
+        var value = Number(field);
+        if (value is < 0 or > 1) throw new InvalidDataException("Для девяти столбцов 3DeVOK значения RGB должны быть от 0 до 1.");
+        return value * 255;
     }
 
     private sealed record Property(string Name, string Type, string? CountType = null);
@@ -75,7 +105,7 @@ public sealed class ScanImporter
                 if (b != '\r') bytes.Add((byte)b);
             }
             if (b < 0) throw new InvalidDataException("Оборван заголовок PLY.");
-            ++headerBytes;
+            if (++headerBytes > 65536) throw new InvalidDataException("Слишком большой заголовок PLY.");
             return Encoding.ASCII.GetString(bytes.ToArray()).Trim();
         }
         if (HeaderLine() != "ply") throw new InvalidDataException("Нет сигнатуры PLY.");
@@ -117,6 +147,7 @@ public sealed class ScanImporter
             if (element.Count > 0 && element.Properties.Count == 0) throw new InvalidDataException("Пустое описание элемента PLY.");
             for (var i = 0; i < element.Count; i++)
             {
+                body.BeginRecord();
                 if ((i & 4095) == 0) { token.ThrowIfCancellationRequested(); progress?.Report(file.Position * 95d / Math.Max(1, file.Length)); }
                 double x = 0, y = 0, z = 0, intensity = 1, red = 0, green = 0, blue = 0;
                 foreach (var property in element.Properties)
@@ -157,9 +188,11 @@ public sealed class ScanImporter
                         }
                     }
                 }
+                body.EndRecord(element.Name, i + 1);
                 if (element.Name == "vertex") builder.Add(x, y, z, intensity, hasColor ? PackColor(red, green, blue) : null);
             }
         }
+        body.VerifyEnd(token);
         if (elements.Any(e => e.Name == "face" && e.Count > 0) && !hasFaceList) throw new InvalidDataException("Список граней PLY не распознан.");
     }
     private static double ColorValue(double value, string type) => type is "float" or "float32" or "double" or "float64" ? value * 255 : value;
@@ -193,7 +226,6 @@ public sealed class ScanImporter
         private readonly List<int[]> _polygons = [];
         private int _pendingTriangles;
         private double _ox, _oy, _oz;
-        private bool _hasColor;
         public bool IsSynthetic { get; set; }
         public void Add(double x, double y, double z, double intensity, uint? color)
         {
@@ -205,8 +237,8 @@ public sealed class ScanImporter
             if (options.UpAxis == ScanUpAxis.Y) (py, pz) = (-pz, py);
             if (Math.Abs(px) > 100_000 || Math.Abs(py) > 100_000 || Math.Abs(pz) > 100_000) throw new InvalidDataException("Координаты выходят за 100 км. Проверьте единицы и включите локальное начало.");
             _points.Add(new((float)px, (float)py, (float)pz, (float)intensity));
-            _hasColor |= color.HasValue;
-            _colors.Add(color ?? 0xffffff);
+            // The file layout applies to every vertex. XYZ-only scans need no colour buffer.
+            if (color.HasValue) _colors.Add(color.Value);
         }
         public void AddTriangle(int a, int b, int c)
         {
@@ -229,7 +261,7 @@ public sealed class ScanImporter
                 Triangulate(polygon, token);
             }
             return new() { Metadata = new(Path.GetFileName(path), options.Unit, options.UpAxis, _ox, _oy, _oz) { IsSynthetic = IsSynthetic },
-                Points = _points.ToArray(), Colors = _hasColor ? _colors.ToArray() : [], Triangles = _triangles.ToArray() };
+                Points = _points.ToArray(), Colors = _colors.ToArray(), Triangles = _triangles.ToArray() };
         }
         private void Triangulate(int[] polygon, CancellationToken token)
         {
@@ -284,22 +316,65 @@ public sealed class ScanImporter
         private readonly FileStream _stream;
         private readonly StreamReader? _text;
         private readonly bool _bigEndian;
+        private int _separator;
+        private bool _firstValue;
         public PlyBody(FileStream stream, string format)
         { _stream = stream; _bigEndian = format == "binary_big_endian"; if (format == "ascii") _text = new(stream, Encoding.ASCII, false, 65536, leaveOpen: true); }
         public static bool IsIntegerType(string type) => type is "char" or "int8" or "uchar" or "uint8" or "short" or "int16" or "ushort" or "uint16" or "int" or "int32" or "uint" or "uint32";
         public static bool IsType(string type) => IsIntegerType(type) || type is "float" or "float32" or "double" or "float64";
+        public void BeginRecord() => _firstValue = true;
+
+        public void EndRecord(string element, int number)
+        {
+            if (_text is null) return;
+            while (_separator >= 0 && _separator is not ('\r' or '\n'))
+            {
+                if (!char.IsWhiteSpace((char)_separator))
+                    throw new InvalidDataException($"PLY: лишнее поле в записи {element} №{number}.");
+                _separator = _text.Read();
+            }
+        }
+
+        public void VerifyEnd(CancellationToken token)
+        {
+            if (_text is null)
+            {
+                if (_stream.Position != _stream.Length) throw new InvalidDataException("Лишние данные после объявленных элементов PLY.");
+                return;
+            }
+            int c, count = 0;
+            while ((c = _text.Read()) >= 0)
+            {
+                if ((++count & 4095) == 0) token.ThrowIfCancellationRequested();
+                if (!char.IsWhiteSpace((char)c)) throw new InvalidDataException("Лишние записи после объявленных элементов PLY.");
+            }
+        }
+
         public double Read(string type)
         {
             double value;
             if (_text is not null)
             {
-                var token = new StringBuilder(24); int c;
-                do { c = _text.Read(); } while (c >= 0 && char.IsWhiteSpace((char)c));
+                int c;
+                do
+                {
+                    if (!_firstValue && _separator is ('\r' or '\n' or -1))
+                        throw new InvalidDataException("В строке PLY меньше полей, чем указано в заголовке.");
+                    c = _separator = _text.Read();
+                } while (c >= 0 && char.IsWhiteSpace((char)c));
+                _firstValue = false;
+                Span<char> digits = stackalloc char[128];
+                var length = 0;
                 while (c >= 0 && !char.IsWhiteSpace((char)c))
-                { if (token.Length >= 128) throw new InvalidDataException("Слишком длинное число PLY."); token.Append((char)c); c = _text.Read(); }
-                if (token.Length == 0) throw new EndOfStreamException("Оборваны данные PLY.");
-                try { value = Number(token.ToString()); }
-                catch (FormatException ex) { throw new InvalidDataException("Неверное число PLY.", ex); }
+                {
+                    if (length == digits.Length) throw new InvalidDataException("Слишком длинное число PLY.");
+                    digits[length++] = (char)c;
+                    c = _text.Read();
+                }
+                _separator = c;
+                if (length == 0) throw new EndOfStreamException("Оборваны данные PLY.");
+                if (!double.TryParse(digits[..length], NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                    throw new InvalidDataException("Неверное число PLY.");
             }
             else
             {

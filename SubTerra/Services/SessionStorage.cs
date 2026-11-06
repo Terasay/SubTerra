@@ -33,12 +33,21 @@ public sealed partial class SessionStorage
             return;
         }
         if (!SceneVersions.IsSupported(session.SceneVersion)) throw new InvalidDataException("Неизвестная версия виртуальной сцены.");
+        if (!ScenarioDefinition.All.Any(s => s.Id == session.ScenarioId) ||
+            frameCount < 1 || frameCount > session.Frames.Length || frameCount > session.Settings.FrameCount)
+            throw new InvalidDataException("Некорректный сценарий или число кадров для сохранения.");
         var frames = session.Frames.Take(frameCount).ToArray();
+        var validatedMap = new MapAccumulator(session.ScenarioId, session.Settings, session.SceneVersion);
+        foreach (var frame in frames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            validatedMap.Append(frame);
+        }
         var adjustments = session.Adjustments.Where(a => a.FirstFrame <= frames.Length).ToArray();
         ScannerPlan.Validate(adjustments, session.Settings, frames.Length);
         ValidateAnnotations(session.Annotations);
         var manifest = new Manifest(session.Annotations.Length > 0 ? 3 : adjustments.Length > 0 ? 2 : 1, "simulation", "m", session.ScenarioId, session.Settings,
-            frames.Length, frames.Sum(f => f.Points.Length), session.SceneVersion, adjustments, session.Annotations);
+            frames.Length, validatedMap.PointCount, session.SceneVersion, adjustments, session.Annotations);
         var metadataBytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         if (metadataBytes.Length > MaximumManifestBytes) throw new InvalidDataException("Описание сеанса слишком большое.");
         var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
@@ -115,18 +124,18 @@ public sealed partial class SessionStorage
         var frames = new ScanFrame[manifest.FrameCount];
         var validatedMap = new MapAccumulator(manifest.ScenarioId, manifest.Settings, manifest.SceneVersion);
         var total = 0;
-        var previousProgress = manifest.Settings.StartProgress;
         for (var i = 0; i < frames.Length; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var time = DateTimeOffset.FromUnixTimeMilliseconds(reader.ReadInt64());
+            var milliseconds = reader.ReadInt64();
+            if (milliseconds < DateTimeOffset.MinValue.ToUnixTimeMilliseconds() || milliseconds > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
+                throw new InvalidDataException("Метка времени кадра вне допустимого диапазона.");
+            var time = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
             var position = ReadVector(reader);
             var q = new Quaternion(ReadFinite(reader), ReadFinite(reader), ReadFinite(reader), ReadFinite(reader));
             var progress = ReadFinite(reader);
             var count = reader.ReadInt32();
-            if (count < 0 || count > 2048 || total + count > manifest.PointCount ||
-                progress < previousProgress || progress is <= 0 or > 1 ||
-                q.LengthSquared() is < .9f or > 1.1f)
+            if (count < 0 || count > manifest.Settings.RaysPerFrame || total + count > manifest.PointCount)
                 throw new InvalidDataException("Измерения в файле повреждены.");
             var points = new ScanPoint[count];
             for (var j = 0; j < count; j++)
@@ -137,7 +146,6 @@ public sealed partial class SessionStorage
             frames[i] = new(time, new(position, q), progress, points);
             validatedMap.Append(frames[i]);
             total += count;
-            previousProgress = progress;
             progressReporter?.Report((i + 1d) / frames.Length * 100);
         }
         if (total != manifest.PointCount) throw new InvalidDataException("Количество точек в файле не совпадает.");
@@ -146,10 +154,11 @@ public sealed partial class SessionStorage
     }, cancellationToken);
 
     public Task ExportPlyAsync(string path, IEnumerable<ScanPoint> points, CancellationToken cancellationToken = default,
-        IProgress<double>? progress = null) => Task.Run(() =>
+        IProgress<double>? progress = null, bool isSynthetic = false) => Task.Run(() =>
     {
         cancellationToken.ThrowIfCancellationRequested();
         var snapshot = points.ToArray();
+        if (snapshot.Length == 0) throw new InvalidDataException("В скане нет точек для экспорта.");
         foreach (var p in snapshot)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -166,6 +175,7 @@ public sealed partial class SessionStorage
             using (var writer = new StreamWriter(temporary, false, new UTF8Encoding(false)))
             {
                 writer.WriteLine("ply\nformat ascii 1.0\ncomment Subterra scan; units meters; Z up");
+                if (isSynthetic) writer.WriteLine("comment subterra_contains_synthetic_data");
                 writer.WriteLine($"element vertex {snapshot.Length}");
                 writer.WriteLine("property float x\nproperty float y\nproperty float z\nproperty float intensity\nend_header");
                 var written = 0;

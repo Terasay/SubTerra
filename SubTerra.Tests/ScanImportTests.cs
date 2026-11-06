@@ -155,6 +155,8 @@ public sealed class ScanImportTests
         Assert.Equal(new Vector3(.1f, .06f, .04f), mesh.Bounds.Maximum - mesh.Bounds.Minimum);
         Assert.Equal(8, mesh.Points.Length); Assert.Equal(36, mesh.Triangles.Length); Assert.Equal(8, mesh.Colors.Length);
         Assert.Equal(mesh.Points, cloud.Points); Assert.Equal(8, cloud.Colors.Length); Assert.Empty(cloud.Triangles);
+        Assert.True(mesh.Metadata.IsSynthetic);
+        Assert.True(cloud.Metadata.IsSynthetic);
     }
 
     [Theory]
@@ -183,6 +185,8 @@ public sealed class ScanImportTests
 
     [Theory]
     [InlineData("NaN 1 2")]
+    [InlineData("1,25;2,5;3,75")]
+    [InlineData("1,,3,4")]
     [InlineData("1 2")]
     [InlineData("x y z")]
     [InlineData("Infinity 1 2")]
@@ -196,6 +200,9 @@ public sealed class ScanImportTests
 
     [Theory]
     [InlineData("element vertex 5000001\nproperty float x\nproperty float y\nproperty float z\nend_header\n")]
+    [InlineData("element vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n1 2\n3 4 5 6")]
+    [InlineData("element vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1 2 3 4")]
+    [InlineData("element vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1 2 3\n4 5 6")]
     [InlineData("element vertex 1\nproperty float x\nproperty float y\nend_header\n0 0")]
     [InlineData("element vertex 1\nproperty float x\nproperty float x\nproperty float z\nend_header\n0 0 0")]
     [InlineData("element vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n3 0 1 0")]

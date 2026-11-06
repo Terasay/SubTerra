@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using SubTerra.Models;
+using SubTerra.Services;
 
 namespace SubTerra.Views;
 
@@ -34,25 +35,74 @@ public partial class ScanImportWindow : Window
             MinHeight = 360;
             Height = 460;
         }
-        // Recognize documented source headers, including SubTerra's own meter-based exports.
-        // Units and vertical axis remain visible/editable and must be checked by the operator.
-        if (Path.GetExtension(path).Equals(".ply", StringComparison.OrdinalIgnoreCase))
+        else
         {
             try
             {
                 using var stream = File.OpenRead(path);
-                var bytes = new byte[8192]; var count = stream.Read(bytes, 0, bytes.Length);
-                var header = System.Text.Encoding.ASCII.GetString(bytes, 0, count);
-                var end = header.IndexOf("end_header", StringComparison.Ordinal);
-                if (end >= 0 && header[..end].Split('\n').Any(line => line.TrimEnd('\r') is
-                    "comment Created with Scaniverse - https://scaniverse.com" or
-                    "comment Subterra scan; units meters; Z up; local coordinates" or
-                    "comment Subterra scan; units meters; Z up"))
-                    Units.SelectedIndex = (int)ScanUnit.Meters;
+                if (TextOptions.Visibility == Visibility.Visible) PreviewText(stream);
+                else ApplyPlyPreset(stream);
             }
-            catch (IOException) { } // The importer reports file errors; the optional preset must not prevent opening its dialog.
+            // File errors are reported by the importer, which opens the file again on confirmation.
+            catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
     }
+
+    private void ApplyPlyPreset(Stream stream)
+    {
+        var bytes = new byte[65536]; // Maximum header accepted by the PLY reader.
+        var count = stream.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false);
+        var lines = System.Text.Encoding.ASCII.GetString(bytes, 0, count).Split('\n');
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line == "end_header") break;
+            if (line is "comment Created with Scaniverse - https://scaniverse.com" or
+                "comment Subterra scan; units meters; Z up; local coordinates" or "comment Subterra scan; units meters; Z up")
+            {
+                Units.SelectedIndex = (int)ScanUnit.Meters;
+                break;
+            }
+        }
+    }
+
+    private void PreviewText(Stream stream)
+    {
+        // Inspect only the prefix even if an export starts with a large block of comments.
+        using var reader = new StreamReader(stream);
+        var buffer = new char[16 * 1024];
+        var count = reader.ReadBlock(buffer, 0, buffer.Length);
+        var prefix = new string(buffer, 0, count);
+        if (count == buffer.Length && reader.Peek() != -1)
+            prefix = prefix[..(prefix.LastIndexOf('\n') + 1)];
+        foreach (var line in prefix.Split('\n'))
+        {
+            var fields = ScanImporter.TextFields(line);
+            if (fields is null) continue;
+            SampleRow.Text = $"Первая строка данных ({fields.Length} ст.): {line.Trim()}";
+            SampleRow.ToolTip = SampleRow.Text;
+            void UpdatePreview()
+            {
+                try
+                {
+                    var point = ScanImporter.ParseTextPoint(fields, Options.TextLayout);
+                    SampleInterpretation.Text = point.Color is { } color ? $"Цвет первой точки: #{color:X6}." :
+                        fields.Length > 3 ? "Будут прочитаны только XYZ. Чтобы сохранить RGB, выберите соответствующие столбцы." :
+                        "Будут прочитаны координаты XYZ.";
+                    ImportButton.IsEnabled = true;
+                }
+                catch (Exception ex) when (ex is InvalidDataException or FormatException or OverflowException)
+                {
+                    SampleInterpretation.Text = "Первая точка: " + ex.Message;
+                    ImportButton.IsEnabled = false;
+                }
+            }
+            Columns.SelectionChanged += (_, _) => UpdatePreview();
+            UpdatePreview();
+            break;
+        }
+    }
+
     private void Import_Click(object sender, RoutedEventArgs e) => DialogResult = true;
 }
