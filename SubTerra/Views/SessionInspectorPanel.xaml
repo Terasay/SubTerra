@@ -12,7 +12,7 @@
         </ResourceDictionary>
     </UserControl.Resources>
     <StackPanel>
-        <Expander Header="Измерения и метки" IsExpanded="True">
+        <Expander Header="Измерения и метки">
             <StackPanel Margin="0,8,0,0">
                 <UniformGrid Columns="2" Margin="0,0,0,10">
                     <Button Content="Координаты" Command="{Binding CoordinatesCommand}" FontSize="11" Margin="0,0,5,0" />
@@ -58,10 +58,6 @@
                 </ItemsControl>
             </StackPanel>
         </Expander>
-        <TextBlock Text="Сохранение и экспорт" Style="{StaticResource Section}" Margin="0,0,0,10" />
-        <Button Click="SaveAs_Click" IsEnabled="{Binding CanSave}" Content="Сохранить как…" ToolTip="Создать отдельный файл · Ctrl+Shift+S" Margin="0,0,0,7" />
-        <Button Click="Export_Click" IsEnabled="{Binding CanExport}" Content="{Binding ExportButtonText}" ToolTip="Экспорт видимых объектов после очистки. Качество просмотра не влияет." />
-        <TextBlock Text="Для записи и экспорта войдите администратором." Style="{StaticResource Muted}" Margin="0,9,0,0" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}" />
         <Expander Header="Журнал событий" Margin="0,12,0,0">
             <ItemsControl ItemsSource="{Binding Events}" Margin="0,8,0,0">
                 <ItemsControl.ItemTemplate>

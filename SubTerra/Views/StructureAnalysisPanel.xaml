@@ -2,31 +2,30 @@
     <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/SubTerra;component/Themes/Dark.xaml"/></ResourceDictionary.MergedDictionaries><Style x:Key="AnalyzeAction" TargetType="Button" BasedOn="{StaticResource Primary}"><Setter Property="Content" Value="Найти поверхности"/><Style.Triggers><DataTrigger Binding="{Binding HasStructureAnalysis}" Value="True"><Setter Property="Background" Value="#1B2B37"/><Setter Property="Foreground" Value="#DAE5EF"/><Setter Property="BorderBrush" Value="#354A59"/><Setter Property="Content" Value="Повторить поиск поверхностей"/></DataTrigger></Style.Triggers></Style></ResourceDictionary></UserControl.Resources>
     <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Margin="0,4,4,12">
-            <TextBlock Text="Тип пространства" Style="{StaticResource Muted}" Margin="0,0,0,5"/>
-            <ComboBox ItemsSource="{Binding ProjectModes}" SelectedItem="{Binding SelectedProjectMode}" DisplayMemberPath="Label" IsEnabled="{Binding CanEditTunnel}" AutomationProperties.Name="Тип пространства" Margin="0,0,0,10"/>
-            <UniformGrid Columns="3" Margin="0,0,0,10">
-                <RadioButton Content="Тоннель" Style="{StaticResource Segment}" IsChecked="{Binding IsTunnelAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Тоннель" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
-                <RadioButton Content="Поверхности" Style="{StaticResource Segment}" IsChecked="{Binding IsSurfaceAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Поверхности" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
-                <RadioButton Content="Люди" Style="{StaticResource Segment}" IsChecked="{Binding IsPeopleAnalysis, Mode=OneWay}" Command="{Binding SelectAnalysisToolCommand}" CommandParameter="Люди" GroupName="AnalysisTool" HorizontalContentAlignment="Center"/>
-            </UniformGrid>
-            <Border Style="{StaticResource InsetCard}" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}"><StackPanel>
-                <TextBlock Text="Гостевой режим" FontWeight="SemiBold"/>
-                <TextBlock Text="Для построения сетки и запуска анализа войдите администратором." Style="{StaticResource Muted}" Margin="0,6,0,10"/>
-                <Button Content="Вход администратора" Command="{Binding RequestAdminAccessCommand}"/>
-            </StackPanel></Border>
+            <Border Background="{StaticResource InputBrush}" CornerRadius="7" Padding="10,2" Visibility="{Binding IsGuest, Converter={StaticResource BoolVisibility}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Войти" Command="{Binding RequestAdminAccessCommand}" Style="{StaticResource Ghost}" Padding="8,4" ToolTip="Войдите, чтобы запускать анализ и редактировать результаты"/>
+                    <TextBlock Text="Гостевой режим" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
         </StackPanel>
         <Grid>
         <ScrollViewer Padding="0,0,4,12" Visibility="{Binding IsTunnelAnalysis, Converter={StaticResource BoolVisibility}}"><views:TunnelAnalysisPanel/></ScrollViewer>
         <ScrollViewer Padding="0,0,4,12" Visibility="{Binding IsSurfaceAnalysis, Converter={StaticResource BoolVisibility}}"><StackPanel>
-        <TextBlock Text="Анализ помещения" Style="{StaticResource Section}" Margin="0,0,0,12"/>
-        <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16"><StackPanel>
-            <TextBlock Text="{Binding AnalysisProgressText}" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-            <TextBlock Text="{Binding NextAnalysisStep}" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
-        </StackPanel></Border>
-        <TextBlock Text="01  Обнаружить и классифицировать" FontWeight="SemiBold" TextWrapping="Wrap"/>
-        <TextBlock Text="Поиск плоскостей и предварительные классы. Метод классификации — в параметрах." Style="{StaticResource Muted}" Margin="0,6,0,12"/>
+        <TextBlock Text="{Binding AnalysisProgressText}" Style="{StaticResource Section}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding NextAnalysisStep}" Style="{StaticResource Muted}" Margin="0,6,0,12"/>
+        <StackPanel Visibility="{Binding HasCurrentStructureAnalysis, Converter={StaticResource BoolVisibility}}">
+            <TextBlock Text="{Binding ReviewProgressText}" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+            <ListBox ItemsSource="{Binding StructureSurfaces}" SelectedItem="{Binding SelectedStructureSurface}" SelectionChanged="Surface_SelectionChanged" Background="Transparent" BorderThickness="0" MaxHeight="235" AutomationProperties.Name="Кандидаты поверхностей">
+                <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding ReviewText}" Style="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <Button Content="Свойства поверхности →" Command="{Binding InspectCommand}" CommandParameter="Поверхность" Style="{StaticResource Ghost}" Margin="0,6,0,8"/>
+            <CheckBox Content="Подсвечивать классы в сцене" IsChecked="{Binding ShowStructure}" Margin="0,0,0,12"/>
+            <Button Content="К построению плана →" Command="{Binding SelectSectionCommand}" CommandParameter="Результаты" Style="{StaticResource Primary}" Visibility="{Binding HasRoomPlanInputs, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12"/>
+        </StackPanel>
+        <StackPanel Visibility="{Binding IsAdministrator, Converter={StaticResource BoolVisibility}}">
         <Button Command="{Binding AnalyzeStructureCommand}" Style="{StaticResource AnalyzeAction}" ToolTip="Новый анализ заменяет предыдущий. Изменение можно отменить."/>
-        <Expander Header="Параметры поиска" Margin="0,10,0,16"><StackPanel Margin="0,10,0,0">
+        <Expander Header="Параметры поиска" Margin="0,10,0,0"><StackPanel Margin="0,10,0,0">
             <TextBlock Text="{Binding StructureTolerance, StringFormat=Допуск плоскости: {0:F3} м}" Style="{StaticResource Muted}"/>
             <Slider Minimum=".005" Maximum=".1" TickFrequency=".005" IsSnapToTickEnabled="True" Value="{Binding StructureTolerance}" IsEnabled="{Binding CanAnalyzeStructure}" AutomationProperties.Name="Допуск анализа плоскостей"/>
             <CheckBox Content="Экспериментальные классы MLP" IsChecked="{Binding UseNeuralClasses}" IsEnabled="{Binding CanAnalyzeStructure}" Margin="0,8,0,8"/>
@@ -34,24 +33,15 @@
             <Button Content="Найти и подготовить 3D" Command="{Binding AnalyzeIndoorCommand}" ToolTip="Поиск с MLP и построение предварительных поверхностей для осмотра" Margin="0,0,0,10"/>
             <TextBlock Text="{Binding StructureDataText}" Style="{StaticResource Muted}"/>
         </StackPanel></Expander>
-        <TextBlock Text="{Binding SurfaceAnalysisMethodText}" Style="{StaticResource Muted}" Margin="0,0,0,12"/>
-        <TextBlock Text="02  Проверить результаты" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <TextBlock Text="{Binding ReviewProgressText}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
-        <ListBox ItemsSource="{Binding StructureSurfaces}" SelectedItem="{Binding SelectedStructureSurface}" SelectionChanged="Surface_SelectionChanged" Background="Transparent" BorderThickness="0" MinHeight="80" AutomationProperties.Name="Кандидаты поверхностей">
-            <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding ReviewText}" Style="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
-        </ListBox>
-        <Button Content="Свойства выбранной поверхности →" Command="{Binding InspectCommand}" CommandParameter="Поверхность" Margin="0,6,0,8"/>
-        <CheckBox Content="Подсвечивать классы в сцене" IsChecked="{Binding ShowStructure}" Margin="0,0,0,16"/>
-        <TextBlock Text="03  Получить план комнаты" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <Button Content="Далее: результаты →" Command="{Binding SelectSectionCommand}" CommandParameter="Результаты"/>
-        <Border Style="{StaticResource InsetCard}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="Восстановить вид помещения" FontWeight="SemiBold" TextWrapping="Wrap"/>
-            <TextBlock Text="Плоский пол, стены и небольшие пропуски. Предметы остаются в исходных цветах; достройка помечена как гипотеза." Style="{StaticResource Muted}" Margin="0,8,0,10"/>
+        <TextBlock Text="{Binding SurfaceAnalysisMethodText}" Style="{StaticResource Muted}" Visibility="{Binding HasCurrentStructureAnalysis, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0"/>
+        </StackPanel>
+        <Expander Header="Реконструкция" Margin="0,12,0,0" Visibility="{Binding HasCurrentStructureAnalysis, Converter={StaticResource BoolVisibility}}"><StackPanel Margin="0,10,0,0">
+            <TextBlock Text="Восстановите поверхности и заполните небольшие пропуски. Достройка выделяется отдельно." Style="{StaticResource Muted}" Margin="0,0,0,10"/>
             <Button Content="Реконструировать помещение" Command="{Binding ReconstructRoomCommand}"/>
             <Button Content="Настроить реконструкцию →" Command="{Binding ToggleSettingsCommand}" Style="{StaticResource Ghost}" Margin="0,6,0,0"/>
-        </StackPanel></Border>
+        </StackPanel></Expander>
         <TextBlock Text="{Binding StructureSummary}" Style="{StaticResource Muted}" Margin="0,12,0,0" Visibility="{Binding StructureIsStale, Converter={StaticResource BoolVisibility}}"/>
-        <Expander  Header="Предметы · геометрические группы" Margin="0,18,0,0"><StackPanel Margin="0,10,0,0"><TextBlock Text="{Binding ObjectCandidatesSummary}" Style="{StaticResource Muted}" Margin="0,8,0,10" />
+        <Expander Header="Группы предметов" Margin="0,12,0,0"><StackPanel Margin="0,10,0,0"><TextBlock Text="{Binding ObjectCandidatesSummary}" Style="{StaticResource Muted}" Margin="0,8,0,10" />
         <StackPanel IsEnabled="{Binding CanAnalyzeObjects}">
             <TextBlock Text="Размер ячейки, м" Style="{StaticResource Muted}" />
             <TextBox Text="{Binding ObjectCellSize, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Размер ячейки предметов" Margin="0,5,0,8" />
@@ -68,7 +58,7 @@
             </DockPanel></DataTemplate></ListBox.ItemTemplate>
         </ListBox>
         <Button Content="Свойства выбранного предмета →" Command="{Binding InspectCommand}" CommandParameter="Предмет" Margin="0,8,0,0" /></StackPanel></Expander>
-        <Expander Header="Дополнительно" Margin="0,18,0,0"><Button Content="Удалить анализ" Command="{Binding ClearStructureCommand}" Style="{StaticResource Danger}" Margin="0,10,0,0"/></Expander>
+        <Expander Header="Дополнительно" Margin="0,12,0,0" Visibility="{Binding HasStructureAnalysis, Converter={StaticResource BoolVisibility}}"><Button Content="Удалить анализ" Command="{Binding ClearStructureCommand}" Style="{StaticResource Danger}" Margin="0,10,0,0"/></Expander>
     </StackPanel></ScrollViewer>
         <ScrollViewer Padding="0,0,4,12" Visibility="{Binding IsPeopleAnalysis, Converter={StaticResource BoolVisibility}}"><views:PeopleAnalysisPanel/></ScrollViewer>
         </Grid>

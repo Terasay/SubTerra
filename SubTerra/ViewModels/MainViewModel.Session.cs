@@ -37,7 +37,7 @@ public sealed partial class MainViewModel
         _sessionPath is null ? "Демонстрационная карта" : "Сохранено · " + Path.GetFileName(_sessionPath);
     public string SessionTitle => _sessionPath is not null ? Path.GetFileName(_sessionPath) :
         IsImported ? "Проект сканов" : HasUnsavedChanges ? "Новый сеанс" : "Демонстрационная карта";
-    public string SaveStateText => HasUnsavedChanges ? "● Не сохранено" : _sessionPath is not null ? "Сохранено" : "Без изменений";
+    public string SaveStateText => IsGuest ? "Только просмотр" : HasUnsavedChanges ? "● Не сохранено" : _sessionPath is not null ? "Сохранено" : "Без изменений";
     public string SessionStateText => IsBusy ? "Обработка" : IsRunning ? "Запись" : IsReviewing ? "История" :
         IsImported ? "Скан · просмотр" : _dataset is null || _capturedFrames == 0 ? "Готово" : _capturedFrames < _dataset.Session.Settings.FrameCount ? "Пауза" :
         _sessionPath is null && !HasUnsavedChanges ? "Демо" : "Просмотр";
@@ -58,6 +58,7 @@ public sealed partial class MainViewModel
     {
         if (!IsAdministrator) { Pause(); IsTrainingPanelOpen = false; }
         Raise(nameof(IsAdministrator)); Raise(nameof(IsGuest)); Raise(nameof(AccessLabel)); Raise(nameof(AccessButtonText));
+        Raise(nameof(SaveStateText));
         NotifyState();
     }
 

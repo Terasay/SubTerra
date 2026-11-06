@@ -5,7 +5,7 @@
     <ScrollViewer Padding="0,16,4,8"><StackPanel>
         <TextBlock Text="Управление и отображение" Style="{StaticResource Section}"/>
         <TextBlock Text="Управление и качество сохраняются на этом компьютере. Параметры реконструкции — для текущего сеанса." Style="{StaticResource Muted}" Margin="0,6,0,16"/>
-        <Expander Header="Поверхности скана" IsExpanded="True" Visibility="{Binding IsRoomMode, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12"><StackPanel Margin="0,10,0,0">
+        <Expander Header="Поверхности скана" Visibility="{Binding IsRoomMode, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12"><StackPanel Margin="0,10,0,0">
             <TextBlock Text="Реконструкция помещения" FontWeight="SemiBold" Margin="0,0,0,8"/>
             <TextBlock Text="Сначала найдите и проверьте пол, стены и потолок в разделе «Анализ»." Style="{StaticResource Muted}" Margin="0,0,0,10"/>
             <Button Content="Реконструировать помещение" Command="{Binding ReconstructRoomCommand}" Style="{StaticResource Primary}"/>
@@ -31,7 +31,6 @@
             <Button Content="Подготовить поверхности для осмотра" Command="{Binding PrepareIndoorPreviewCommand}"/>
             <ComboBox ItemsSource="{Binding IndoorStyles}" SelectedItem="{Binding IndoorStyle}" DisplayMemberPath="Label" IsEnabled="{Binding HasIndoorPreview}" AutomationProperties.Name="Оформление предварительных поверхностей" Margin="0,10,0,8"/>
             <TextBlock Text="{Binding IndoorPreviewSummary}" Style="{StaticResource Muted}"/>
-            <Button Content="Экспорт реконструкции в PLY" Click="ExportReconstruction_Click" IsEnabled="{Binding CanExportReconstruction}" Margin="0,10,0,0" Visibility="{Binding HasReconstruction, Converter={StaticResource BoolVisibility}}"/>
             <Button Content="Прогулка по поверхностям" Command="{Binding InsideCommand}" Margin="0,10,0,0"/>
             <Button Content="Свободный полёт" Command="{Binding FlyCommand}" Margin="0,6,0,0"/>
         </StackPanel></Expander>
@@ -47,7 +46,7 @@
             <Grid Margin="0,8,0,0"><TextBlock Text="Ускорение с Shift"/><TextBlock Text="{Binding FastMultiplier, StringFormat={}{0:F1}×}" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/></Grid>
             <Slider Value="{Binding FastMultiplier}" Minimum="1" Maximum="5" TickFrequency=".5" IsSnapToTickEnabled="True" AutomationProperties.Name="Множитель ускорения"/>
         </StackPanel></Expander>
-        <Expander Header="Качество и сохранение" IsExpanded="True" Margin="0,12,0,0"><StackPanel Margin="0,8,0,0">
+        <Expander Header="Качество и сохранение" Margin="0,12,0,0"><StackPanel Margin="0,8,0,0">
             <TextBlock Text="Лимит точек на экране" Style="{StaticResource Label}" Margin="0,0,0,8"/>
             <ComboBox ItemsSource="{Binding PointQualities}" SelectedItem="{Binding PointQuality}" DisplayMemberPath="Name" IsEnabled="{Binding CanInteract}" AutomationProperties.Name="Качество облака"/>
             <TextBlock Text="Лимит одинаков в движении и покое." Style="{StaticResource Muted}" Margin="0,7,0,0"/>

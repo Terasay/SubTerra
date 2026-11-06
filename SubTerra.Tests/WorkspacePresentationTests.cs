@@ -34,6 +34,10 @@ public sealed class WorkspacePresentationTests
         vm.SelectSectionCommand.Execute("Анализ"); vm.Inspect("Поверхность");
         Assert.True(vm.IsAnalysisSection); Assert.True(vm.ShowSurfaceInspector); Assert.False(vm.CanReviewStructure);
         vm.SelectWorkspaceViewCommand.Execute("План 2D"); Assert.True(vm.IsPlanView); Assert.False(vm.Show3DWorkspace);
+        var accessRequests = 0;
+        vm.AdministratorAccessRequested += (_, _) => accessRequests++;
+        vm.OpenRoomPlanNextStepCommand.Execute(null);
+        Assert.Equal(1, accessRequests); Assert.True(vm.IsPlanView);
         vm.FlyCommand.Execute(null); Assert.True(vm.Is3DView); Assert.True(vm.IsFlying); vm.ReturnToOverview();
         vm.SelectWorkspaceViewCommand.Execute("План 2D");
         vm.MeasureCommand.Execute(null); Assert.True(vm.Is3DView); Assert.True(vm.IsPicking);
@@ -66,16 +70,85 @@ public sealed class WorkspacePresentationTests
         Assert.True(login.IsEnabled); Assert.False(vm.CanDetectPeople); Assert.False(vm.CanSelectSurface);
         var requests = 0; vm.AdministratorAccessRequested += (_, _) => requests++;
         login.Command.Execute(null); Assert.Equal(1, requests);
-        var surface = Descendants(root).OfType<RadioButton>().Single(b => b.Command == vm.SurfaceCommand);
+        foreach (var name in new[] { "FileMenuButton", "ExportMenuButton", "ViewMenuButton", "RenderMenuButton", "ToolsMenuButton" })
+        {
+            var button = (Button)root.FindName(name);
+            button.ContextMenu.PlacementTarget = button;
+            ThemeRenderingTests.Layout(button.ContextMenu, 380, 480);
+            Assert.Same(vm, button.ContextMenu.DataContext);
+        }
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        var renderMenu = ((Button)root.FindName("RenderMenuButton")).ContextMenu;
+        var surface = renderMenu.Items.OfType<MenuItem>().Single(b => b.Command == vm.SurfaceCommand);
         Assert.True(surface.IsEnabled);
-        surface.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, true);
         await vm.SurfaceCommand.ExecuteAsync(); await Dispatcher.Yield(DispatcherPriority.DataBind);
-        Assert.Equal(2, requests); Assert.False(surface.IsChecked); Assert.True(vm.IsPointMode);
+        Assert.Equal(2, requests); Assert.True(vm.IsPointMode);
         CheckBindings(root); ThemeRenderingTests.CheckReadableText(root); SavePreview(root, $"people-guest-{width}.png");
         vm.SelectAnalysisToolCommand.Execute("Поверхности"); Assert.True(vm.IsSurfaceAnalysis);
         vm.IsPresentationMode = true; vm.SelectSectionCommand.Execute("Анализ");
         Assert.False(vm.IsPresentationMode); Assert.True(vm.IsSidebarOpen);
         Assert.Equal(dirty, vm.HasUnsavedChanges); Assert.False(vm.HasStructureAnalysis);
+    });
+
+    [Theory]
+    [InlineData(1040, 640)]
+    [InlineData(1440, 900)]
+    public Task ProjectsOpenWithAnUnobstructedCanvasAndToolsOpenOnlyTheirOwnTask(int width, int height) => ScanControlTests.OnSta(async () =>
+    {
+        using var vm = Vm();
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        var dirty = vm.HasUnsavedChanges;
+        var root = ThemeRenderingTests.ShellPreview(vm);
+        async Task Layout()
+        {
+            WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
+            await Dispatcher.Yield(DispatcherPriority.DataBind); root.UpdateLayout();
+        }
+        await Layout();
+        Assert.False(vm.IsSidebarOpen); Assert.False(vm.IsInspectorOpen);
+        Assert.False(IsShown((Border)root.FindName("LeftPanel")));
+        Assert.False(IsShown((Border)root.FindName("RightPanel")));
+        Assert.True(((Border)root.FindName("Scene3DHost")).ActualWidth >= width - 28);
+        Assert.DoesNotContain(Descendants(root).OfType<RadioButton>(), b => b.GroupName is "Workflow" or "AnalysisTool");
+        SavePreview(root, $"focused-workspace-{width}.png");
+        var objectsPosition = ((Button)root.FindName("ObjectsButton")).TranslatePoint(new Point(), root);
+        ((Button)root.FindName("ObjectsButton")).Command.Execute(null);
+        await Layout();
+        Assert.Equal(objectsPosition, ((Button)root.FindName("ObjectsButton")).TranslatePoint(new Point(), root));
+        Assert.True(vm.IsProjectSection && vm.IsSidebarOpen); Assert.False(vm.IsInspectorOpen);
+        ((Button)root.FindName("ObjectsButton")).Command.Execute(null);
+        await Layout(); Assert.False(vm.IsSidebarOpen);
+        var tools = ((Button)root.FindName("ToolsMenuButton")).ContextMenu;
+        tools.PlacementTarget = (Button)root.FindName("ToolsMenuButton");
+        ThemeRenderingTests.Layout(tools, 340, 480);
+        await Dispatcher.Yield(DispatcherPriority.DataBind);
+        foreach (var task in new[] { "Совмещение", "Очистка", "Срез" })
+        {
+            vm.Inspect("Поверхность");
+            vm.SelectWorkspaceViewCommand.Execute("План 2D");
+            var action = tools.Items.OfType<MenuItem>().Single(item => Equals(item.CommandParameter, task));
+            Assert.True(action.IsEnabled); action.Command.Execute(action.CommandParameter);
+            await Layout();
+            Assert.True(vm.IsSidebarOpen && vm.IsProcessingSection && vm.Is3DView);
+            var panel = Descendants(root).OfType<ScanProjectPanel>().Single();
+            var buttons = Descendants(panel).OfType<Button>().Where(IsShown).ToArray();
+            Assert.Equal(task == "Совмещение", buttons.Any(b => b.Command == vm.PreviewAlignmentCommand));
+            Assert.Equal(task == "Очистка", buttons.Any(b => b.Command == vm.RectangleSelectionCommand));
+            Assert.Equal(task == "Срез", buttons.Any(b => b.Command == vm.PointsCommand));
+            Assert.False(vm.IsInspectorOpen);
+            CheckBindings(root); ThemeRenderingTests.CheckReadableText(root);
+            if (task == "Очистка") SavePreview(root, $"focused-cleaning-{width}.png");
+        }
+        Assert.Equal(dirty, vm.HasUnsavedChanges);
+        vm.SelectAnalysisToolCommand.Execute("Поверхности");
+        await Layout(); Assert.Equal("Поверхности помещения", vm.TaskPanelTitle);
+        vm.Inspect("Поверхность"); await Layout();
+        Assert.True(((Border)root.FindName("Scene3DHost")).ActualWidth >= 440);
+        await vm.LoadTunnelDemoAsync(); await Layout();
+        Assert.False(vm.IsSidebarOpen); Assert.False(vm.IsInspectorOpen);
+        Assert.True(vm.IsTunnelAnalysis); Assert.Equal("Сечение", vm.PlanViewLabel);
+        vm.SelectWorkspaceViewCommand.Execute("План 2D"); await Layout();
+        SavePreview(root, $"focused-section-{width}.png");
     });
 
     [Theory]
@@ -111,8 +184,14 @@ public sealed class WorkspacePresentationTests
             vm.SelectWorkspaceViewCommand.Execute(view); WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
             await Dispatcher.Yield(DispatcherPriority.DataBind); root.UpdateLayout(); ThemeRenderingTests.CheckReadableText(root);
             var planColumn = (ColumnDefinition)root.FindName("PlanColumn"); var sceneColumn = (ColumnDefinition)root.FindName("Scene3DColumn");
-            if (view == "План 2D") Assert.True(planColumn.ActualWidth > 400 && sceneColumn.ActualWidth == 0);
-            if (view == "Рядом") Assert.True(planColumn.ActualWidth > 250 && sceneColumn.ActualWidth > 250);
+            if (view == "План 2D") Assert.True(planColumn.ActualWidth >= 380 && sceneColumn.ActualWidth == 0);
+            if (view == "Рядом")
+            {
+                Assert.True(vm.IsSidebarOpen && vm.IsInspectorOpen);
+                Assert.True(planColumn.ActualWidth >= 320 && sceneColumn.ActualWidth >= 320);
+                var rightColumn = (ColumnDefinition)root.FindName("RightColumn");
+                Assert.Equal(width == 1040 ? 0 : 312, rightColumn.ActualWidth);
+            }
             if (view == "План 2D") SavePreview(root, $"workspace-plan-{width}.png");
         }
         vm.SelectedStructureSurface = vm.StructureSurfaces.First(s => s.Kind == StructureSurfaceKind.Wall);
@@ -174,6 +253,8 @@ public sealed class WorkspacePresentationTests
         await vm.PrepareIndoorPreviewAsync();
         var settings = new ViewSettingsPanel { DataContext = vm }; ThemeRenderingTests.Layout(settings, 320, 1200);
         await Dispatcher.Yield(DispatcherPriority.DataBind); settings.UpdateLayout();
+        Descendants(settings).OfType<Expander>().Single(e => Equals(e.Header, "Поверхности скана")).IsExpanded = true;
+        settings.UpdateLayout();
         var style = Descendants(settings).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "Оформление предварительных поверхностей");
         style.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.DataBind); Assert.Equal(vm.IndoorStyles[1], vm.IndoorStyle);
         CheckBindings(settings); Assert.False(vm.HasNotification, vm.Notification);
@@ -198,8 +279,12 @@ public sealed class WorkspacePresentationTests
         var axis = vm.TunnelAxisText; var count = vm.TunnelSections.Count;
         vm.SelectedProjectMode = vm.ProjectModes.Single(m => m.Mode == ProjectAnalysisMode.Room);
         Assert.False(vm.IsTunnelMode); Assert.False(vm.HasTunnelSections);
+        Assert.True(vm.IsSurfaceAnalysis); Assert.Equal("План", vm.PlanViewLabel);
+        Assert.False(vm.SelectAnalysisToolCommand.CanExecute("Тоннель"));
         await vm.UndoProjectCommand.ExecuteAsync();
         Assert.True(vm.IsTunnelMode); Assert.True(vm.IsGeometryShading); Assert.True(vm.HasTunnelSections);
+        Assert.True(vm.IsTunnelAnalysis); Assert.Equal("Сечение", vm.PlanViewLabel);
+        Assert.False(vm.SelectAnalysisToolCommand.CanExecute("Поверхности"));
         Assert.Equal(axis, vm.TunnelAxisText); Assert.Equal(count, vm.TunnelSections.Count);
         await vm.RedoProjectCommand.ExecuteAsync(); Assert.False(vm.IsTunnelMode);
         await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.IsTunnelMode);
@@ -222,6 +307,15 @@ public sealed class WorkspacePresentationTests
             guest.SelectedTunnelSection = guest.TunnelSections.Last();
             Assert.Same(guest.TunnelSections.Last().Section, guest.CurrentTunnelSection);
             Assert.True(guest.FocusTunnelSectionCommand.CanExecute(null));
+            guest.SelectAnalysisToolCommand.Execute("Тоннель");
+            guest.SelectWorkspaceViewCommand.Execute("План 2D");
+            var root = ThemeRenderingTests.ShellPreview(guest);
+            guest.IsInspectorOpen = false;
+            WorkspaceLayout.Apply(root, guest, 1440); ThemeRenderingTests.Layout(root, 1440, 900);
+            await Dispatcher.Yield(DispatcherPriority.DataBind); root.UpdateLayout();
+            ThemeRenderingTests.CheckReadableText(root); SavePreview(root, "tunnel-section.png");
+            guest.FocusTunnelSectionCommand.Execute(null);
+            Assert.True(guest.Is3DView);
             guest.IsGeometryShading = false; Assert.False(guest.IsGeometryShading);
             Assert.Equal(dirty, guest.HasUnsavedChanges); Assert.False(guest.HasNotification, guest.Notification);
         }
@@ -350,6 +444,10 @@ public sealed class WorkspacePresentationTests
         var panel = new TunnelAnalysisPanel { DataContext = vm }; ThemeRenderingTests.Layout(panel, width, 1800);
         await Dispatcher.Yield(DispatcherPriority.DataBind); panel.UpdateLayout();
         CheckBindings(panel); ThemeRenderingTests.CheckReadableText(panel);
+        var axisEditor = Descendants(panel).OfType<Expander>().Single(e => Equals(e.Header, "Ось и ветви"));
+        Assert.False(axisEditor.IsExpanded);
+        axisEditor.IsExpanded = true;
+        panel.UpdateLayout();
         var axis = Descendants(panel).OfType<TextBox>().Single(b => AutomationProperties.GetName(b) == "Точки оси тоннеля");
         Assert.True(axis.IsEnabled); Assert.True(axis.ActualWidth > 200 && axis.ActualWidth <= width);
         var canvas = Descendants(panel).OfType<TunnelSectionCanvas>().Single();

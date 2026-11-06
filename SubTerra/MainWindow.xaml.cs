@@ -78,6 +78,12 @@ public partial class MainWindow : Window
         UpdatePanelLayout();
     }
     private async void Demo_Click(object sender, RoutedEventArgs e) => await _viewModel.LoadDemoAsync();
+    private void OpenMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } button) return;
+        menu.PlacementTarget = button;
+        menu.IsOpen = true;
+    }
     private void Diagnostics_Tick(object? sender, EventArgs e)
     {
         _process.Refresh();
@@ -152,6 +158,26 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog { Title = "Экспорт реконструкции · содержит достроенные поверхности", Filter = "Модель PLY (*.ply)|*.ply", DefaultExt = ".ply", FileName = "Subterra_reconstruction" };
         if (dialog.ShowDialog(this) == true) await _viewModel.ExportReconstructionAsync(dialog.FileName);
     }
+    private async void ExportTunnelMesh_Click(object sender, RoutedEventArgs e) => await ExportTunnelMeshAsync(false);
+    private async void ExportTunnelCompletion_Click(object sender, RoutedEventArgs e) => await ExportTunnelMeshAsync(true);
+    private async Task ExportTunnelMeshAsync(bool completionOnly)
+    {
+        if (!_viewModel.CanExportTunnelMesh) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = completionOnly ? "Экспорт достроенных участков тоннеля" : "Экспорт сетки тоннеля",
+            Filter = "Модель PLY (*.ply)|*.ply",
+            DefaultExt = ".ply",
+            FileName = completionOnly ? "tunnel-completion" : "tunnel-mesh"
+        };
+        if (dialog.ShowDialog(this) == true) await _viewModel.ExportTunnelMeshAsync(dialog.FileName, completionOnly);
+    }
+    private async void ExportTunnelLabels_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.CanExportTunnelLabels) return;
+        var dialog = new SaveFileDialog { Title = "Экспорт разметки тоннеля", Filter = "XYZ-разметка CSV (*.csv)|*.csv", DefaultExt = ".csv", FileName = "tunnel-xyz-labels" };
+        if (dialog.ShowDialog(this) == true) await _viewModel.ExportTunnelLabelsAsync(dialog.FileName);
+    }
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (_viewModel.IsTrainingPanelOpen)
@@ -217,6 +243,12 @@ public partial class MainWindow : Window
         }
         if (!_viewModel.MouseCaptured && (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase
             or PasswordBox or ComboBox or System.Windows.Controls.Primitives.RangeBase)) return;
+        if (e.Key == Key.Escape && !_viewModel.IsBusy && (_viewModel.IsInspectorOpen || _viewModel.IsSidebarOpen))
+        {
+            if (_viewModel.IsInspectorOpen) _viewModel.IsInspectorOpen = false;
+            else _viewModel.IsSidebarOpen = false;
+            e.Handled = true; return;
+        }
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key is Key.Z or Key.Y && _viewModel.IsImported)
         {
             e.Handled = true;
@@ -230,7 +262,8 @@ public partial class MainWindow : Window
         if (_viewModel.IsScreenSelecting && e.Key is Key.Home or Key.Space) { e.Handled = true; return; }
         if (_walk.HandleKeyDown(e)) { e.Handled = true; return; }
         if (e.Key == Key.Home) { if (!e.IsRepeat) _viewModel.Home(); e.Handled = true; }
-        else if (e.Key == Key.Space && _viewModel.IsAdministrator && _viewModel.CanInteract)
+        else if (e.Key == Key.Space && _viewModel.IsSimulation && _viewModel.IsAdministrator && _viewModel.CanInteract &&
+            Keyboard.FocusedElement is not (System.Windows.Controls.Primitives.ButtonBase or MenuItem))
         {
             e.Handled = true;
             if (!e.IsRepeat) { if (_viewModel.IsRunning) _viewModel.Pause(); else await _viewModel.StartAsync(); }

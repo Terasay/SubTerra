@@ -53,7 +53,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _followScanner;
     private bool _isPresentationMode;
     private bool _isInspectorOpen;
-    private bool _isSidebarOpen = true;
+    private bool _isSidebarOpen;
     private bool _showShadows = true;
     private double _range = 20;
     private double _speed = 1;
@@ -274,7 +274,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         UpdateStructureDisplay();
         NotifyIndoorState();
     }
-    public string RenderLabel => IsHeight ? "ОКРАСКА ПО ВЫСОТЕ" : IsPoints ? "ОБЛАКО ТОЧЕК" : IsImported ? "ПОВЕРХНОСТЬ СКАНА" : "ВИРТУАЛЬНАЯ ПЕЩЕРА";
+    public string RenderLabel => IsHeight ? "По высоте" : IsPoints ? "Облако точек" : IsImported ? "Поверхность" : "Пещера";
     public bool ShowGrid { get => _showGrid; set { if (Set(ref _showGrid, value)) Raise(nameof(GridVisible)); } }
     public bool ShowRoute { get => _showRoute; set { if (Set(ref _showRoute, value)) Raise(nameof(RouteVisible)); } }
     public bool ShowMarkers { get => _showMarkers; set { if (Set(ref _showMarkers, value)) Raise(nameof(MarkersVisible)); } }

@@ -35,7 +35,7 @@ public sealed partial class MainViewModel
             if (!CanEditTunnel || value is null || !ProjectModes.Contains(value) || value.Mode == _scanProject!.AnalysisMode) return;
             EndInspection(); EndScreenSelection(); ReturnToOverview();
             CommitTunnelProject(_scanProject with { AnalysisMode = value.Mode }, "режим: " + value.Label);
-            if (value.Mode == ProjectAnalysisMode.Tunnel) SelectAnalysisTool("Тоннель");
+            SelectAnalysisTool(value.Mode == ProjectAnalysisMode.Tunnel ? "Тоннель" : "Поверхности");
         }
     }
     public bool IsTunnelMode => IsImported && _scanProject?.AnalysisMode == ProjectAnalysisMode.Tunnel;
@@ -201,7 +201,8 @@ public sealed partial class MainViewModel
         SyncTunnelWorkspace();
         var document = ActiveTunnelDocument; var mode = _scanProject?.AnalysisMode ?? ProjectAnalysisMode.Room;
         if (!force && ReferenceEquals(document, _loadedTunnel) && mode == _loadedProjectMode) return;
-        if (mode != _loadedProjectMode) { _geometryShading = mode == ProjectAnalysisMode.Tunnel; NotifyReliefState(); NotifyRoomState(); NotifyIndoorState(); }
+        var modeChanged = mode != _loadedProjectMode;
+        if (modeChanged) { _geometryShading = mode == ProjectAnalysisMode.Tunnel; NotifyReliefState(); NotifyRoomState(); NotifyIndoorState(); }
         var keepDraft = !force && mode == _loadedProjectMode && document is not null && _loadedTunnel is not null &&
             ReferenceEquals(document.Axis, _loadedTunnel.Axis) && document.Options == _loadedTunnel.Options;
         _loadedTunnel = document; _loadedProjectMode = mode;
@@ -217,6 +218,7 @@ public sealed partial class MainViewModel
         _selectedTunnelSection = TunnelSections.FirstOrDefault(s => s.Section.Id == selected) ?? TunnelSections.FirstOrDefault();
         foreach (var name in new[] { nameof(TunnelAxisText), nameof(TunnelSectionSpacing), nameof(TunnelSliceThickness), nameof(TunnelMaximumRadius), nameof(SelectedTunnelSection) }) Raise(name);
         UpdateTunnelGeometry(); UpdateTunnelDraftGeometry(); NotifyTunnelState();
+        if (modeChanged) NotifyPresentationState();
     }
     private void NotifyReliefState()
     {
@@ -251,6 +253,7 @@ public sealed partial class MainViewModel
     private void FocusTunnelSection()
     {
         if (!CanInteract || CurrentTunnelSection is not { } section) return;
+        if (IsPlanView) SelectWorkspaceView("3D");
         ReturnToOverview();
         var distance = Math.Max(1, Math.Max(section.Width, section.Height) * 1.5);
         MoveCamera(section.Center.Position - section.Forward.Position * (float)distance, section.Center.Position, $"Сечение · {section.Chainage:F1} м");
@@ -268,7 +271,7 @@ public sealed partial class MainViewModel
             var view = await ScanProjectView.PrepareAsync(project, token);
             token.ThrowIfCancellationRequested(); if (_disposed) return;
             Assign(new(null, project.ToSession()), 1, view); SetView(true, false); _sessionPath = null; MarkSessionDirty();
-            NotifySessionProperties(); await ClearRecoveryAsync(); Home(); SelectAnalysisTool("Тоннель");
+            NotifySessionProperties(); await ClearRecoveryAsync(); Home();
             Status = "Учебный тоннель без RGB · ось и сечения рассчитаны · данные синтетические"; Notification = ""; AddEvent(Status);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }

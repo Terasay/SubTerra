@@ -129,7 +129,8 @@ public sealed class ThemeRenderingTests
         await vm.UndoProjectCommand.ExecuteAsync(); Assert.True(vm.HasRoom);
         await Dispatcher.Yield(DispatcherPriority.DataBind);
         Assert.True(vm.IsAnalysisSection);
-        Assert.True(Descendants(shell).OfType<RadioButton>().Single(b => Equals(b.Content, "Анализ")).IsChecked);
+        Assert.Equal("Поверхности помещения", vm.TaskPanelTitle);
+        Assert.Contains(Descendants(shell).OfType<TextBlock>(), b => b.Text == vm.TaskPanelTitle);
         vm.SelectSectionCommand.Execute("Результаты"); vm.IsSettingsOpen = true;
         vm.ClearStructureCommand.Execute(null); await vm.UndoProjectCommand.ExecuteAsync();
         Assert.True(vm.IsResultsSection); Assert.True(vm.IsSettingsOpen);
@@ -164,7 +165,6 @@ public sealed class ThemeRenderingTests
             new XElement(p + "StackPanel", new XAttribute("VerticalAlignment", "Center"), new XAttribute("HorizontalAlignment", "Center"),
                 new XElement(p + "TextBlock", new XAttribute("Text", "3D-сцена"), new XAttribute("FontSize", "26"), new XAttribute("Foreground", "#ACBFCD"), new XAttribute("HorizontalAlignment", "Center")),
                 new XElement(p + "TextBlock", new XAttribute("Text", "Предпросмотр вёрстки · без GPU"), new XAttribute("Foreground", "#ACBFCD"), new XAttribute("Margin", "0,10,0,0")))));
-        model.IsInspectorOpen = true;
         var control = (FrameworkElement)XamlReader.Parse(root.ToString()); control.DataContext = model;
         WorkspaceLayout.Apply(control, model, 1440);
         return control;

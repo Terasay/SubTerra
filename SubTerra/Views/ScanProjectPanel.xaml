@@ -18,18 +18,21 @@
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,4,0">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,4,4,0">
         <StackPanel>
-            <TextBlock Text="Обработка скана" Style="{StaticResource Section}" Margin="0,0,0,8" />
-            <TextBlock Text="{Binding SelectedScanObject.Name, TargetNullValue=Выберите скан в проекте}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
-            <Button Content="Положение и свойства →" Command="{Binding InspectCommand}" CommandParameter="Скан" Margin="0,0,0,12" />
-            <Expander Header="Совмещение сканов" Margin="0,12,0,16">
+            <StackPanel Margin="0,0,0,6">
+                <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGuest}" Value="True"/><Condition Binding="{Binding IsClipTool}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger></Style.Triggers></Style></StackPanel.Style>
+                <TextBlock Text="Для очистки и совмещения нужны права администратора." Style="{StaticResource Muted}"/>
+                <Button Content="Войти для редактирования" Command="{Binding RequestAdminAccessCommand}" Style="{StaticResource Ghost}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel Visibility="{Binding IsAdministrator, Converter={StaticResource BoolVisibility}}">
+            <StackPanel Visibility="{Binding IsAlignmentTool, Converter={StaticResource BoolVisibility}}">
                 <StackPanel Margin="0,10,0,0">
                     <TextBlock Text="Активный скан перемещается, опорный остаётся на месте. Выберите три и более соответствующие пары, не лежащие на одной прямой." Style="{StaticResource Muted}" />
                     <ComboBox ItemsSource="{Binding AlignmentTargets}" SelectedValuePath="Id" DisplayMemberPath="Name" SelectedValue="{Binding AlignmentTargetId}" IsEnabled="{Binding CanEditObject}" Margin="0,8,0,8" AutomationProperties.Name="Опорный скан" />
                     <Button Content="Выбирать точки в 3D" Command="{Binding CoordinatesCommand}" FontSize="12" />
-                    <Button Content="Запомнить точку активного скана" Command="{Binding CaptureAlignmentSourceCommand}" FontSize="12" Margin="0,6,0,0" />
-                    <Button Content="Добавить соответствующую опорную точку" Command="{Binding CaptureAlignmentTargetCommand}" FontSize="12" Margin="0,6,0,0" />
+                    <Button Content="Принять точку активного скана" Command="{Binding CaptureAlignmentSourceCommand}" FontSize="12" Margin="0,6,0,0" />
+                    <Button Content="Принять опорную точку" Command="{Binding CaptureAlignmentTargetCommand}" FontSize="12" Margin="0,6,0,0" />
                     <TextBlock Text="{Binding AlignmentSummary}" Style="{StaticResource Muted}" Margin="0,7,0,8" />
                     <CheckBox Content="Уточнить по облаку точек" IsChecked="{Binding RefineAlignment}" IsEnabled="{Binding CanEditObject}" FontSize="12" />
                     <TextBlock Text="Допустимая дистанция совпадения, м" Style="{StaticResource Muted}" Margin="0,7,0,4" />
@@ -38,8 +41,8 @@
                     <Button Content="Очистить опорные пары" Command="{Binding ClearAlignmentPairsCommand}" FontSize="12" Margin="0,6,0,0" />
                     <TextBlock Text="Исходники сохраняются. Применённое положение можно отменить; зависимые результаты станут устаревшими. Ошибка выборки не заменяет контроль размеров." Style="{StaticResource Muted}" Margin="0,7,0,0" />
                 </StackPanel>
-            </Expander>
-            <TextBlock Text="Очистка выбранного объекта" FontWeight="SemiBold" FontSize="12" />
+            </StackPanel>
+            <StackPanel Visibility="{Binding IsCleaningTool, Converter={StaticResource BoolVisibility}}">
             <TextBlock Text="Сначала предпросмотр, затем применение. Исходные точки остаются в проекте." Style="{StaticResource Hint}" Margin="0,6,0,10" />
             <UniformGrid Columns="2">
                 <Button Content="Рамка" Command="{Binding RectangleSelectionCommand}" FontSize="12" Margin="0,0,4,0" />
@@ -96,8 +99,12 @@
                 </StackPanel>
             </Expander>
             <Button Content="Восстановить исходник" Command="{Binding RestoreObjectCommand}" FontSize="12" Margin="0,15,0,0" />
-            <TextBlock Text="Все изменения сначала показываются в предпросмотре. Исходные точки сохраняются." Style="{StaticResource Muted}" Margin="0,12,0,0" />
-            <Expander Header="Срез облака" Margin="0,12,0,0" IsEnabled="{Binding IsPoints}">
+            </StackPanel>
+            </StackPanel>
+            <StackPanel Visibility="{Binding IsClipTool, Converter={StaticResource BoolVisibility}}">
+                <TextBlock Text="Срез доступен в режиме облака точек." Style="{StaticResource Muted}" Margin="0,0,0,8"/>
+                <Button Content="Показать точки" Command="{Binding PointsCommand}" Style="{StaticResource Ghost}" Margin="0,0,0,10"/>
+                <StackPanel IsEnabled="{Binding IsPoints}">
                 <StackPanel Margin="0,8,0,0">
                     <CheckBox Content="Включить срез" IsChecked="{Binding ClipEnabled}" />
                     <Grid Margin="0,12,0,0">
@@ -121,7 +128,8 @@
                     <Slider Value="{Binding ClipOffset, Delay=100}" Minimum="{Binding ClipMinimum}" Maximum="{Binding ClipMaximum}" TickFrequency="{Binding ClipStep}" IsSnapToTickEnabled="True" AutomationProperties.Name="Смещение среза" />
                     <TextBlock Text="Срез меняет только просмотр. Полный скан сохраняется и экспортируется целиком." Style="{StaticResource Muted}" />
                 </StackPanel>
-            </Expander>
+                </StackPanel>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

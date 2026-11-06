@@ -399,14 +399,17 @@ public sealed class PeopleDetectionTests
 
     [Theory]
     [InlineData(1040, 640)] [InlineData(1440, 900)] [InlineData(1920, 1080)]
-    public Task DetectionResultOccupiesTheMainViewportAndToolbarRunsTheDetector(int width, int height) => ScanControlTests.OnSta(async () =>
+    public Task DetectionResultOccupiesTheMainViewportAndAnalysisPanelRunsTheDetector(int width, int height) => ScanControlTests.OnSta(async () =>
     {
         var analyzer = new FakeAnalyzer(); using var vm = Vm(analyzer: analyzer);
         await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
-        var root = ThemeRenderingTests.ShellPreview(vm); ThemeRenderingTests.Layout(root, width, height);
-        var toolbar = WorkspacePresentationTests.Descendants((DependencyObject)root.FindName("Scene3DHost")).OfType<Button>().Single(b => Equals(b.Content, "Найти людей"));
-        Assert.Same(vm.FindPeopleCommand, toolbar.Command);
-        await ((AsyncRelayCommand)toolbar.Command!).ExecuteAsync();
+        vm.OpenPeopleAnalysisCommand.Execute(null);
+        var root = ThemeRenderingTests.ShellPreview(vm);
+        WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
+        var peoplePanel = WorkspacePresentationTests.Descendants(root).OfType<PeopleAnalysisPanel>().Single();
+        var find = WorkspacePresentationTests.Descendants(peoplePanel).OfType<Button>().Single(b => Equals(b.Content, "Найти людей"));
+        Assert.Same(vm.FindPeopleCommand, find.Command);
+        await ((AsyncRelayCommand)find.Command!).ExecuteAsync();
         WorkspaceLayout.Apply(root, vm, width); ThemeRenderingTests.Layout(root, width, height);
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); root.UpdateLayout();
         Assert.Equal(1, analyzer.Calls); Assert.True(vm.IsPeoplePreviewVisible); Assert.False(vm.IsInspectorOpen);

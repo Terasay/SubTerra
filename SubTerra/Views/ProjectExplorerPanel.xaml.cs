@@ -11,7 +11,7 @@ public partial class ProjectExplorerPanel : UserControl
     private void Object_Selected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (DataContext is not MainViewModel vm) return;
-        if (e.NewValue is ScanObjectItem scan) { vm.SelectedScanObject = scan; vm.Inspect("Скан"); }
+        if (e.NewValue is ScanObjectItem scan) vm.SelectedScanObject = scan;
         else if (e.NewValue is SubTerra.Models.StructureSurface surface) { vm.SelectedStructureSurface = surface; vm.Inspect("Поверхность"); }
         else if (e.NewValue is SubTerra.Models.SavedRoom room) { vm.SelectedRoomId = room.Id; vm.Inspect("Комната"); }
         else if (e.NewValue is SubTerra.Models.StructureObject item) { vm.SelectedObjectCandidate = item; vm.Inspect("Предмет"); }
