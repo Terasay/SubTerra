@@ -24,6 +24,14 @@ internal static class Program
         Console.OutputEncoding = new UTF8Encoding(false);
         try
         {
+            if (args.Length > 0 && args[0] == "--check-studio-export")
+            {
+                using var importCancellation = new CancellationTokenSource();
+                ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; importCancellation.Cancel(); };
+                Console.CancelKeyPress += cancel;
+                try { return StudioExportCheck.RunAsync(args, importCancellation.Token).GetAwaiter().GetResult(); }
+                finally { Console.CancelKeyPress -= cancel; }
+            }
             if (args.Length == 2 && args[0] == "--stress-points")
                 return RunImportedStress(int.Parse(args[1], CultureInfo.InvariantCulture));
             if (args.Length == 2 && args[0] == "--audit-tunnel")

@@ -16,7 +16,7 @@ public sealed class StructureWorkflowTests
     [Fact]
     public Task ReconstructionIsASeparateViewWithRgbObjectsAndAdminOnlyExport() => ScanControlTests.OnSta(async () =>
     {
-        using var files = new Files(); using var vm = Vm(); await Import(vm); await vm.AnalyzeStructureAsync();
+        using var files = new Files(); using var vm = Vm(); await ImportUnmarkedRoom(vm, files); await vm.AnalyzeStructureAsync();
         var path = Path.Combine(files.Directory, "source.subterra"); Assert.True(await vm.SaveAsync(path));
         await vm.ReconstructRoomAsync(); Assert.False(vm.HasNotification, vm.Notification);
         Assert.True(vm.HasReconstruction); Assert.True(vm.IsIndoorSurfaceView); Assert.NotNull(vm.CloudOnly);
@@ -100,7 +100,7 @@ public sealed class StructureWorkflowTests
     [Fact]
     public Task CancellingCollegeCreationKeepsThePreviousProject() => ScanControlTests.OnSta(async () =>
     {
-        using var vm = Vm(); await Import(vm);
+        using var files = new Files(); using var vm = Vm(); await ImportUnmarkedRoom(vm, files);
         var before = vm.ScanObjects.ToArray();
         var pending = vm.LoadCollegeBuildingAsync(); vm.CancelOperation(); await pending;
         Assert.Equal(before, vm.ScanObjects.ToArray()); Assert.False(vm.HasSyntheticScans);
@@ -185,6 +185,17 @@ public sealed class StructureWorkflowTests
         new(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(), access: access ?? new(),
             interaction: new TestInteraction(), structureAnalyzer: analyzer);
     private static Task Import(MainViewModel vm) => vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters, LocalOrigin: false));
+
+    // Model a scanner export without a SubTerra provenance marker using known geometry.
+    private static async Task ImportUnmarkedRoom(MainViewModel vm, Files files)
+    {
+        var path = Path.Combine(files.Directory, "scanner-room.ply");
+        File.WriteAllLines(path, File.ReadLines(StructureAnalysisTests.ClassroomPath)
+            .Where(line => line != "comment subterra_contains_synthetic_data"));
+        await vm.ImportAsync(path, new(ScanUnit.Meters, LocalOrigin: false));
+        Assert.True(vm.IsImported);
+        Assert.False(vm.HasSyntheticScans);
+    }
 
     [Fact]
     public Task AnalysisIsAdminOnlyIncludingDirectCalls() => ScanControlTests.OnSta(async () =>

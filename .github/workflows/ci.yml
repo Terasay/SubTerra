@@ -44,3 +44,6 @@ jobs:
 
       - name: Run tests
         run: dotnet test ./SubTerra.Tests/SubTerra.Tests.csproj --configuration Release --no-build --no-restore
+
+      - name: Check Studio export workflow with reference scans
+        run: ./scripts/Test-StudioImport.ps1 -NoBuild

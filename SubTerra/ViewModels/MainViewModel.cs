@@ -916,7 +916,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (IsImported && CurrentProjectView?.Data.VisibleScan is { } imported)
                 await _storage.ExportImportedPlyAsync(path, imported, token, OperationProgress(token));
             else
-                await _storage.ExportPlyAsync(path, _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points), token, OperationProgress(token));
+                await _storage.ExportPlyAsync(path, _dataset.Session.Frames.Take(_capturedFrames).SelectMany(f => f.Points),
+                    token, OperationProgress(token), isSynthetic: true);
             Status = "Облако точек экспортировано";
             AddEvent("Облако точек экспортировано в PLY");
         }

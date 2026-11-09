@@ -89,7 +89,9 @@ public sealed partial class MainViewModel
     private bool CoarseMesh => AdaptiveQuality && IsOverview && Vector3.Distance(new((float)Camera.Position.X, (float)Camera.Position.Y, (float)Camera.Position.Z),
         (_importedBounds.Minimum + _importedBounds.Maximum) / 2) > Math.Max(.01f, (_importedBounds.Maximum - _importedBounds.Minimum).Length()) * 4;
     public string MeshPreviewText => IsIndoorSurfaceView ? IndoorPreviewSummary : $"Сетка: {_importedGeometry?.MeshTriangleCount(CoarseMesh) ?? 0:N0} из {CurrentProjectView?.Data.VisibleScan?.Triangles.Length / 3 ?? 0:N0} треугольников · упрощение только для просмотра";
-    public bool CanExport => CanSave && (!IsImported || CurrentProjectView?.Data.VisibleScan is not null);
+    public bool CanExport => CanSave && (IsImported
+        ? CurrentProjectView?.Data.VisibleScan is not null
+        : _capturedFrames > 0 && _capturedFrames <= _pointOffsets.Length && _pointOffsets[_capturedFrames - 1] > 0);
 
     public async Task LoadCollegeBuildingAsync()
     {
