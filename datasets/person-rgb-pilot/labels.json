@@ -1,0 +1,20 @@
+{
+  "size": 416,
+  "frames": [
+    { "capture": "glb", "scene": "room-2026-11-09", "view": 2, "split": "train", "people": [[11,244,214,416]] },
+    { "capture": "glb", "scene": "room-2026-11-09", "view": 3, "split": "train", "people": [[40,265,138,391],[123,258,219,405],[225,260,416,416]] },
+    { "capture": "glb", "scene": "room-2026-11-09", "view": 15, "split": "train", "people": [[23,238,174,416],[280,262,416,416]] },
+    { "capture": "ply", "scene": "room-2026-11-09", "view": 3, "split": "train", "people": [[7,259,128,408],[108,258,217,416],[231,268,416,416]] },
+    { "capture": "ply", "scene": "room-2026-11-09", "view": 7, "split": "train", "people": [[0,242,111,403],[164,237,276,416]] },
+    { "capture": "ply", "scene": "room-2026-11-09", "view": 13, "split": "train", "people": [[21,218,235,377],[230,182,298,290],[298,175,355,289]] },
+    { "capture": "ply", "scene": "room-2026-11-09", "view": 15, "split": "train", "people": [[0,218,73,396],[55,218,210,416],[290,228,416,416]] },
+    { "capture": "corridor", "scene": "corridor-2026-11-03", "view": 1, "split": "val", "people": [[112,91,361,416],[387,250,416,359]] },
+    { "capture": "corridor", "scene": "corridor-2026-11-03", "view": 5, "split": "val", "people": [] },
+    { "capture": "corridor", "scene": "corridor-2026-11-03", "view": 12, "split": "val", "people": [[184,148,259,351]] },
+    { "capture": "corridor", "scene": "corridor-2026-11-03", "view": 13, "split": "val", "people": [] },
+    { "capture": "corridor", "scene": "corridor-2026-11-03", "view": 14, "split": "val", "people": [[91,175,138,259],[132,144,187,390],[248,145,325,371]] },
+    { "capture": "earlier-room", "scene": "room-2026-10-29", "view": 6, "split": "val", "people": [[0,291,125,416],[116,289,233,416]] },
+    { "capture": "glb", "scene": "room-2026-11-09", "view": 13, "split": "review", "people": [[59,229,258,394],[250,190,320,295]], "ignore": [[315,223,392,324]] },
+    { "capture": "ply", "scene": "room-2026-11-09", "view": 5, "split": "review", "people": [[0,237,121,366],[116,211,170,286],[159,207,205,287],[284,215,328,285]], "ignore": [[319,212,407,315]] }
+  ]
+}

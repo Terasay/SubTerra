@@ -1,0 +1,166 @@
+{
+  "info": {
+    "description": "Manually reviewed RGB scan renders",
+    "version": "1"
+  },
+  "licenses": [],
+  "categories": [
+    {
+      "id": 1,
+      "name": "person",
+      "supercategory": "person"
+    }
+  ],
+  "images": [
+    {
+      "id": 1,
+      "width": 416,
+      "height": 416,
+      "file_name": "corridor-01.png"
+    },
+    {
+      "id": 2,
+      "width": 416,
+      "height": 416,
+      "file_name": "corridor-05.png"
+    },
+    {
+      "id": 3,
+      "width": 416,
+      "height": 416,
+      "file_name": "corridor-12.png"
+    },
+    {
+      "id": 4,
+      "width": 416,
+      "height": 416,
+      "file_name": "corridor-13.png"
+    },
+    {
+      "id": 5,
+      "width": 416,
+      "height": 416,
+      "file_name": "corridor-14.png"
+    },
+    {
+      "id": 6,
+      "width": 416,
+      "height": 416,
+      "file_name": "earlier-room-06.png"
+    }
+  ],
+  "annotations": [
+    {
+      "id": 1,
+      "image_id": 1,
+      "category_id": 1,
+      "bbox": [
+        112,
+        91,
+        249,
+        325
+      ],
+      "area": 80925,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 2,
+      "image_id": 1,
+      "category_id": 1,
+      "bbox": [
+        387,
+        250,
+        29,
+        109
+      ],
+      "area": 3161,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 3,
+      "image_id": 3,
+      "category_id": 1,
+      "bbox": [
+        184,
+        148,
+        75,
+        203
+      ],
+      "area": 15225,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 4,
+      "image_id": 5,
+      "category_id": 1,
+      "bbox": [
+        91,
+        175,
+        47,
+        84
+      ],
+      "area": 3948,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 5,
+      "image_id": 5,
+      "category_id": 1,
+      "bbox": [
+        132,
+        144,
+        55,
+        246
+      ],
+      "area": 13530,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 6,
+      "image_id": 5,
+      "category_id": 1,
+      "bbox": [
+        248,
+        145,
+        77,
+        226
+      ],
+      "area": 17402,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 7,
+      "image_id": 6,
+      "category_id": 1,
+      "bbox": [
+        0,
+        291,
+        125,
+        125
+      ],
+      "area": 15625,
+      "iscrowd": 0,
+      "segmentation": []
+    },
+    {
+      "id": 8,
+      "image_id": 6,
+      "category_id": 1,
+      "bbox": [
+        116,
+        289,
+        117,
+        127
+      ],
+      "area": 14859,
+      "iscrowd": 0,
+      "segmentation": []
+    }
+  ]
+}
