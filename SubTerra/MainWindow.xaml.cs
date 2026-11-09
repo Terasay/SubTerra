@@ -68,6 +68,7 @@ public partial class MainWindow : Window
         Viewport.InputBindings.Add(new MouseBinding(ViewportCommands.Pan, new MouseGesture(MouseAction.LeftClick, ModifierKeys.Shift)));
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _viewModel.AdministratorAccessRequested += RequestAdminAccess;
+        _viewModel.PersonModelExportRequested += ExportPersonModel;
     }
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -145,6 +146,16 @@ public partial class MainWindow : Window
         await _viewModel.SaveCurrentAsync();
     }
     private async void SaveAs_Click(object sender, RoutedEventArgs e) => await _viewModel.SaveCurrentAsync(saveAs: true);
+    private void ExportPersonModel(object? sender, EventArgs e)
+    {
+        if (!_viewModel.ExportPersonModelCommand.CanExecute(null)) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = "Сохранить модель для передачи", Filter = "Модель людей SubTerra (*.json)|*.json",
+            DefaultExt = ".json", FileName = "person-models.shared.json"
+        };
+        if (dialog.ShowDialog(this) == true) _viewModel.ExportSelectedPersonModel(dialog.FileName);
+    }
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanExport) return;
@@ -355,6 +366,7 @@ public partial class MainWindow : Window
     {
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.AdministratorAccessRequested -= RequestAdminAccess;
+        _viewModel.PersonModelExportRequested -= ExportPersonModel;
         _diagnosticsTimer.Stop();
         _interactionTimer.Stop(); _autosaveTimer.Stop();
         Viewport.OnRendered -= Viewport_OnRendered;

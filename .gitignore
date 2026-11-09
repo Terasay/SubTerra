@@ -31,6 +31,8 @@
 # Local account data, credentials and environment
 admin-account.json
 admin-account.json.*
+person-examples-v1.json
+person-models.json
 .env
 .env.*
 !.env.example

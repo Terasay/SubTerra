@@ -16,6 +16,7 @@
                 <TextBlock Text="Администрирование модели людей" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
             </DockPanel>
             <TextBlock Text="{Binding ActivePersonModelText}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,0,0,12"/>
+            <TextBlock Text="{Binding BundledPersonModelStatus}" Style="{StaticResource Muted}" Margin="0,0,0,8"/>
             <Border Style="{StaticResource InsetCard}">
                 <StackPanel>
                     <TextBlock Text="{Binding TrainingExamplesText}" TextWrapping="Wrap" FontWeight="SemiBold"/>
@@ -36,7 +37,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
                 <Border Style="{StaticResource InsetCard}" VerticalAlignment="Top">
                     <StackPanel>
-                        <TextBlock Text="История обучения" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Версии модели" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <ListBox ItemsSource="{Binding PersonTrainingRuns}" SelectedItem="{Binding SelectedTrainingRun}" MaxHeight="240"
                                  AutomationProperties.Name="Версии модели людей">
                             <ListBox.ItemTemplate>
@@ -50,11 +51,15 @@
                         </ListBox>
                         <Button Content="Применить выбранную" Command="{Binding ActivatePersonModelCommand}" Margin="0,8,0,0"/>
                         <Button Content="Вернуть базовую YOLOX" Command="{Binding UseBaselinePersonModelCommand}" Style="{StaticResource Ghost}" Margin="0,4,0,0"/>
+                        <Button Content="Сохранить для передачи…" Command="{Binding ExportPersonModelCommand}" Style="{StaticResource Ghost}" Margin="0,8,0,0"
+                                ToolTip="Сохранить веса и результаты обучения в файл. Сканы и обучающие примеры в него не входят."/>
                     </StackPanel>
                 </Border>
                 <Border Grid.Column="2" Style="{StaticResource InsetCard}">
                     <StackPanel>
                         <TextBlock Text="Результат запуска" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding TrainingRunOrigin}" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding TrainingRunNote}" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
                         <TextBlock Text="{Binding TrainingRunDetails}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
                         <TextBlock Text="Потери при обучении" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding TrainingLossText}" Style="{StaticResource Muted}"/>

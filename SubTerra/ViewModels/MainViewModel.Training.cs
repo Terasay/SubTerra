@@ -22,9 +22,16 @@ public sealed partial class MainViewModel
     public AsyncRelayCommand CollectPersonExamplesCommand { get; private set; } = null!;
     public RelayCommand ActivatePersonModelCommand { get; private set; } = null!;
     public RelayCommand UseBaselinePersonModelCommand { get; private set; } = null!;
+    public RelayCommand ExportPersonModelCommand { get; private set; } = null!;
+    public event EventHandler? PersonModelExportRequested;
     public IReadOnlyList<PersonTrainingRun> PersonTrainingRuns => _personModelError is null ? _personModels.Runs : [];
     public string ActivePersonModelText => _personModelError ?? (_personModels.Active is { } model ?
         $"Активна модель от {model.TrainedAt.LocalDateTime:g}" : "Активна базовая YOLOX");
+    public string BundledPersonModelStatus => _personModels.BundledLoadError ??
+        (PersonTrainingRuns.Any(r => _personModels.IsBundled(r.Id)) ? "Модель из поставки доступна в списке версий." : "");
+    public string TrainingRunOrigin => SelectedTrainingRun is { } run ?
+        _personModels.IsBundled(run.Id) ? "Версия из поставки приложения" : "Обучена на этом компьютере" : "";
+    public string TrainingRunNote => SelectedTrainingRun?.Note ?? "";
     public string TrainingExamplesText => _learningError ??
         $"С источником · человек: {_personLearning.TaggedPositives} · ошибка: {_personLearning.TaggedNegatives} · сканов: {_personLearning.SourceCount}";
     public string TrainingExamplesHint => _learningError is not null ? "Проверьте доступ к локальному профилю." :
@@ -42,6 +49,8 @@ public sealed partial class MainViewModel
             Raise(nameof(TrainingLossText));
             Raise(nameof(TrainingComparison));
             Raise(nameof(TrainingValidationText));
+            Raise(nameof(TrainingRunOrigin));
+            Raise(nameof(TrainingRunNote));
             CommandManager.InvalidateRequerySuggested();
         }
     }
@@ -98,6 +107,8 @@ public sealed partial class MainViewModel
             () => IsAdministrator && CanInteract && _personModelError is null && SelectedTrainingRun is { } run && _personModels.Active?.Id != run.Id);
         UseBaselinePersonModelCommand = new(() => SetActivePersonModel(null),
             () => IsAdministrator && CanInteract && _personModelError is null && _personModels.Active is not null);
+        ExportPersonModelCommand = new(() => PersonModelExportRequested?.Invoke(this, EventArgs.Empty),
+            () => IsAdministrator && CanInteract && _personModelError is null && SelectedTrainingRun is not null);
     }
 
     private void LoadPersonModels(bool selectNewest = false)
@@ -115,6 +126,9 @@ public sealed partial class MainViewModel
         SelectedTrainingRun = (selectNewest ? null : PersonTrainingRuns.FirstOrDefault(r => r.Id == previous)) ??
             PersonTrainingRuns.FirstOrDefault();
         Raise(nameof(ActivePersonModelText));
+        Raise(nameof(BundledPersonModelStatus));
+        Raise(nameof(TrainingRunOrigin));
+        Raise(nameof(TrainingRunNote));
         Raise(nameof(PersonLearningSummary));
         Raise(nameof(TrainingExamplesText));
         Raise(nameof(TrainingExamplesHint));
@@ -155,5 +169,19 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
         { ReportError("Не удалось переключить модель", ex); }
+    }
+
+    public bool ExportSelectedPersonModel(string destination)
+    {
+        if (!ExportPersonModelCommand.CanExecute(null) || SelectedTrainingRun is not { } run) return false;
+        try
+        {
+            PersonTrainingJournal.ExportPackage(destination, run);
+            Status = "Модель сохранена для передачи · без сканов и обучающих примеров";
+            Notification = "";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or ArgumentException)
+        { ReportError("Не удалось сохранить модель", ex); return false; }
     }
 }

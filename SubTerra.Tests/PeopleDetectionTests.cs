@@ -594,10 +594,11 @@ public sealed class PeopleDetectionTests
             access.Login();
             vm.OpenTrainingPanelCommand.Execute(null);
             Assert.True(vm.IsTrainingPanelOpen);
+            var existingVersions = vm.PersonTrainingRuns.Select(r => r.Id).ToHashSet();
             vm.PersonThreshold = .5;
             await vm.TrainPersonModelCommand.ExecuteAsync();
             Assert.False(vm.HasNotification, vm.Notification);
-            var run = Assert.Single(vm.PersonTrainingRuns);
+            var run = Assert.Single(vm.PersonTrainingRuns, r => !existingVersions.Contains(r.Id));
             Assert.Same(run, vm.SelectedTrainingRun);
             Assert.Equal(4, vm.TrainingComparison.Count);
             Assert.Equal(21, vm.TrainingLossCurve.Count);
