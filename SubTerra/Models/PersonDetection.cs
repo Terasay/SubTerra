@@ -26,3 +26,25 @@ public sealed record PersonDetectionResult(ScanImage[] Views, PersonFinding[] Fi
     public int RejectedFurnitureGroups { get; init; }
     public int RejectedDecorGroups { get; init; }
 }
+
+public sealed record PersonThresholdChoice(int Percent, int Frames, int AddedFrames)
+{
+    public float MinimumScore => Percent / 100f;
+    public string Label => AddedFrames > 0 ? $"{Percent}% · рамок {Frames} (+{AddedFrames})" : $"{Percent}% · рамок {Frames}";
+}
+
+public static class PersonThresholdComparison
+{
+    public const float MinimumScore = .25f;
+    public const float ReferenceScore = .3f;
+
+    public static PersonThresholdChoice[] Summarize(IReadOnlyList<PersonFinding> findings)
+    {
+        var reference = findings.Count(f => f.Box.Score >= ReferenceScore);
+        return new[] { 30, 27, 25 }.Select(percent =>
+        {
+            var count = findings.Count(f => f.Box.Score >= percent / 100f);
+            return new PersonThresholdChoice(percent, count, count - reference);
+        }).ToArray();
+    }
+}

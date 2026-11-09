@@ -59,7 +59,11 @@ public sealed class PersonCandidateLearning(string? path = null)
         sources.All(s => s is { Length: 64 } && s.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F')) &&
         sources.Distinct().Count() == sources.Length);
 
-    public void Review(ScanImage view, PersonFinding finding, StructureReviewState label, string[]? sources = null)
+    public void Review(ScanImage view, PersonFinding finding, StructureReviewState label, string[]? sources = null) =>
+        ReviewMany([(view, finding)], label, sources);
+
+    public void ReviewMany(IReadOnlyList<(ScanImage View, PersonFinding Finding)> findings, StructureReviewState label,
+        string[]? sources = null)
     {
         if (!ValidSources(sources)) throw new InvalidDataException("Некорректные идентификаторы сканов.");
         if (path is not null) Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -67,13 +71,16 @@ public sealed class PersonCandidateLearning(string? path = null)
             FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
         Reload();
         var next = new Dictionary<string, Example>(_examples);
-        var key = Key(view, finding.Box);
-        if (label == StructureReviewState.Proposed) next.Remove(key);
-        else
+        foreach (var (view, finding) in findings)
         {
-            var provenance = sources is { Length: > 0 } ? sources : next.GetValueOrDefault(key)?.Sources;
-            next[key] = new(key, Features(view, finding), finding.DetectorScore ?? finding.Box.Score,
-                label == StructureReviewState.Confirmed, provenance?.ToArray());
+            var key = Key(view, finding.Box);
+            if (label == StructureReviewState.Proposed) next.Remove(key);
+            else
+            {
+                var provenance = sources is { Length: > 0 } ? sources : next.GetValueOrDefault(key)?.Sources;
+                next[key] = new(key, Features(view, finding), finding.DetectorScore ?? finding.Box.Score,
+                    label == StructureReviewState.Confirmed, provenance?.ToArray());
+            }
         }
         if (next.Count > MaximumExamples) throw new InvalidDataException($"Сохранено максимальное число примеров ({MaximumExamples}).");
         if (path is not null)

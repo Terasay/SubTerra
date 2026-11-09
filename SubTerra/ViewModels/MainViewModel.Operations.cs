@@ -63,10 +63,10 @@ public sealed partial class MainViewModel
         Status = "Отмена операции…";
         Raise(nameof(CanCancelOperation));
     }
-    private IProgress<double> OperationProgress(CancellationToken token, double scale = 1) => new Progress<double>(value =>
+    private IProgress<double> OperationProgress(CancellationToken token, double scale = 1, double offset = 0) => new Progress<double>(value =>
     {
         if (!_disposed && !token.IsCancellationRequested && _operationCancellation?.Token == token)
-            BusyProgress = Math.Clamp(value * scale, 0, 100);
+            BusyProgress = Math.Clamp(offset + value * scale, 0, 100);
     });
     private void OperationCancelled()
     {

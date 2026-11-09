@@ -12,6 +12,11 @@
                 <TextBlock Text="{Binding PeopleSummary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding PeopleRunMode}" Style="{StaticResource Muted}" Margin="0,6,0,0"/>
             </StackPanel></Border>
+            <StackPanel Visibility="{Binding HasPeopleThresholdComparison, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10">
+                <TextBlock Text="Порог просмотра" Style="{StaticResource Label}" Margin="0,0,0,5"/>
+                <ComboBox ItemsSource="{Binding PeopleComparisonThresholds}" SelectedItem="{Binding SelectedPeopleComparisonThreshold}" DisplayMemberPath="Label" AutomationProperties.Name="Порог сравнения рамок"/>
+                <TextBlock Text="Голубым выделены новые рамки относительно 30%. Проверенные рамки сохраняют цвет отметки." Style="{StaticResource Muted}" Margin="0,6,0,0"/>
+            </StackPanel>
             <Button Content="Открыть результат крупно" Command="{Binding ShowPeoplePreviewCommand}" Margin="0,0,0,10"/>
             <ComboBox ItemsSource="{Binding PersonViews}" SelectedItem="{Binding SelectedPersonView}" DisplayMemberPath="Label" AutomationProperties.Name="Ракурс проверки людей" Margin="0,0,0,10"/>
             <TextBlock Text="Кандидатов в этом ракурсе не найдено." Style="{StaticResource Muted}" Visibility="{Binding PeopleViewIsEmpty, Converter={StaticResource BoolVisibility}}" Margin="0,2,0,10"/>
@@ -21,6 +26,10 @@
             <StackPanel Visibility="{Binding HasCurrentPersonFindings, Converter={StaticResource BoolVisibility}}" Margin="0,10,0,0">
                 <UniformGrid Columns="2"><Button Content="Это человек" Command="{Binding ConfirmPersonCommand}" Margin="0,0,4,0"/><Button Content="Ошибка" Command="{Binding RejectPersonCommand}" Margin="4,0,0,0"/></UniformGrid>
                 <Button Content="Сбросить проверку" Command="{Binding ResetPersonReviewCommand}" Style="{StaticResource Ghost}" Margin="0,4,0,4"/>
+                <Button Content="{Binding PersonGroupReviewLabel}" Command="{Binding ReviewPersonGroupCommand}" Style="{StaticResource Ghost}" Margin="0,0,0,4"
+                        Visibility="{Binding HasPersonReviewGroup, Converter={StaticResource BoolVisibility}}"
+                        ToolTip="Отметить рамки этой группы на всех доступных ракурсах. Группу с подтверждённым человеком можно проверять по отдельным рамкам."
+                        ToolTipService.ShowOnDisabled="True"/>
                 <TextBlock Text="{Binding SelectedPerson.LocationText}" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
             </StackPanel>
             <Button Content="Показать ракурс в 3D" Command="{Binding FocusPersonViewCommand}" Margin="0,0,0,10"/>
@@ -33,8 +42,13 @@
             <TextBlock Text="«Это человек» и «Ошибка» добавляют пример. Повторная отметка его заменяет. «Сбросить проверку» удаляет пример из набора для будущих запусков обучения." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
         </StackPanel></Expander>
         <Expander Header="Параметры и ограничения" Margin="0,18,0,0"><StackPanel Margin="0,10,0,0">
+            <Button Content="Поиск с крупными ракурсами" Command="{Binding FindPeopleInDetailCommand}" Margin="0,0,0,6"
+                    Visibility="{Binding IsRoomMode, Converter={StaticResource BoolVisibility}}"
+                    ToolTip="Дополняет обзор помещения более крупными изображениями. Всего до 16 ракурсов."/>
+            <Button Content="Сравнить 25%, 27% и 30%" Command="{Binding ComparePeopleThresholdsCommand}" Margin="0,0,0,6"/>
+            <TextBlock Text="Один поиск базовой YOLOX от 25%. Пороги фильтруют те же рамки на тех же ракурсах." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
             <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог модели: {0:P0}}" Style="{StaticResource Muted}"/>
-            <Slider Value="{Binding PersonThreshold}" Minimum=".1" Maximum=".9" TickFrequency=".05" IsSnapToTickEnabled="True" IsEnabled="{Binding CanFindPeople}" AutomationProperties.Name="Порог детектора людей"/>
+            <Slider Value="{Binding PersonThreshold}" Minimum=".1" Maximum=".9" TickFrequency=".01" IsSnapToTickEnabled="True" IsEnabled="{Binding CanFindPeople}" AutomationProperties.Name="Порог детектора людей"/>
             <TextBlock Text="YOLOX-Nano предлагает рамки на цветных ракурсах. Локальная модель учится оценивать эти рамки по вашим отметкам. Близкие 3D-рамки с разных ракурсов объединяются в группы. Движение человека при сканировании может дать две отдельные фигуры." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
         </StackPanel></Expander>
     </StackPanel>

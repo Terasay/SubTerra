@@ -21,6 +21,43 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         return CreateRoomViews(document.Result.Surfaces, RoomPlanner.IsCurrent(document) ? document.Room?.InteriorPoint : null);
     }
     public static ScanViewPose[] RoomViews(StructureSurface[] surfaces) => CreateRoomViews(surfaces, null);
+
+    public static ScanViewPose[] RoomDetailViews(ScanViewPose[] overview)
+    {
+        if (overview.Length is < 8 or >= 16) return [];
+        var count = Math.Min(8, 16 - overview.Length);
+        var eye = overview[0].Position;
+        return Enumerable.Range(0, count).Select(i =>
+        {
+            var angle = (i + .5f) * (2 * MathF.PI / count);
+            return new ScanViewPose(eye, new(MathF.Cos(angle), MathF.Sin(angle), -.12f), Vector3.UnitZ, 55);
+        }).ToArray();
+    }
+
+    public static PersonDetectionResult CombineRoomViews(PersonDetectionResult overview, PersonDetectionResult details)
+    {
+        var findings = overview.Findings.Concat(details.Findings.Select(f => f with { ViewIndex = f.ViewIndex + overview.Views.Length }))
+            .Select((f, index) => f with { Id = index + 1, SpatialGroup = null }).ToArray();
+        return overview with
+        {
+            Views = [.. overview.Views, .. details.Views],
+            Findings = GroupAcrossViews(findings),
+            RejectedChairCandidates = overview.RejectedChairCandidates + details.RejectedChairCandidates,
+            RejectedWallCandidates = overview.RejectedWallCandidates + details.RejectedWallCandidates,
+            RejectedFurnitureGroups = overview.RejectedFurnitureGroups + details.RejectedFurnitureGroups,
+            RejectedDecorGroups = overview.RejectedDecorGroups + details.RejectedDecorGroups
+        };
+    }
+
+    public static PersonDetectionResult ConsolidateDetailedFindings(PersonDetectionResult result)
+    {
+        // The caller has already applied the final score threshold. A lower-scoring body must survive
+        // that threshold before it can replace a higher-scoring head in the same view.
+        var byView = result.Findings.ToLookup(f => f.ViewIndex);
+        var remaining = result.Findings.Where(f => !byView[f.ViewIndex].Any(other => IsContainedUpperFragment(f, other))).ToArray();
+        return result with { Findings = GroupAcrossViews(remaining, reconcilePartialViews: true) };
+    }
+
     private static ScanViewPose[] CreateRoomViews(StructureSurface[] surfaces, Vector3? interior)
     {
         var floor = surfaces.Where(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected).MaxBy(s => s.AreaSquareMeters)
@@ -264,7 +301,10 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         return true;
     }
 
-    public static PersonFinding[] GroupAcrossViews(IReadOnlyList<PersonFinding> findings)
+    public static PersonFinding[] GroupAcrossViews(IReadOnlyList<PersonFinding> findings) =>
+        GroupAcrossViews(findings, reconcilePartialViews: false);
+
+    private static PersonFinding[] GroupAcrossViews(IReadOnlyList<PersonFinding> findings, bool reconcilePartialViews)
     {
         var groups = new List<List<PersonFinding>>();
         var result = findings.ToArray();
@@ -278,7 +318,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             {
                 if (groups[j].Any(other => other.ViewIndex == finding.ViewIndex)) continue;
                 // Require overlap with every member. A chain of weak matches can join two neighbours.
-                var overlap = groups[j].Min(other => SpatialMatch(finding, other));
+                var overlap = groups[j].Min(other => SpatialMatch(finding, other, reconcilePartialViews));
                 if (overlap > bestOverlap) { bestOverlap = overlap; best = j; }
             }
             if (best < 0) { best = groups.Count; groups.Add([]); }
@@ -293,14 +333,30 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         if (small.ViewIndex != large.ViewIndex || large.Box.Score < small.Box.Score ||
             small.Box.Area <= 0 || large.Box.Area < small.Box.Area * 1.8f ||
             small.Minimum is null || small.Maximum is null || large.Minimum is null || large.Maximum is null) return false;
-        var a = small.Box; var b = large.Box;
-        var imageOverlap = Math.Max(0, Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left)) *
-            Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top));
-        if (imageOverlap < .9f * a.Area) return false;
+        if (ImageOverlap(small.Box, large.Box) < .9f * small.Box.Area) return false;
         var (asize, bsize, common, distance) = SpatialOverlap(small, large);
         return distance <= .2f && asize.Z < .7f * bsize.Z &&
             common.X * common.Y >= .82f * asize.X * asize.Y && common.Z >= .85f * asize.Z;
     }
+
+    private static bool IsContainedUpperFragment(PersonFinding small, PersonFinding large)
+    {
+        if (small.ViewIndex != large.ViewIndex || small.Box.Area <= 0 || large.Box.Area < 3 * small.Box.Area ||
+            small.Minimum is null || small.Maximum is null || large.Minimum is null || large.Maximum is null ||
+            large.Review == StructureReviewState.Rejected ||
+            small.Review == StructureReviewState.Confirmed && large.Review != StructureReviewState.Confirmed ||
+            ImageOverlap(small.Box, large.Box) < .98f * small.Box.Area) return false;
+
+        var (smallSize, largeSize, common, _) = SpatialOverlap(small, large);
+        var footprint = smallSize.X * smallSize.Y;
+        return footprint > 0 && smallSize.Z > 0 && smallSize.Z <= .45f * largeSize.Z &&
+            common.X * common.Y >= .97f * footprint && common.Z >= .9f * smallSize.Z &&
+            small.Minimum.Value.Z >= large.Minimum.Value.Z + .5f * largeSize.Z;
+    }
+
+    private static float ImageOverlap(ImageBox a, ImageBox b) =>
+        Math.Max(0, Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left)) *
+        Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top));
 
     private static (Vector3 First, Vector3 Second, Vector3 Common, float CenterDistance) SpatialOverlap(PersonFinding a, PersonFinding b)
     {
@@ -311,7 +367,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         return (amax - amin, bmax - bmin, common, new Vector2(delta.X, delta.Y).Length());
     }
 
-    private static float SpatialMatch(PersonFinding a, PersonFinding b)
+    private static float SpatialMatch(PersonFinding a, PersonFinding b, bool reconcilePartialViews)
     {
         static float Volume(Vector3 size) => size.X * size.Y * size.Z;
         var (asize, bsize, common, distance) = SpatialOverlap(a, b);
@@ -319,10 +375,21 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
         var iou = volume / Math.Max(1e-9f, Volume(asize) + Volume(bsize) - volume);
         // A side view can contain only the upper body. The overlapping footprint and close XY
         // centers still match that partial observation to the full-height detection.
-        var footprint = common.X * common.Y / Math.Max(1e-9f, Math.Min(asize.X * asize.Y, bsize.X * bsize.Y));
-        return distance <= .3f && footprint >= .45f && common.Z >= .65f * Math.Min(asize.Z, bsize.Z)
-            ? Math.Max(iou, .2f + .25f * footprint)
-            : iou;
+        var firstArea = asize.X * asize.Y;
+        var secondArea = bsize.X * bsize.Y;
+        var narrowArea = Math.Min(firstArea, secondArea);
+        var height = Math.Min(asize.Z, bsize.Z);
+        var footprint = common.X * common.Y / Math.Max(1e-9f, narrowArea);
+        if (distance <= .3f && footprint >= .45f && common.Z >= .65f * height)
+            return Math.Max(iou, .2f + .25f * footprint);
+
+        // Wide views may include depth behind a seated person. Reconcile a narrow observation only
+        // when most of its footprint and almost its entire height lie inside the broad observation.
+        var conflictingReviews = a.Review != StructureReviewState.Proposed && b.Review != StructureReviewState.Proposed && a.Review != b.Review;
+        if (reconcilePartialViews && !conflictingReviews && distance <= .45f && height >= .45f &&
+            narrowArea <= .55f * Math.Max(firstArea, secondArea) && footprint >= .75f && common.Z >= .9f * height)
+            return Math.Max(iou, .2f + .25f * footprint);
+        return iou;
     }
 
     private static (Vector3? Min, Vector3? Max) Locate(ScanImage image, ImageBox box, StructureSurface[] surfaces, CancellationToken token)

@@ -42,8 +42,8 @@ internal static class Program
                 return PrepareIndoor(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--reconstruct-indoor")
                 return ReconstructIndoor(args[1], args[2]);
-            if (args.Length == 3 && args[0] == "--detect-people")
-                return DetectPeople(args[1], args[2]);
+            if (args.Length == 3 && args[0] is "--detect-people" or "--compare-people-thresholds")
+                return DetectPeople(args[1], args[2], args[0] == "--compare-people-thresholds");
             var passes = 12;
             var output = Path.GetFullPath(Path.Combine("artifacts", "diagnostics"));
             for (var i = 0; i < args.Length; i++)
@@ -252,17 +252,22 @@ internal static class Program
         return 0;
     }
 
-    private static int DetectPeople(string input, string directory)
+    private static int DetectPeople(string input, string directory, bool compareThresholds)
     {
         if (Directory.Exists(directory) || File.Exists(directory)) throw new ArgumentException("Выберите новую папку для проверки людей.");
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
         var token = cancellation.Token; var clock = Stopwatch.StartNew();
-        var scan = new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z), token).GetAwaiter().GetResult();
-        var project = ScanProject.FromSession(scan.ToSession());
+        var session = Path.GetExtension(input).Equals(".subterra", StringComparison.OrdinalIgnoreCase)
+            ? new SessionStorage().LoadAsync(input, token).GetAwaiter().GetResult()
+            : new ScanImporter().ImportAsync(input, new(ScanUnit.Meters, ScanUpAxis.Z), token).GetAwaiter().GetResult().ToSession();
+        var project = session.Project ?? ScanProject.FromSession(session);
+        if (!project.Objects.Any(o => o.IsVisible && o.PointCount > 0 && o.Source.Colors.Length > 0))
+            throw new InvalidDataException("Для поиска нужны видимые точки с исходным цветом RGB.");
         var structure = new PlaneStructureAnalyzer().AnalyzeAsync(project, new(), null, token).GetAwaiter().GetResult();
         var poses = PersonScanAnalyzer.RoomViews(structure.Surfaces);
-        var result = new PersonScanAnalyzer().AnalyzeAsync(project, poses, structure.Surfaces, .3f, null, null, token).GetAwaiter().GetResult();
+        var threshold = compareThresholds ? PersonThresholdComparison.MinimumScore : PersonThresholdComparison.ReferenceScore;
+        var result = new PersonScanAnalyzer().AnalyzeAsync(project, poses, structure.Surfaces, threshold, null, null, token).GetAwaiter().GetResult();
         Directory.CreateDirectory(directory);
         for (var i = 0; i < result.Views.Length; i++)
         {
@@ -275,9 +280,11 @@ internal static class Program
                 foreach (var finding in result.Findings.Where(f => f.ViewIndex == i))
                 {
                     var box = finding.Box;
-                    drawing.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Orange, 2), new(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
+                    var color = compareThresholds && box.Score < PersonThresholdComparison.ReferenceScore
+                        ? System.Windows.Media.Brushes.DeepSkyBlue : System.Windows.Media.Brushes.Orange;
+                    drawing.DrawRectangle(null, new System.Windows.Media.Pen(color, 2), new(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
                     var text = new System.Windows.Media.FormattedText($"#{finding.SpatialGroup?.ToString() ?? "?"} · {box.Score:P0}", CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
-                        new System.Windows.Media.Typeface("Segoe UI"), 12, System.Windows.Media.Brushes.Orange, 1);
+                        new System.Windows.Media.Typeface("Segoe UI"), 12, color, 1);
                     drawing.DrawText(text, new(box.Left, Math.Max(0, box.Top - 18)));
                 }
             }
@@ -286,13 +293,15 @@ internal static class Program
             using var stream = File.Create(Path.Combine(directory, $"people-view-{i + 1:00}.png")); encoder.Save(stream);
         }
         var groups = result.Findings.Select(f => f.SpatialGroup).Where(id => id.HasValue).Distinct().Count();
-        var report = new { result.Model, Threshold = .3, SpatialGroups = groups, result.RejectedWallCandidates, result.RejectedChairCandidates,
+        var comparison = compareThresholds ? PersonThresholdComparison.Summarize(result.Findings) : [];
+        var report = new { result.Model, Threshold = threshold, SpatialGroups = groups, Comparison = comparison, result.RejectedWallCandidates, result.RejectedChairCandidates,
             result.RejectedFurnitureGroups, result.RejectedDecorGroups, Findings = result.Findings,
             Views = result.Views.Select((v, i) => new { Index = i, v.Pose, v.Coverage }),
             ElapsedSeconds = clock.Elapsed.TotalSeconds, Scope = "Local RGB projections; per-view candidates, not unique people or measured accuracy" };
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
         File.WriteAllText(Path.Combine(directory, "people.json"), json);
         Console.WriteLine($"Views: {result.Views.Length}; boxes: {result.Findings.Length}; 3D groups: {groups}; elapsed: {clock.Elapsed.TotalSeconds:F2}s; output: {directory}");
+        foreach (var choice in comparison) Console.WriteLine(choice.Label);
         return 0;
     }
 

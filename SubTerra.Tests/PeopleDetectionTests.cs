@@ -91,6 +91,35 @@ public sealed class PeopleDetectionTests
     }
 
     [Fact]
+    public void DetailedSearchDropsNestedHeadOnlyWhenItsBodySurvivesTheFinalThreshold()
+    {
+        var overview = new PersonFinding(1, 0, new(100, 110, 300, 340, .7f), Vector3.Zero, new(.53f, .93f, .85f));
+        var head = new PersonFinding(2, 1, new(210, 112, 280, 200, .42f), new(.095f, .56f, .57f), new(.3f, .87f, .87f));
+        var body = overview with { Id = 3, ViewIndex = 1, Box = overview.Box with { Score = .32f } };
+        var neighbour = head with { Id = 4, Minimum = head.Minimum + Vector3.UnitY, Maximum = head.Maximum + Vector3.UnitY };
+        var result = new PersonDetectionResult([], [overview, head, body, neighbour], "test");
+
+        var deduplicated = PersonScanAnalyzer.ConsolidateDetailedFindings(result);
+        Assert.Equal(new[] { 1, 3, 4 }, deduplicated.Findings.Select(f => f.Id));
+        Assert.Equal(new int?[] { 1, 1, 2 }, deduplicated.Findings.Select(f => f.SpatialGroup));
+
+        var aboveHigherThreshold = result with { Findings = [overview, head, neighbour] };
+        Assert.Contains(PersonScanAnalyzer.ConsolidateDetailedFindings(aboveHigherThreshold).Findings, f => f.Id == head.Id);
+    }
+
+    [Fact]
+    public void DetailedSearchReconcilesContainedFootprintsAndKeepsAdjacentGroup()
+    {
+        var overview = new PersonFinding(1, 0, new(40, 50, 120, 300, .6f), Vector3.Zero, new(1.4f, .7f, 1.15f));
+        var closeup = new PersonFinding(2, 1, new(70, 70, 220, 350, .65f), new(-.08f, -.06f, .1f), new(.68f, .44f, 1.12f));
+        var neighbour = closeup with { Id = 3, Minimum = closeup.Minimum + Vector3.UnitY * .65f, Maximum = closeup.Maximum + Vector3.UnitY * .65f };
+        var result = new PersonDetectionResult([], [overview, closeup, neighbour], "test");
+
+        Assert.Equal(new int?[] { 1, 2, 3 }, PersonScanAnalyzer.GroupAcrossViews(result.Findings).Select(f => f.SpatialGroup));
+        Assert.Equal(new int?[] { 1, 1, 2 }, PersonScanAnalyzer.ConsolidateDetailedFindings(result).Findings.Select(f => f.SpatialGroup));
+    }
+
+    [Fact]
     public void ReviewedExamplesTrainOnOneSetAndChangeDecisionsOnUnseenCandidatesAfterRestart()
     {
         var directory = WorkspaceFeatureTests.TemporaryDirectory();
@@ -640,6 +669,109 @@ public sealed class PeopleDetectionTests
         finally { Directory.Delete(directory, true); }
     });
 
+    [Fact]
+    public Task ThresholdComparisonReusesOneRunAndSelectsTheNewlyVisibleFrame() => ScanControlTests.OnSta(async () =>
+    {
+        var analyzer = new FakeAnalyzer((project, poses) => poses.Length == 1 ? FakeResult(project, poses) : new(
+            poses.Take(2).Select(pose => ScanImageRenderer.Render(project, pose)).ToArray(),
+            [new(1, 0, new(70, 30, 180, 340, .3f), null, null),
+             new(2, 1, new(70, 30, 180, 340, .27f), null, null),
+             new(3, 0, new(220, 30, 330, 340, .25f), null, null)], "test detector"));
+        using var vm = Vm(analyzer: analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        vm.PersonThreshold = .55;
+        await vm.ComparePeopleThresholdsCommand.ExecuteAsync();
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.Equal(1, analyzer.Calls);
+        Assert.Equal(.25f, analyzer.Threshold);
+        Assert.Equal(.55, vm.PersonThreshold);
+        Assert.Equal(new[] { 30, 27, 25 }, vm.PeopleComparisonThresholds.Select(choice => choice.Percent));
+        Assert.Equal(new[] { 0, 1, 2 }, vm.PeopleComparisonThresholds.Select(choice => choice.AddedFrames));
+        Assert.Equal(1, Assert.Single(vm.CurrentPersonFindings).Id);
+
+        vm.SelectedPeopleComparisonThreshold = vm.PeopleComparisonThresholds[1];
+        Assert.Equal(2, vm.SelectedPerson?.Id);
+        Assert.Equal(1, vm.SelectedPersonView?.Index);
+        Assert.Equal(2, Assert.Single(vm.CurrentPersonFindings).Id);
+        vm.SelectedPeopleComparisonThreshold = vm.PeopleComparisonThresholds[2];
+        Assert.Equal(3, vm.SelectedPerson?.Id);
+        Assert.Equal(0, vm.SelectedPersonView?.Index);
+        vm.SelectedPeopleComparisonThreshold = vm.PeopleComparisonThresholds[0];
+        Assert.Equal(1, vm.SelectedPerson?.Id);
+        Assert.Equal(1, analyzer.Calls);
+
+        await vm.DetectPeopleAsync();
+        Assert.False(vm.HasPeopleThresholdComparison);
+        Assert.Null(vm.SelectedPeopleComparisonThreshold);
+        Assert.Equal(.55f, analyzer.Threshold);
+    });
+
+    [Fact]
+    public Task DetailedRoomSearchKeepsOverviewAndGroupsMatchingCloseups() => ScanControlTests.OnSta(async () =>
+    {
+        var analyzer = new FakeAnalyzer((_, poses) => new(
+            poses.Select(pose => new ScanImage(pose, 32, new byte[32 * 32 * 3], new float[32 * 32], [])).ToArray(),
+            [new(1, 0, new(4, 4, 24, 28, .8f), new(1, 1, 0), new(1.5f, 1.5f, 1.7f))], "test detector"));
+        using var vm = Vm(analyzer: analyzer);
+        await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+        await vm.FindPeopleInDetailCommand.ExecuteAsync();
+
+        Assert.False(vm.HasNotification, vm.Notification);
+        Assert.Equal(2, analyzer.Calls);
+        Assert.Equal(16, vm.PersonViews.Count);
+        Assert.All(analyzer.Poses!, pose => Assert.Equal(55, pose.FieldOfView));
+        Assert.Equal(new[] { 0, 8 }, vm.PersonFindings.Select(finding => finding.ViewIndex));
+        Assert.Equal(new[] { 1, 2 }, vm.PersonFindings.Select(finding => finding.Id));
+        Assert.Equal(1, Assert.Single(vm.PersonFindings.Select(finding => finding.SpatialGroup).Distinct()));
+        vm.SelectedPersonView = vm.PersonViews[8];
+        Assert.StartsWith("Крупный ракурс", vm.SelectedPersonView.Label);
+        Assert.Equal(2, vm.SelectedPerson?.Id);
+        Assert.False(vm.HasStructureAnalysis);
+    });
+
+    [Fact]
+    public Task GroupRejectionPersistsAllViewsAndProtectsConfirmedPeople() => ScanControlTests.OnSta(async () =>
+    {
+        var directory = WorkspaceFeatureTests.TemporaryDirectory();
+        try
+        {
+            var store = new WorkspaceStateStore(directory);
+            var analyzer = new FakeAnalyzer((_, poses) => new(
+                poses.Take(2).Select((pose, i) => new ScanImage(pose, 32,
+                    Enumerable.Repeat((byte)(114 + i), 32 * 32 * 3).ToArray(), new float[32 * 32], [])).ToArray(),
+                [new PersonFinding(1, 0, new(4, 4, 24, 28, .8f), null, null) { SpatialGroup = 1 },
+                 new PersonFinding(2, 1, new(4, 4, 24, 28, .7f), null, null) { SpatialGroup = 1 },
+                 new PersonFinding(3, 1, new(24, 4, 30, 28, .65f), null, null) { SpatialGroup = 2 }], "test detector"));
+            using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
+                access: new TestAccess(), interaction: new TestInteraction(), workspaceStore: store, personAnalyzer: analyzer);
+            await vm.ImportAsync(StructureAnalysisTests.ClassroomPath, new(ScanUnit.Meters));
+            await vm.FindPeopleAsync();
+            Assert.Equal(1, vm.SelectedPerson?.Id);
+
+            vm.ConfirmPersonCommand.Execute(null);
+            vm.SelectedPerson = vm.PersonFindings[1];
+            Assert.False(vm.ReviewPersonGroupCommand.CanExecute(null));
+            Assert.Equal(StructureReviewState.Confirmed, vm.PersonFindings[0].Review);
+
+            vm.SelectedPerson = vm.PersonFindings[0];
+            vm.ResetPersonReviewCommand.Execute(null);
+            Assert.True(vm.ReviewPersonGroupCommand.CanExecute(null));
+            vm.ReviewPersonGroupCommand.Execute(null);
+            Assert.All(vm.PersonFindings.Take(2), f => Assert.Equal(StructureReviewState.Rejected, f.Review));
+            Assert.Equal(StructureReviewState.Proposed, vm.PersonFindings[2].Review);
+            Assert.Contains("Групп в 3D: 1", vm.PeopleSummary);
+
+            var learned = new PersonCandidateLearning(store.PersonExamplesPath);
+            learned.Reload();
+            Assert.Equal(2, learned.TaggedNegatives);
+            vm.ReviewPersonGroupCommand.Execute(null);
+            Assert.All(vm.PersonFindings, f => Assert.Equal(StructureReviewState.Proposed, f.Review));
+            learned.Reload();
+            Assert.Equal(0, learned.TaggedNegatives);
+        }
+        finally { Directory.Delete(directory, true); }
+    });
+
     private static MainViewModel Vm(TestAccess? access = null, IPersonScanAnalyzer? analyzer = null) => new(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
         access: access ?? new(), interaction: new TestInteraction(), personAnalyzer: analyzer ?? new FakeAnalyzer());
     private static PersonDetectionResult FakeResult(ScanProject project, ScanViewPose[] poses)
@@ -647,11 +779,14 @@ public sealed class PeopleDetectionTests
         var view = ScanImageRenderer.Render(project, poses[0]);
         return new([view], [new(1, 0, new(70, 30, 180, 340, .8f), new(1, 1, 0), new(2, 2, 1.8f))], "test detector");
     }
-    private sealed class FakeAnalyzer : IPersonScanAnalyzer
+    private sealed class FakeAnalyzer(Func<ScanProject, ScanViewPose[], PersonDetectionResult>? createResult = null) : IPersonScanAnalyzer
     {
         public int Calls; public float Threshold; public ScanViewPose[]? Poses; public StructureSurface[]? Surfaces;
         public Task<PersonDetectionResult> AnalyzeAsync(ScanProject project, ScanViewPose[] poses, StructureSurface[] surfaces, float threshold, PointClipPlane? clip, IProgress<double>? progress, CancellationToken token)
-        { Calls++; Threshold = threshold; Poses = poses; Surfaces = surfaces; return Task.FromResult(FakeResult(project, poses)); }
+        {
+            Calls++; Threshold = threshold; Poses = poses; Surfaces = surfaces;
+            return Task.FromResult(createResult?.Invoke(project, poses) ?? FakeResult(project, poses));
+        }
     }
     private sealed class MultipleViewsAnalyzer : IPersonScanAnalyzer
     {

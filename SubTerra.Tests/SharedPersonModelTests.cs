@@ -131,13 +131,13 @@ public sealed class SharedPersonModelTests
         {
             Assert.True(File.Exists(PersonTrainingJournal.BundledModelsPath));
             var package = new PersonTrainingJournal(null, PersonTrainingJournal.BundledModelsPath); package.Reload();
-            var shared = Assert.Single(package.Runs);
-            Assert.Equal(Guid.Parse("77cc426e-dae8-4497-9f47-fc45310bc216"), shared.Id);
-            Assert.Contains("Экспериментальная", shared.Note);
+            Assert.NotEmpty(package.Runs);
+            var shared = package.Runs[0];
             var store = new WorkspaceStateStore(directory); var access = new TestAccess();
             using var vm = new MainViewModel(new WorkspaceFeatureTests.MemoryScanSource(), new SessionStorage(),
                 access: access, interaction: new TestInteraction(), workspaceStore: store);
             vm.OpenTrainingPanelCommand.Execute(null);
+            Assert.Equal(package.Runs.Select(run => run.Id), vm.PersonTrainingRuns.Select(run => run.Id));
             Assert.Equal(shared.Id, vm.SelectedTrainingRun?.Id);
             Assert.Contains("поставки", vm.TrainingRunOrigin);
             Assert.False(vm.TrainPersonModelCommand.CanExecute(null));

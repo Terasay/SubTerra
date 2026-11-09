@@ -101,7 +101,7 @@ public sealed partial class MainViewModel
             IsTrainingPanelOpen = false;
             IsWelcomeVisible = false;
             SelectAnalysisTool("Люди");
-            await RunPeopleAnalysisAsync(true, true, labeling: true);
+            await RunPeopleAnalysisAsync(true, true, PeopleSearchMode.Review);
         }, () => IsAdministrator && CanFindPeople, ex => ReportError("Не удалось собрать рамки для проверки", ex));
         ActivatePersonModelCommand = new(() => SetActivePersonModel(SelectedTrainingRun?.Id),
             () => IsAdministrator && CanInteract && _personModelError is null && SelectedTrainingRun is { } run && _personModels.Active?.Id != run.Id);

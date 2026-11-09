@@ -14,6 +14,7 @@ public sealed record PersonViewChoice(int Index, string Label);
 
 public sealed partial class MainViewModel
 {
+    private enum PeopleSearchMode { Standard, Review, ThresholdComparison, Detailed }
     private readonly IPersonScanAnalyzer _personAnalyzer;
     private readonly PersonCandidateLearning _personLearning;
     private string? _learningError;
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel
     private LineGeometry3D? _personOutline;
     private LineGeometry3D? _peopleProposedOutline, _peopleConfirmedOutline, _peopleRejectedOutline;
     private double _personThreshold = .3;
+    private PersonThresholdChoice? _selectedPeopleComparisonThreshold;
     private bool _showPeople = true, _isPeoplePreviewOpen;
     private string _peopleRunMode = "";
     public ObservableCollection<PersonFinding> PersonFindings { get; } = [];
@@ -44,11 +46,14 @@ public sealed partial class MainViewModel
     public AsyncRelayCommand DetectPeopleCommand { get; private set; } = null!;
     public AsyncRelayCommand SearchPeopleCommand { get; private set; } = null!;
     public AsyncRelayCommand FindPeopleCommand { get; private set; } = null!;
+    public AsyncRelayCommand ComparePeopleThresholdsCommand { get; private set; } = null!;
+    public AsyncRelayCommand FindPeopleInDetailCommand { get; private set; } = null!;
     public RelayCommand ShowPeoplePreviewCommand { get; private set; } = null!;
     public RelayCommand ClosePeoplePreviewCommand { get; private set; } = null!;
     public RelayCommand ConfirmPersonCommand { get; private set; } = null!;
     public RelayCommand RejectPersonCommand { get; private set; } = null!;
     public RelayCommand ResetPersonReviewCommand { get; private set; } = null!;
+    public RelayCommand ReviewPersonGroupCommand { get; private set; } = null!;
     public RelayCommand FocusPersonViewCommand { get; private set; } = null!;
     public bool CanFindPeople => IsImported && CanInteract && !HasEditPreview && !HasRecovery && !IsScreenSelecting &&
         _scanProject?.Objects.Any(o => o.IsVisible && o.PointCount > 0 && o.Source.Colors.Length > 0) == true;
@@ -63,12 +68,38 @@ public sealed partial class MainViewModel
         "Поиск подготовит ракурсы автоматически. Если пол не найдётся, будет проверен текущий вид." :
         "Обзор помещения: восемь направлений. В длинном проходе поиск добавит ракурсы вдоль пола.";
     public bool CanReviewPerson => CanDetectPeople && SelectedPerson is not null;
+    private PersonFinding[] SelectedReviewGroup => SelectedPerson?.SpatialGroup is { } group
+        ? VisiblePersonFindings.Where(f => f.SpatialGroup == group).ToArray() : [];
+    public bool HasPersonReviewGroup => SelectedReviewGroup.Length > 1;
+    public string PersonGroupReviewLabel => SelectedReviewGroup.All(f => f.Review == StructureReviewState.Rejected)
+        ? "Сбросить отметки группы" : "Отклонить группу";
+    private bool CanReviewPersonGroup => CanReviewPerson && HasPersonReviewGroup &&
+        !PersonFindings.Any(f => f.SpatialGroup == SelectedPerson!.SpatialGroup && f.Review == StructureReviewState.Confirmed);
     public bool HasPeopleDetection => _people is not null;
     public bool PersonBoxesVisible => HasPeopleDetection && ShowPeople;
     public bool IsPeoplePreviewOpen { get => _isPeoplePreviewOpen; private set { if (Set(ref _isPeoplePreviewOpen, value)) Raise(nameof(IsPeoplePreviewVisible)); } }
     public bool IsPeoplePreviewVisible => IsPeoplePreviewOpen && HasPeopleDetection && IsAnalysisSection && IsPeopleAnalysis && Is3DView && !IsPresentationMode;
     public string PeopleRunMode => _peopleRunMode;
-    public IReadOnlyList<PersonFinding> CurrentPersonFindings => PersonFindings.Where(p => p.ViewIndex == SelectedPersonView?.Index).ToArray();
+    public IReadOnlyList<PersonThresholdChoice> PeopleComparisonThresholds { get; private set; } = [];
+    public bool HasPeopleThresholdComparison => PeopleComparisonThresholds.Count > 0;
+    public PersonThresholdChoice? SelectedPeopleComparisonThreshold
+    {
+        get => _selectedPeopleComparisonThreshold;
+        set
+        {
+            var previous = _selectedPeopleComparisonThreshold;
+            if (value is null || !PeopleComparisonThresholds.Contains(value) || !Set(ref _selectedPeopleComparisonThreshold, value)) return;
+            var current = CurrentPersonFindings;
+            var added = previous is not null && value.Percent < previous.Percent
+                ? VisiblePersonFindings.FirstOrDefault(p => p.Box.Score < previous.MinimumScore) : null;
+            if (added is not null) SelectedPerson = added;
+            else if (SelectedPerson is null || !current.Contains(SelectedPerson)) SelectedPerson = current.FirstOrDefault();
+            RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
+        }
+    }
+    private IEnumerable<PersonFinding> VisiblePersonFindings => SelectedPeopleComparisonThreshold is { } threshold
+        ? PersonFindings.Where(p => p.Box.Score >= threshold.MinimumScore) : PersonFindings;
+    public IReadOnlyList<PersonFinding> CurrentPersonFindings => VisiblePersonFindings.Where(p => p.ViewIndex == SelectedPersonView?.Index).ToArray();
     public bool HasCurrentPersonFindings => CurrentPersonFindings.Count > 0;
     public bool PeopleViewIsEmpty => HasPeopleDetection && !HasCurrentPersonFindings;
     public bool ShowPeople { get => _showPeople; set { if (Set(ref _showPeople, value)) Raise(nameof(PersonBoxesVisible)); } }
@@ -84,7 +115,7 @@ public sealed partial class MainViewModel
         set
         {
             if (value is null || !PersonViews.Contains(value) || !Set(ref _selectedPersonView, value)) return;
-            if (SelectedPerson?.ViewIndex != value.Index) SelectedPerson = PersonFindings.FirstOrDefault(p => p.ViewIndex == value.Index);
+            if (SelectedPerson?.ViewIndex != value.Index) SelectedPerson = CurrentPersonFindings.FirstOrDefault();
             RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
         }
     }
@@ -93,22 +124,22 @@ public sealed partial class MainViewModel
         get => _selectedPerson;
         set
         {
-            if (value is not null && !PersonFindings.Contains(value) || !Set(ref _selectedPerson, value)) return;
+            if (value is not null && !VisiblePersonFindings.Contains(value) || !Set(ref _selectedPerson, value)) return;
             if (value is not null) SelectedPersonView = PersonViews.First(v => v.Index == value.ViewIndex);
             PersonOutline = value is { Minimum: { } min, Maximum: { } max } ? Rendering.SceneGeometry.Lines(BoxLines(min, max)) : null;
             RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
         }
     }
     public string PeopleSummary => _people is null ? "Поиск ещё не запускался" :
-        $"Рамок: {PersonFindings.Count} · ракурсов: {_people.Views.Length}\n{SpatialSummary}\nПодтверждено: {PersonFindings.Count(p => p.Review == StructureReviewState.Confirmed)} · ложных: {PersonFindings.Count(p => p.Review == StructureReviewState.Rejected)}" +
+        $"Рамок: {VisiblePersonFindings.Count()} · ракурсов: {_people.Views.Length}\n{SpatialSummary}\nПодтверждено: {VisiblePersonFindings.Count(p => p.Review == StructureReviewState.Confirmed)} · ложных: {VisiblePersonFindings.Count(p => p.Review == StructureReviewState.Rejected)}" +
         (_people.RejectedChairCandidates > 0 ? $"\nПохоже на стул: исключено {_people.RejectedChairCandidates}" : "") +
         (_people.RejectedWallCandidates > 0 ? $"\nПлоское изображение на стене: исключено {_people.RejectedWallCandidates}" : "") +
         (_people.RejectedFurnitureGroups > 0 ? $"\nМебель при повторной проверке: исключено групп {_people.RejectedFurnitureGroups}" : "") +
         (_people.RejectedDecorGroups > 0 ? $"\nРастения и вазы при повторной проверке: исключено групп {_people.RejectedDecorGroups}" : "");
     public string PersonViewSummary => _people is not null && SelectedPersonView is { } selected ?
         $"Ракурс {selected.Index + 1} · кандидатов: {CurrentPersonFindings.Count} · заполнение {_people.Views[selected.Index].Coverage:P0}" : "";
-    private string SpatialSummary => $"Групп в 3D: {PersonFindings.Where(p => p.SpatialGroup.HasValue && p.Review != StructureReviewState.Rejected).Select(p => p.SpatialGroup).Distinct().Count()}" +
-        $" · рамок без привязки: {PersonFindings.Count(p => !p.SpatialGroup.HasValue && p.Review != StructureReviewState.Rejected)}";
+    private string SpatialSummary => $"Групп в 3D: {VisiblePersonFindings.Where(p => p.SpatialGroup.HasValue && p.Review != StructureReviewState.Rejected).Select(p => p.SpatialGroup).Distinct().Count()}" +
+        $" · рамок без привязки: {VisiblePersonFindings.Count(p => !p.SpatialGroup.HasValue && p.Review != StructureReviewState.Rejected)}";
 
     private void InitializePeopleCommands()
     {
@@ -118,11 +149,16 @@ public sealed partial class MainViewModel
         DetectPeopleCommand = new(() => DetectPeopleAsync(false), () => CanDetectPeople, ex => ReportError("Не удалось проверить людей", ex));
         SearchPeopleCommand = new(() => DetectPeopleAsync(true), () => CanSearchPeople, ex => ReportError("Не удалось осмотреть комнату", ex));
         FindPeopleCommand = new(FindPeopleAsync, () => CanFindPeople, ex => ReportError("Не удалось запустить поиск людей", ex));
+        ComparePeopleThresholdsCommand = new(() => FindPeopleAsync(PeopleSearchMode.ThresholdComparison), () => CanFindPeople,
+            ex => ReportError("Не удалось сравнить пороги", ex));
+        FindPeopleInDetailCommand = new(() => FindPeopleAsync(PeopleSearchMode.Detailed), () => CanFindPeople && IsRoomMode,
+            ex => ReportError("Не удалось проверить крупные ракурсы", ex));
         ShowPeoplePreviewCommand = new(() => { OpenPeopleAnalysisCommand.Execute(null); IsPeoplePreviewOpen = true; }, () => CanInteract && HasPeopleDetection);
         ClosePeoplePreviewCommand = new(() => IsPeoplePreviewOpen = false);
         ConfirmPersonCommand = new(() => ReviewPerson(StructureReviewState.Confirmed), () => CanReviewPerson);
         RejectPersonCommand = new(() => ReviewPerson(StructureReviewState.Rejected), () => CanReviewPerson);
         ResetPersonReviewCommand = new(() => ReviewPerson(StructureReviewState.Proposed), () => CanReviewPerson);
+        ReviewPersonGroupCommand = new(ReviewPersonGroup, () => CanReviewPersonGroup);
         FocusPersonViewCommand = new(FocusPersonView, () => CanInteract && SelectedPersonView is not null);
         PropertyChanged += (_, e) =>
         {
@@ -130,15 +166,16 @@ public sealed partial class MainViewModel
             if ((e.PropertyName == nameof(IsNavigating) && IsNavigating) || (e.PropertyName == nameof(IsPicking) && IsPicking)) IsPeoplePreviewOpen = false;
         };
     }
-    public async Task FindPeopleAsync()
+    public Task FindPeopleAsync() => FindPeopleAsync(PeopleSearchMode.Standard);
+    private async Task FindPeopleAsync(PeopleSearchMode searchMode)
     {
         if (!CanFindPeople) return;
         OpenPeopleAnalysisCommand.Execute(null);
         if (IsGuest) AdministratorAccessRequested?.Invoke(this, EventArgs.Empty);
-        if (!_disposed && CanDetectPeople) await RunPeopleAnalysisAsync(true, true);
+        if (!_disposed && CanDetectPeople) await RunPeopleAnalysisAsync(true, true, searchMode);
     }
     public Task DetectPeopleAsync(bool survey = false) => RunPeopleAnalysisAsync(survey, false);
-    private async Task RunPeopleAnalysisAsync(bool survey, bool prepareViews, bool labeling = false)
+    private async Task RunPeopleAnalysisAsync(bool survey, bool prepareViews, PeopleSearchMode searchMode = PeopleSearchMode.Standard)
     {
         if (!(survey && !prepareViews ? CanSearchPeople : CanDetectPeople) || _scanProject is not { } project) return;
         if (IsTunnelMode) { survey = false; prepareViews = false; }
@@ -146,7 +183,9 @@ public sealed partial class MainViewModel
             new((float)Camera.LookDirection.X, (float)Camera.LookDirection.Y, (float)Camera.LookDirection.Z),
             new((float)Camera.UpDirection.X, (float)Camera.UpDirection.Y, (float)Camera.UpDirection.Z), (float)Camera.FieldOfView) };
         var surfaces = !IsTunnelMode && !StructureIsStale ? StructureSurfaces.ToArray() : [];
-        var threshold = labeling ? .1f : (float)PersonThreshold;
+        var labeling = searchMode == PeopleSearchMode.Review;
+        var compareThresholds = searchMode == PeopleSearchMode.ThresholdComparison;
+        var threshold = labeling ? .1f : compareThresholds ? PersonThresholdComparison.MinimumScore : (float)PersonThreshold;
         var clip = ActiveClipPlane;
         EndInspection(); ReturnToOverview();
         var token = BeginOperation("Поиск людей · подготовка ракурсов");
@@ -162,17 +201,31 @@ public sealed partial class MainViewModel
             if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
             if (survey && surfaces.Any(s => s.Kind == StructureSurfaceKind.Floor && s.Review != StructureReviewState.Rejected))
                 poses = !StructureIsStale && _structureDocument is not null ? PersonScanAnalyzer.RoomViews(_structureDocument) : PersonScanAnalyzer.RoomViews(surfaces);
-            var mode = poses.Length > 1 ? $"Обзор помещения · {poses.Length} ракурсов" : survey ? "Текущий вид · пол для обзора не найден" : "Текущий вид";
+            var details = searchMode == PeopleSearchMode.Detailed ? PersonScanAnalyzer.RoomDetailViews(poses) : [];
+            var mode = details.Length > 0 ? $"Подробный обзор · {poses.Length} общих + {details.Length} крупных ракурсов" :
+                poses.Length > 1 ? $"Обзор помещения · {poses.Length} ракурсов" : survey ? "Текущий вид · пол для обзора не найден" : "Текущий вид";
+            if (searchMode == PeopleSearchMode.Detailed && poses.Length == 16) mode += " · достигнут предел ракурсов";
             Status = "Поиск людей · проверка RGB-ракурсов";
             LoadPersonExamples();
             LoadPersonModels();
-            var model = !labeling && _personModelError is null ? _personModels.Active : null;
+            var model = !labeling && !compareThresholds && _personModelError is null ? _personModels.Active : null;
             var proposalThreshold = model is null ? threshold : PersonCandidateLearning.ProposalThreshold(threshold);
-            var progress = OperationProgress(token);
+            var progress = details.Length > 0 ? OperationProgress(token, .4, 20) : OperationProgress(token);
             var analysis = labeling
                 ? _personAnalyzer.AnalyzeForReviewAsync(project, poses, surfaces, proposalThreshold, clip, progress, token)
                 : _personAnalyzer.AnalyzeAsync(project, poses, surfaces, proposalThreshold, clip, progress, token);
             var result = await analysis.WaitAsync(token);
+            var overviewCount = result.Views.Length;
+            if (details.Length > 0)
+            {
+                token.ThrowIfCancellationRequested();
+                if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
+                Status = "Поиск людей · крупные ракурсы";
+                var closeups = await _personAnalyzer.AnalyzeAsync(project, details, surfaces, proposalThreshold, clip,
+                    OperationProgress(token, .4, 60), token).WaitAsync(token);
+                token.ThrowIfCancellationRequested();
+                result = PersonScanAnalyzer.CombineRoomViews(result, closeups);
+            }
             var sources = await Task.Run(() => StructureProvenance.CaptureInputs(project, token)
                 .Where(s => s.IsVisible && s.IncludedCount > 0).Select(s => s.PointsHash).Distinct().ToArray(), token);
             if (_learningError is null || model is not null)
@@ -180,17 +233,33 @@ public sealed partial class MainViewModel
                 var proposals = result;
                 result = await Task.Run(() => _personLearning.Apply(proposals, threshold, model, token), token);
             }
+            if (details.Length > 0)
+            {
+                var proposals = result;
+                result = await Task.Run(() => PersonScanAnalyzer.ConsolidateDetailedFindings(proposals), token);
+            }
             token.ThrowIfCancellationRequested();
             if (_disposed || !IsAdministrator || !ReferenceEquals(project, _scanProject)) return;
             ClearPersonDetections();
             _people = result;
             _personSources = sources;
-            _peopleRunMode = labeling ? mode + " · разметка от 10 %" : model is null ? mode : mode + " · обученная оценка";
+            _peopleRunMode = labeling ? mode + " · разметка от 10 %" : compareThresholds ? mode + " · YOLOX от 25 %" :
+                model is null ? mode : mode + " · обученная оценка";
             foreach (var finding in result.Findings) PersonFindings.Add(finding);
-            for (var i = 0; i < result.Views.Length; i++) PersonViews.Add(new(i, $"Ракурс {i + 1} · кандидатов {result.Findings.Count(p => p.ViewIndex == i)}"));
-            SelectedPersonView = PersonViews.FirstOrDefault(); SelectedPerson = PersonFindings.FirstOrDefault();
+            if (compareThresholds)
+            {
+                PeopleComparisonThresholds = PersonThresholdComparison.Summarize(result.Findings);
+                _selectedPeopleComparisonThreshold = PeopleComparisonThresholds[0];
+            }
+            for (var i = 0; i < result.Views.Length; i++)
+            {
+                var label = i < overviewCount ? $"Ракурс {i + 1}" : $"Крупный ракурс {i - overviewCount + 1}";
+                PersonViews.Add(new(i, compareThresholds ? label : $"{label} · кандидатов {result.Findings.Count(p => p.ViewIndex == i)}"));
+            }
+            SelectedPersonView = PersonViews.FirstOrDefault(); SelectedPerson = VisiblePersonFindings.FirstOrDefault();
             SelectAnalysisTool("Люди"); IsPeoplePreviewOpen = true;
-            Status = $"Ракурсов: {result.Views.Length} · рамок: {result.Findings.Length} · {SpatialSummary}";
+            Status = compareThresholds ? $"Сравнение порогов · ракурсов: {result.Views.Length}" :
+                $"Ракурсов: {result.Views.Length} · рамок: {result.Findings.Length} · {SpatialSummary}";
             Notification = ""; AddEvent(Status);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { OperationCancelled(); }
@@ -200,12 +269,36 @@ public sealed partial class MainViewModel
     private void ReviewPerson(StructureReviewState review)
     {
         if (!CanReviewPerson || SelectedPerson is not { } before) return;
-        try { _personLearning.Review(_people!.Views[before.ViewIndex], before, review, _personSources); _learningError = null; }
+        ReviewPeople([before], review);
+    }
+
+    private void ReviewPersonGroup()
+    {
+        if (!CanReviewPersonGroup) return;
+        var findings = SelectedReviewGroup;
+        var review = findings.All(f => f.Review == StructureReviewState.Rejected)
+            ? StructureReviewState.Proposed : StructureReviewState.Rejected;
+        ReviewPeople(findings, review);
+    }
+
+    private void ReviewPeople(PersonFinding[] findings, StructureReviewState review)
+    {
+        var selectedId = SelectedPerson?.Id;
+        try
+        {
+            _personLearning.ReviewMany(findings.Select(f => (_people!.Views[f.ViewIndex], f)).ToArray(), review, _personSources);
+            _learningError = null;
+        }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.IO.InvalidDataException)
         { ReportError("Не удалось сохранить обучающую отметку", ex); return; }
         NotifyTrainingState();
-        var index = PersonFindings.IndexOf(before); var after = before with { Review = review }; PersonFindings[index] = after;
-        SelectedPerson = after; RefreshPersonPreview(); NotifyPeopleState();
+        foreach (var finding in findings)
+        {
+            var index = PersonFindings.IndexOf(finding);
+            PersonFindings[index] = finding with { Review = review };
+        }
+        SelectedPerson = PersonFindings.FirstOrDefault(f => f.Id == selectedId);
+        RefreshPersonPreview(); RefreshPeopleOutlines(); NotifyPeopleState();
     }
     private void FocusPersonView()
     {
@@ -244,9 +337,16 @@ public sealed partial class MainViewModel
         using (var context = drawing.Open())
         {
             context.DrawImage(bitmap, new Rect(0, 0, image.Size, image.Size));
-            foreach (var finding in PersonFindings.Where(p => p.ViewIndex == selected.Index))
+            foreach (var finding in CurrentPersonFindings)
             {
-                var box = finding.Box; var brush = finding.Review switch { StructureReviewState.Confirmed => Brushes.LightGreen, StructureReviewState.Rejected => Brushes.IndianRed, _ => Brushes.Orange };
+                var box = finding.Box;
+                var brush = finding.Review switch
+                {
+                    StructureReviewState.Confirmed => Brushes.LightGreen,
+                    StructureReviewState.Rejected => Brushes.IndianRed,
+                    _ when HasPeopleThresholdComparison && box.Score < PersonThresholdComparison.ReferenceScore => Brushes.DeepSkyBlue,
+                    _ => Brushes.Orange
+                };
                 var isSelected = finding.Id == SelectedPerson?.Id;
                 context.DrawRectangle(null, new Pen(brush, isSelected ? 3 : 1.25), new Rect(box.Left, box.Top, box.Right - box.Left, box.Bottom - box.Top));
                 var label = finding.SpatialGroup is { } group ? $"3D №{group}" : $"Рамка {finding.Id:00}";
@@ -267,6 +367,7 @@ public sealed partial class MainViewModel
     private void ClearPersonDetections()
     {
         _personSources = [];
+        PeopleComparisonThresholds = []; _selectedPeopleComparisonThreshold = null;
         _people = null; _selectedPerson = null; _selectedPersonView = null; _peopleRunMode = ""; IsPeoplePreviewOpen = false;
         PersonFindings.Clear(); PersonViews.Clear(); PersonPreview = null; PersonOutline = null;
         PeopleProposedOutline = null; PeopleConfirmedOutline = null; PeopleRejectedOutline = null;
@@ -274,6 +375,8 @@ public sealed partial class MainViewModel
     }
     private void NotifyPeopleState()
     {
+        Raise(nameof(PeopleComparisonThresholds)); Raise(nameof(HasPeopleThresholdComparison)); Raise(nameof(SelectedPeopleComparisonThreshold));
+        Raise(nameof(HasPersonReviewGroup)); Raise(nameof(PersonGroupReviewLabel));
         foreach (var name in new[] { nameof(CanFindPeople), nameof(CanDetectPeople), nameof(CanSearchPeople), nameof(PeopleNeedFloor), nameof(PeopleAvailabilityHint), nameof(CanReviewPerson), nameof(HasPeopleDetection), nameof(PersonBoxesVisible), nameof(PeopleSummary), nameof(PersonViewSummary), nameof(PeopleRunMode), nameof(CurrentPersonFindings), nameof(HasCurrentPersonFindings), nameof(PeopleViewIsEmpty), nameof(IsPeoplePreviewVisible) }) Raise(name);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
