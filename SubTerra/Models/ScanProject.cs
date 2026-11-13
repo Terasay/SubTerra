@@ -59,6 +59,7 @@ public sealed record ScanObject(Guid Id, string Name, ImportedScan Source, bool 
 public sealed record ScanProject(ScanObject[] Objects, Guid ActiveObjectId, ImportMetadata? Origin)
 {
     public StructureAnalysisDocument? Structure { get; init; }
+    public SceneUnderstandingDocument? SceneUnderstanding { get; init; }
     public ProjectAnalysisMode AnalysisMode { get; init; } = ProjectAnalysisMode.Room;
     public TunnelAnalysisDocument? Tunnel { get; init; }
     public const int MaximumObjects = 32;

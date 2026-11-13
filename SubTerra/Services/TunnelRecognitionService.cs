@@ -25,7 +25,7 @@ public static class TunnelRecognitionService
             var reviewed = previous.Objects.Where(o => o.ReviewedClass is not null).ToArray();
             var keys = reviewed.SelectMany(o => o.Points).Select(p => (p.ObjectId, p.PointIndex)).ToHashSet();
             var proposals = recognition.Objects.Select(o => o with { Points = o.Points.Where(p => !keys.Contains((p.ObjectId, p.PointIndex))).ToArray() })
-                .Where(o => o.Points.Length > 0).Take(128 - reviewed.Length);
+                .Where(o => o.Points.Length > 0).Take(128 - reviewed.Length).Select(o => UpdateBounds(project, o));
             recognition = recognition with { Surfaces = recognition.Surfaces.Where(p => !keys.Contains((p.ObjectId, p.PointIndex))).ToArray(), Objects = [.. reviewed, .. proposals] };
         }
         return main with { Recognition = recognition };
@@ -117,12 +117,27 @@ public static class TunnelRecognitionService
         if (points.Length == 0) throw new InvalidDataException("В указанной области нет точек выборки.");
         var keys = points.Select(p => (p.ObjectId, p.PointIndex)).ToHashSet();
         var kept = recognition.Objects.Select(o => o with { Points = o.Points.Where(p => !keys.Contains((p.ObjectId, p.PointIndex))).ToArray() })
-            .Where(o => o.Points.Length > 0).ToArray();
+            .Where(o => o.Points.Length > 0).Select(o => UpdateBounds(project, o)).ToArray();
         return recognition with
         {
             Surfaces = recognition.Surfaces.Where(p => !keys.Contains((p.ObjectId, p.PointIndex))).ToArray(),
             Objects = [.. kept, new(Guid.NewGuid(), "Область оператора", InspectionPoint.From(box.Minimum), InspectionPoint.From(box.Maximum), points, TunnelPointClass.Unknown)]
         };
+    }
+
+    private static TunnelObjectCandidate UpdateBounds(ScanProject project, TunnelObjectCandidate candidate)
+    {
+        var objects = project.Objects.ToDictionary(o => o.Id);
+        var minimum = new Vector3(float.MaxValue);
+        var maximum = new Vector3(float.MinValue);
+        foreach (var reference in candidate.Points)
+        {
+            var obj = objects[reference.ObjectId];
+            var position = Vector3.Transform(obj.Source.Points[reference.PointIndex].Position, obj.Matrix);
+            minimum = Vector3.Min(minimum, position);
+            maximum = Vector3.Max(maximum, position);
+        }
+        return candidate with { Minimum = InspectionPoint.From(minimum), Maximum = InspectionPoint.From(maximum) };
     }
 
     /// <summary>Only reviewed classes become training labels. Automatic proposals remain separate.</summary>

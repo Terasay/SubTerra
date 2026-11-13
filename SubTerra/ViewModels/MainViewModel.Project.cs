@@ -125,6 +125,7 @@ public sealed partial class MainViewModel
     }
     private void NotifyProjectState()
     {
+        SyncSceneUnderstanding();
         NotifyTunnelState();
         NotifyStructureState();
         foreach (var name in new[] { nameof(CanManageProject), nameof(CanEditObject), nameof(CanVoxelClean), nameof(CanUndoProject), nameof(CanRedoProject), nameof(UndoProjectText), nameof(RedoProjectText), nameof(ProjectSummary), nameof(HasEditPreview), nameof(EditPreviewText), nameof(IsScreenSelecting), nameof(SelectionTool), nameof(SelectionHint), nameof(CanSave), nameof(CanExport), nameof(CanSelectScanObject), nameof(CanAddAnnotation), nameof(CloudQualityVisible) }) Raise(name);

@@ -81,6 +81,7 @@ public sealed partial class MainViewModel
 
     private void InitializeStructureCommands()
     {
+        InitializeSceneUnderstandingCommands();
         InitializeIndoorCommands();
         InitializePeopleCommands();
         InitializeRoomCommands();
@@ -170,6 +171,7 @@ public sealed partial class MainViewModel
     }
     private void UpdateStructureDisplay()
     {
+        UpdateSceneUnderstandingDisplay();
         UpdateRoomDisplay();
         UpdateObjectDisplay();
         if (_structureAnalysis is null || StructureIsStale) { StructureGeometry = null; StructureOutline = null; return; }

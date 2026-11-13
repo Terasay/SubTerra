@@ -224,6 +224,8 @@
                             <h:LineGeometryModel3D Geometry="{Binding MeasurementLine}" Color="#9DEAFF" Thickness="2" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding AnnotationGeometry}" Color="#FFAA62" Size="10,10" Figure="Ellipse" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding ClipPlaneGuide}" Color="#8DABD2" Thickness="1" IsRendering="{Binding ClipGuideVisible}" IsHitTestVisible="False"/>
+                            <h:PointGeometryModel3D Geometry="{Binding SceneUnderstandingGeometry}" Color="White" Size="4,4" Figure="Ellipse" DepthBias="-35" IsRendering="{Binding SceneUnderstandingVisible}" IsHitTestVisible="False"/>
+                            <h:LineGeometryModel3D Geometry="{Binding SceneRegionOutline}" Color="#EFF9FF" Thickness="2" DepthBias="-35" IsRendering="{Binding SceneUnderstandingVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding StructureGeometry}" Color="White" Size="3.5,3.5" Figure="Ellipse" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
                             <h:LineGeometryModel3D Geometry="{Binding StructureOutline}" Color="#EFF9FF" Thickness="2" DepthBias="-20" IsRendering="{Binding StructureVisible}" IsHitTestVisible="False"/>
                             <h:PointGeometryModel3D Geometry="{Binding ObjectCandidateGeometry}" Color="White" Size="4,4" Figure="Ellipse" DepthBias="-30" IsRendering="{Binding ObjectCandidatesVisible}" IsHitTestVisible="False"/>

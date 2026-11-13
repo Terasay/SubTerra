@@ -11,12 +11,13 @@ namespace SubTerra.Services;
 public sealed class PersonCandidateLearning(string? path = null)
 {
     private sealed record Example(string Key, double[] Features, float DetectorScore, bool Person, string[]? Sources = null);
-    private sealed record Archive(int Version, Example[] Examples);
+    private sealed record Archive(int Version, Example[] Examples, Dictionary<string, string>? SourceAliases = null);
     internal const int FeatureCount = 9;
     private const int MaximumExamples = 2048;
     private const double MaxCorrection = 1.25;
     private readonly ConditionalWeakTable<ScanImage, byte[]> _imageHashes = new();
     private Dictionary<string, Example> _examples = [];
+    private Dictionary<string, string> _sourceAliases = [];
     public int Positives => _examples.Values.Count(s => s.Person);
     public int Negatives => _examples.Count - Positives;
     public int TaggedPositives => _examples.Values.Count(s => s.Person && s.Sources is { Length: > 0 });
@@ -30,8 +31,11 @@ public sealed class PersonCandidateLearning(string? path = null)
         using var stream = File.OpenRead(path);
         if (stream.Length > 6_000_000) throw new InvalidDataException("Слишком большой файл примеров.");
         var data = JsonSerializer.Deserialize<Archive>(stream);
-        if (data?.Version is not (1 or 2) || data.Examples is null || data.Examples.Length > MaximumExamples)
+        if (data?.Version is not (1 or 2 or 3) || data.Examples is null || data.Examples.Length > MaximumExamples)
             throw new InvalidDataException("Неизвестный формат примеров обучения.");
+        var aliases = data.Version == 3 ? data.SourceAliases ?? [] : new Dictionary<string, string>();
+        if (aliases.Count > 8192 || aliases.Any(a => !ValidSources([a.Key]) || !ValidSources([a.Value]) || aliases.ContainsKey(a.Value)))
+            throw new InvalidDataException("Повреждены связи источников обучения.");
         var examples = new Dictionary<string, Example>();
         foreach (var s in data.Examples)
         {
@@ -39,18 +43,23 @@ public sealed class PersonCandidateLearning(string? path = null)
                 s.Features is not { Length: FeatureCount } || s.Features.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1) ||
                 !float.IsFinite(s.DetectorScore) || s.DetectorScore is < 0 or > 1 || !ValidSources(s.Sources) || !examples.TryAdd(s.Key, s))
                 throw new InvalidDataException("Повреждён пример обучения.");
+            // Older source hashes identified exports, not acquisitions. Keep the reviews, but require
+            // recollection before using those examples in a split advertised as independent.
+            examples[s.Key] = s with { Sources = data.Version < 3 ? null : s.Sources?.Select(source => aliases.GetValueOrDefault(source, source)).Distinct().ToArray() };
         }
+        _sourceAliases = aliases;
         return examples;
     }
 
     public void Reload()
     {
         try { _examples = Read(); }
-        catch (FileNotFoundException) { _examples = []; }
-        catch (DirectoryNotFoundException) { _examples = []; }
+        catch (FileNotFoundException) { _examples = []; _sourceAliases = []; }
+        catch (DirectoryNotFoundException) { _examples = []; _sourceAliases = []; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
             _examples = [];
+            _sourceAliases = [];
             throw;
         }
     }
@@ -79,21 +88,45 @@ public sealed class PersonCandidateLearning(string? path = null)
             {
                 var provenance = sources is { Length: > 0 } ? sources : next.GetValueOrDefault(key)?.Sources;
                 next[key] = new(key, Features(view, finding), finding.DetectorScore ?? finding.Box.Score,
-                    label == StructureReviewState.Confirmed, provenance?.ToArray());
+                    label == StructureReviewState.Confirmed, provenance?.Select(s => _sourceAliases.GetValueOrDefault(s, s)).Distinct().ToArray());
             }
         }
         if (next.Count > MaximumExamples) throw new InvalidDataException($"Сохранено максимальное число примеров ({MaximumExamples}).");
+        Save(next);
+    }
+
+    public void MergeSources(string[] previous, string target)
+    {
+        if (!ValidSources(previous) || !ValidSources([target])) throw new InvalidDataException("Некорректный идентификатор съёмки.");
+        if (path is not null) Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var gate = path is null ? null : new FileStream(path + ".lock", FileMode.OpenOrCreate,
+            FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+        Reload();
+        target = _sourceAliases.GetValueOrDefault(target, target);
+        var sources = previous.Concat(previous.Select(s => _sourceAliases.GetValueOrDefault(s, s))).ToHashSet();
+        var aliases = _sourceAliases.ToDictionary(a => a.Key, a => sources.Contains(a.Value) ? target : a.Value);
+        foreach (var source in sources.Where(s => s != target)) aliases[source] = target;
+        aliases.Remove(target);
+        if (aliases.Count > 8192) throw new InvalidDataException("Достигнут предел связей источников обучения.");
+        Save(_examples.ToDictionary(pair => pair.Key, pair => pair.Value with
+        { Sources = pair.Value.Sources?.Select(s => sources.Contains(s) ? target : s).Distinct().ToArray() }), aliases);
+    }
+
+    private void Save(Dictionary<string, Example> next, Dictionary<string, string>? aliases = null)
+    {
+        aliases ??= _sourceAliases;
         if (path is not null)
         {
             var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                using (var stream = File.Create(temporary)) JsonSerializer.Serialize(stream, new Archive(2, next.Values.ToArray()));
+                using (var stream = File.Create(temporary)) JsonSerializer.Serialize(stream, new Archive(3, next.Values.ToArray(), aliases));
                 File.Move(temporary, path, overwrite: true);
             }
             finally { File.Delete(temporary); }
         }
         _examples = next;
+        _sourceAliases = aliases;
     }
 
     private string Key(ScanImage view, ImageBox box)
@@ -245,6 +278,6 @@ public sealed class PersonCandidateLearning(string? path = null)
                 ? (example.Person ? StructureReviewState.Confirmed : StructureReviewState.Rejected) : f.Review;
             findings.Add(f with { DetectorScore = f.Box.Score, Box = f.Box with { Score = score }, Review = review });
         }
-        return result with { Findings = findings.ToArray() };
+        return result with { Findings = PersonScanAnalyzer.GroupAcrossViews(findings) };
     }
 }

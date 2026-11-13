@@ -175,7 +175,7 @@ public static class PointObjectAnalyzer
                 {
                     ++sampled; var p = Vector3.Transform(obj.Source.Points[i].Position, obj.Matrix);
                     if (!InspectionPoint.From(p).IsValid) throw new System.IO.InvalidDataException("Некорректные координаты предметов.");
-                    if (!planes.Any(s => Math.Abs(PlanePatch.Distance(s.Normal, s.Offset, p)) <= document.Result.Options.DistanceTolerance))
+                    if (!planes.Any(s => PlanePatch.Contains(s, p, document.Result.Options.DistanceTolerance)))
                         samples.Add(new(new(obj.Id, i), p));
                 }
                 ++rank;

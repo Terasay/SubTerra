@@ -404,7 +404,7 @@ public sealed class PersonScanAnalyzer(Func<IPersonImageDetector>? detectorFacto
             if ((x - x0 & 31) == 0) token.ThrowIfCancellationRequested();
             var slot = y * image.Size + x; var depth = image.Depth[slot]; if (!float.IsFinite(depth)) continue;
             var p = image.Positions[slot];
-            if (surfaces.Any(s => s.Kind != StructureSurfaceKind.Unknown && s.Review != StructureReviewState.Rejected && Math.Abs(PlanePatch.Distance(s.Normal, s.Offset, p)) < .06)) continue;
+            if (surfaces.Any(s => s.Kind != StructureSurfaceKind.Unknown && s.Review != StructureReviewState.Rejected && PlanePatch.Contains(s, p, .06))) continue;
             samples[((int)Math.Floor(p.X / .025), (int)Math.Floor(p.Y / .025), (int)Math.Floor(p.Z / .025))] = (p, depth);
         }
         if (samples.Count < 16) return (null, null);

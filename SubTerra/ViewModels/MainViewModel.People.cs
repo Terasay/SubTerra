@@ -89,6 +89,7 @@ public sealed partial class MainViewModel
         {
             var previous = _selectedPeopleComparisonThreshold;
             if (value is null || !PeopleComparisonThresholds.Contains(value) || !Set(ref _selectedPeopleComparisonThreshold, value)) return;
+            RegroupVisiblePeople();
             var current = CurrentPersonFindings;
             var added = previous is not null && value.Percent < previous.Percent
                 ? VisiblePersonFindings.FirstOrDefault(p => p.Box.Score < previous.MinimumScore) : null;
@@ -99,6 +100,16 @@ public sealed partial class MainViewModel
     }
     private IEnumerable<PersonFinding> VisiblePersonFindings => SelectedPeopleComparisonThreshold is { } threshold
         ? PersonFindings.Where(p => p.Box.Score >= threshold.MinimumScore) : PersonFindings;
+
+    private void RegroupVisiblePeople()
+    {
+        var selectedId = SelectedPerson?.Id;
+        var grouped = PersonScanAnalyzer.GroupAcrossViews(VisiblePersonFindings.ToArray()).ToDictionary(f => f.Id);
+        for (var i = 0; i < PersonFindings.Count; i++)
+            PersonFindings[i] = grouped.GetValueOrDefault(PersonFindings[i].Id) ?? PersonFindings[i] with { SpatialGroup = null };
+        _selectedPerson = VisiblePersonFindings.FirstOrDefault(f => f.Id == selectedId);
+        Raise(nameof(SelectedPerson));
+    }
     public IReadOnlyList<PersonFinding> CurrentPersonFindings => VisiblePersonFindings.Where(p => p.ViewIndex == SelectedPersonView?.Index).ToArray();
     public bool HasCurrentPersonFindings => CurrentPersonFindings.Count > 0;
     public bool PeopleViewIsEmpty => HasPeopleDetection && !HasCurrentPersonFindings;
@@ -226,8 +237,7 @@ public sealed partial class MainViewModel
                 token.ThrowIfCancellationRequested();
                 result = PersonScanAnalyzer.CombineRoomViews(result, closeups);
             }
-            var sources = await Task.Run(() => StructureProvenance.CaptureInputs(project, token)
-                .Where(s => s.IsVisible && s.IncludedCount > 0).Select(s => s.PointsHash).Distinct().ToArray(), token);
+            var sources = await Task.Run(() => PersonCaptureIdentity.Capture(project, token), token);
             if (_learningError is null || model is not null)
             {
                 var proposals = result;
@@ -250,6 +260,7 @@ public sealed partial class MainViewModel
             {
                 PeopleComparisonThresholds = PersonThresholdComparison.Summarize(result.Findings);
                 _selectedPeopleComparisonThreshold = PeopleComparisonThresholds[0];
+                RegroupVisiblePeople();
             }
             for (var i = 0; i < result.Views.Length; i++)
             {

@@ -10,7 +10,7 @@ public sealed partial class SessionStorage
     private sealed record ObjectManifest(Guid Id, string Name, bool IsVisible, uint? Tint, ScanTransform? Transform,
         ImportMetadata Metadata, int PointCount, int TriangleCount, bool HasColors, bool HasMask, bool HasAppearance = false);
     private sealed record ProjectManifest(ObjectManifest[] Objects, Guid ActiveObjectId, ImportMetadata? Origin, bool HasStructure = false,
-        ProjectAnalysisMode AnalysisMode = ProjectAnalysisMode.Room, bool HasTunnel = false);
+        ProjectAnalysisMode AnalysisMode = ProjectAnalysisMode.Room, bool HasTunnel = false, bool HasSceneUnderstanding = false);
     private static string ObjectPrefix(Guid id) => $"objects/{id:N}/";
     private static void SaveProject(string path, ScanSession session, CancellationToken token, IProgress<double>? progress)
     {
@@ -18,20 +18,25 @@ public sealed partial class SessionStorage
         project.Validate(token); ValidateAnnotations(session.Annotations);
         var structureBytes = PrepareStructure(project, token);
         var tunnelBytes = PrepareTunnel(project, token);
+        var sceneBytes = PrepareSceneUnderstanding(project);
         if (session.Frames.Length != 0 || session.Adjustments.Length != 0) throw new InvalidDataException("Проект сканов не содержит кадров симулятора.");
         var objects = project.Objects.Select(o => new ObjectManifest(o.Id, o.Name, o.IsVisible, o.Tint, o.Transform,
             o.Source.Metadata, o.Source.Points.Length, o.Source.Triangles.Length / 3, o.Source.Colors.Length > 0, o.Mask is not null, o.Source.Appearance is not null)).ToArray();
-        var schema = project.Tunnel?.Version == 2 ? 14 : project.AnalysisMode != ProjectAnalysisMode.Room || tunnelBytes is not null ? 13 :
+        var schema = sceneBytes is not null ? 15 : project.Tunnel?.Version == 2 ? 14 : project.AnalysisMode != ProjectAnalysisMode.Room || tunnelBytes is not null ? 13 :
             objects.Any(o => o.HasAppearance) ? 11 : structureBytes is null ? 5 : project.Structure!.Rooms is not null ? 10 : project.Structure.Objects is not null ? 9 : project.Structure.Room is null ? 6 : project.Structure.Room.IsManuallyEdited ? 8 : 7;
         var manifest = new Manifest(schema, "project", "m", "imported", new(), 0, objects.Sum(o => o.PointCount),
             Annotations: session.Annotations, TriangleCount: objects.Sum(o => o.TriangleCount),
-            Project: new(objects, project.ActiveObjectId, project.Origin, structureBytes is not null, project.AnalysisMode, tunnelBytes is not null));
+            Project: new(objects, project.ActiveObjectId, project.Origin, structureBytes is not null, project.AnalysisMode, tunnelBytes is not null, sceneBytes is not null));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         if (bytes.Length > MaximumManifestBytes) throw new InvalidDataException("Описание проекта слишком большое.");
         AtomicWrite(path, temporary =>
         {
             using var archive = ZipFile.Open(temporary, ZipArchiveMode.Create);
             using (var stream = archive.CreateEntry("manifest.json").Open()) stream.Write(bytes);
+            if (sceneBytes is not null)
+            {
+                using var stream = archive.CreateEntry(SceneUnderstandingEntry, CompressionLevel.Fastest).Open(); stream.Write(sceneBytes);
+            }
             if (structureBytes is not null)
             {
                 token.ThrowIfCancellationRequested();
@@ -81,7 +86,9 @@ public sealed partial class SessionStorage
             (manifest.Adjustments?.Length ?? 0) != 0 || (manifest.SchemaVersion <= 10 && info.HasStructure != (manifest.SchemaVersion is 6 or 7 or 8 or 9 or 10)) ||
             (manifest.SchemaVersion < 13 && (manifest.SchemaVersion == 11) != info.Objects.Any(o => o.HasAppearance)) ||
             !Enum.IsDefined(info.AnalysisMode) || (manifest.SchemaVersion < 13 && (info.AnalysisMode != ProjectAnalysisMode.Room || info.HasTunnel)) ||
-            (info.HasTunnel ? archive.Entries.Count(e => e.FullName == TunnelEntry) != 1 : archive.Entries.Any(e => e.FullName == TunnelEntry)))
+            (info.HasTunnel ? archive.Entries.Count(e => e.FullName == TunnelEntry) != 1 : archive.Entries.Any(e => e.FullName == TunnelEntry)) ||
+            (manifest.SchemaVersion == 15) != info.HasSceneUnderstanding ||
+            (info.HasSceneUnderstanding ? archive.Entries.Count(e => e.FullName == SceneUnderstandingEntry) != 1 : archive.Entries.Any(e => e.FullName == SceneUnderstandingEntry)))
             throw new InvalidDataException("Некорректное описание проекта сканов.");
         var annotations = manifest.Annotations ?? []; ValidateAnnotations(annotations);
         var objects = new ScanObject[info.Objects.Length];
@@ -110,7 +117,8 @@ public sealed partial class SessionStorage
         project.Validate(token);
         if (info.HasStructure) project = project with { Structure = ReadStructure(archive, project, token) };
         if (info.HasTunnel) project = project with { Tunnel = ReadTunnel(archive, project, token) };
-        if ((manifest.SchemaVersion == 14) != (project.Tunnel?.Version == 2)) throw new InvalidDataException("Версия анализа тоннеля не соответствует схеме проекта.");
+        if (info.HasSceneUnderstanding) project = project with { SceneUnderstanding = ReadSceneUnderstanding(archive, project) };
+        if (manifest.SchemaVersion < 15 && (manifest.SchemaVersion == 14) != (project.Tunnel?.Version == 2)) throw new InvalidDataException("Версия анализа тоннеля не соответствует схеме проекта.");
         if (manifest.SchemaVersion <= 10 && ((manifest.SchemaVersion == 10) != (project.Structure?.Rooms is not null) ||
             (manifest.SchemaVersion < 10 && ((manifest.SchemaVersion == 9) != (project.Structure?.Objects is not null) ||
             (manifest.SchemaVersion < 9 && ((manifest.SchemaVersion is 7 or 8) != (project.Structure?.Room is not null) ||

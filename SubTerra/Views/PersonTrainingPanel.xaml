@@ -21,6 +21,11 @@
                 <StackPanel>
                     <TextBlock Text="{Binding TrainingExamplesText}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                     <TextBlock Text="{Binding TrainingExamplesHint}" Style="{StaticResource Muted}" Margin="0,4,0,8"/>
+                    <Expander Header="Связать экспорты одной съёмки" Margin="0,0,0,10"><StackPanel Margin="0,8,0,0">
+                        <TextBlock Text="Укажите одинаковое уникальное имя для связанных сканов. Оно сохраняется в проекте и объединяет их примеры для проверки обучения." Style="{StaticResource Muted}"/>
+                        <TextBox Text="{Binding PersonCaptureGroup, UpdateSourceTrigger=PropertyChanged}" MaxLength="128" AutomationProperties.Name="Группа съёмки" Margin="0,8,0,8"/>
+                        <Button Content="Применить к видимым сканам" Command="{Binding SetPersonCaptureGroupCommand}"/>
+                    </StackPanel></Expander>
                     <DockPanel Margin="0,0,0,8" LastChildFill="False">
                         <TextBlock Text="{Binding PersonThreshold, StringFormat=Порог сравнения · {0:P0}}" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         <Slider Minimum=".1" Maximum=".9" TickFrequency=".05" IsSnapToTickEnabled="True" Width="156" Value="{Binding PersonThreshold}"

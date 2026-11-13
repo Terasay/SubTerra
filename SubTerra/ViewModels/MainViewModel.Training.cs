@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using SubTerra.Services;
+using SubTerra.Models;
 
 namespace SubTerra.ViewModels;
 
@@ -23,6 +24,9 @@ public sealed partial class MainViewModel
     public RelayCommand ActivatePersonModelCommand { get; private set; } = null!;
     public RelayCommand UseBaselinePersonModelCommand { get; private set; } = null!;
     public RelayCommand ExportPersonModelCommand { get; private set; } = null!;
+    public RelayCommand SetPersonCaptureGroupCommand { get; private set; } = null!;
+    private string _personCaptureGroup = "";
+    public string PersonCaptureGroup { get => _personCaptureGroup; set { if (value.Length <= 128) Set(ref _personCaptureGroup, value); } }
     public event EventHandler? PersonModelExportRequested;
     public IReadOnlyList<PersonTrainingRun> PersonTrainingRuns => _personModelError is null ? _personModels.Runs : [];
     public string ActivePersonModelText => _personModelError ?? (_personModels.Active is { } model ?
@@ -92,6 +96,7 @@ public sealed partial class MainViewModel
             Pause(); ReturnToOverview(); IsSettingsOpen = false;
             LoadPersonExamples();
             LoadPersonModels(selectNewest: true);
+            PersonCaptureGroup = _scanProject?.Active?.Source.Metadata.CaptureId ?? "";
             IsTrainingPanelOpen = true;
         }, () => IsAdministrator && CanInteract);
         CloseTrainingPanelCommand = new(() => IsTrainingPanelOpen = false, () => CanInteract);
@@ -109,6 +114,31 @@ public sealed partial class MainViewModel
             () => IsAdministrator && CanInteract && _personModelError is null && _personModels.Active is not null);
         ExportPersonModelCommand = new(() => PersonModelExportRequested?.Invoke(this, EventArgs.Empty),
             () => IsAdministrator && CanInteract && _personModelError is null && SelectedTrainingRun is not null);
+        SetPersonCaptureGroupCommand = new(SetPersonCaptureGroup, () => CanManageProject && !string.IsNullOrWhiteSpace(PersonCaptureGroup));
+    }
+
+    private void SetPersonCaptureGroup()
+    {
+        if (!CanManageProject || _scanProject is not { } before || string.IsNullOrWhiteSpace(PersonCaptureGroup)) return;
+        var name = PersonCaptureGroup.Trim();
+        var next = before with { Objects = before.Objects.Select(o => !o.IsVisible ? o : o with
+        {
+            Source = new ImportedScan { Metadata = o.Source.Metadata with { CaptureId = name }, Points = o.Source.Points,
+                Colors = o.Source.Colors, Triangles = o.Source.Triangles, Appearance = o.Source.Appearance }
+        }).ToArray() };
+        try
+        {
+            var sources = PersonCaptureIdentity.Capture(next);
+            if (sources.Length != 1) return;
+            _personLearning.MergeSources(PersonCaptureIdentity.Capture(before), sources[0]);
+            _projectHistory.Commit(before, next, "группа съёмки для обучения");
+            _scanProject = next; _dataset = new(null, next.ToSession(UserAnnotations.ToArray()));
+            _personSources = sources;
+            MarkSessionDirty(); NotifyProjectState(); NotifyTrainingState();
+            Status = "Группа съёмки сохранена. Для связанных экспортов укажите такое же имя.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        { ReportError("Не удалось сохранить группу съёмки", ex); }
     }
 
     private void LoadPersonModels(bool selectNewest = false)

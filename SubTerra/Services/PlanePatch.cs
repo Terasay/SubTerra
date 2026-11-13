@@ -1,4 +1,5 @@
 using System.Numerics;
+using SubTerra.Models;
 
 namespace SubTerra.Services;
 
@@ -8,6 +9,25 @@ internal static class PlanePatch
     internal sealed record Fit(Vector3 Normal, double Offset, Vector3 Center);
     public static double Distance(Vector3 normal, double offset, Vector3 point) =>
         normal.X * (double)point.X + normal.Y * (double)point.Y + normal.Z * (double)point.Z + offset;
+
+    public static bool Contains(StructureSurface surface, Vector3 point, double tolerance)
+    {
+        if (surface.Boundary.Length < 3 || Math.Abs(Distance(surface.Normal, surface.Offset, point)) > tolerance) return false;
+        var positive = false;
+        var negative = false;
+        var previous = surface.Boundary[^1];
+        foreach (var next in surface.Boundary)
+        {
+            var edge = next - previous;
+            var side = Vector3.Dot(Vector3.Cross(edge, point - previous), surface.Normal);
+            var margin = tolerance * edge.Length();
+            positive |= side > margin;
+            negative |= side < -margin;
+            if (positive && negative) return false;
+            previous = next;
+        }
+        return true;
+    }
 
     public static Fit? Refine(Vector3[] points, CancellationToken token)
     {

@@ -18,6 +18,7 @@ public sealed record ImportMetadata(string FileName, ScanUnit Unit, ScanUpAxis U
     double OriginX, double OriginY, double OriginZ)
 {
     public bool IsSynthetic { get; init; }
+    public string? CaptureId { get; init; }
 }
 
 public sealed record MeshTexture(byte[] Data, string MimeType, int WrapS = 10497, int WrapT = 10497);
@@ -91,7 +92,7 @@ public sealed class ImportedScan
     }
     public void Validate(CancellationToken token = default)
     {
-        if (Metadata is null || string.IsNullOrWhiteSpace(Metadata.FileName) || Metadata.FileName.Length > 260 ||
+        if (Metadata is null || string.IsNullOrWhiteSpace(Metadata.FileName) || Metadata.FileName.Length > 260 || Metadata.CaptureId is { Length: > 128 } ||
             !Enum.IsDefined(Metadata.Unit) || !Enum.IsDefined(Metadata.UpAxis) ||
             !double.IsFinite(Metadata.OriginX) || !double.IsFinite(Metadata.OriginY) || !double.IsFinite(Metadata.OriginZ) ||
             Math.Abs(Metadata.OriginX) > 1e12 || Math.Abs(Metadata.OriginY) > 1e12 || Math.Abs(Metadata.OriginZ) > 1e12 ||
